@@ -1,0 +1,3 @@
+<%- interfaces.each do |interface| -%>
+export type { default as <%= interface.name %> } from './<%= interface.filename %>'
+<%- end -%>

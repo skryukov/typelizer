@@ -1,0 +1,26 @@
+<%- if interface.imports.any? -%>
+import type {<%= interface.imports.join(", ") %>} from '<%= interface.config.types_import_path %>'
+<%- end -%>
+
+<%- if interface.root_key -%>
+type <%= interface.name %>Data = {
+<%- interface.properties.each do |property| -%>
+  <%= property %>;
+<%- end -%>
+}
+
+type <%= interface.name %> = {
+  <%= interface.root_key %>: <%= interface.name %>Data;
+<%- interface.meta_fields&.each do |property| -%>
+  <%= property %>;
+<%- end -%>
+}
+<%- else -%>
+type <%= interface.name %> = {
+<%- interface.properties.each do |property| -%>
+  <%= property %>;
+<%- end -%>
+}
+<%- end -%>
+
+export default <%= interface.name %>;
