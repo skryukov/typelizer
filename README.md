@@ -47,20 +47,20 @@ Include the Typelizer DSL in your serializers:
 
 ```ruby
 class ApplicationResource
-  include Alba::Resource 
+  include Alba::Resource
   include Typelizer::DSL
 end
 
 class PostResource < ApplicationResource
   attributes :id, :title, :body
-  
+
   has_one :author, serializer: AuthorResource
 end
 
 class AuthorResource < ApplicationResource
   # specify the model to infer types from (optional)
   typelize_from User
-  
+
   attributes :id, :name
 end
 ```
