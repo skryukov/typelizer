@@ -44,7 +44,7 @@ module Typelizer
         trace = TracePoint.new(:call) do |tp|
           begin
             next unless tp.self.respond_to?(:typelizer_interface) && !tp.self.send(:respond_to_missing?, :typelizer_interface, false)
-          rescue WeakRef::RefError
+          rescue
             next
           end
           serializer_plugin = tp.self.typelizer_interface.serializer_plugin
