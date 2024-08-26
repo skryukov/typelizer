@@ -43,7 +43,7 @@ module Typelizer
       files.each do |file|
         trace = TracePoint.new(:call) do |tp|
           begin
-            next unless tp.self.respond_to?(:typelizer_interface) && !tp.self.send(:respond_to_missing?, :typelizer_interface, false)
+            next unless tp.self.methods.include?(:typelizer_interface)
           rescue WeakRef::RefError
             next
           end
