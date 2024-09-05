@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.1.2] - 2024-09-05
+
+### Fixed
+
+- Prevent Alba's `meta nil` raising an error ([@okuramasafumi])
+
 ## [0.1.1] - 2024-08-26
 
 ### Fixed
@@ -18,9 +24,11 @@ and this project adheres to [Semantic Versioning].
 - Initial release ([@skryukov])
 
 [@davidrunger]: https://github.com/davidrunger
+[@okuramasafumi]: https://github.com/@okuramasafumi
 [@skryukov]: https://github.com/skryukov
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/skryukov/typelizer/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/skryukov/typelizer/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/skryukov/typelizer/commits/v0.1.0
 
