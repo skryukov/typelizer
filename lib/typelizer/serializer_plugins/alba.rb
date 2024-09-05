@@ -41,6 +41,8 @@ module Typelizer
         return nil unless serializer._meta
 
         name = serializer._meta.first
+        return nil unless name
+
         [
           build_property(name, name)
         ]
