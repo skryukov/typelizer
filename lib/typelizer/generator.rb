@@ -33,8 +33,9 @@ module Typelizer
         raise ArgumentError, "Please ensure all your serializers include Typelizer::DSL." if base_classes.none?
       end
 
-      (base_classes + base_classes.flat_map(&:descendants)).uniq.sort_by(&:name)
-        .reject { |serializer| Typelizer.reject_class.call(serializer: serializer) }
+      (base_classes + base_classes.flat_map(&:descendants)).uniq
+        .reject { |serializer| Typelizer.reject_class.call(serializer: serializer) || serializer.name.nil? }
+        .sort_by(&:name)
     end
 
     def read_serializers(files = nil)

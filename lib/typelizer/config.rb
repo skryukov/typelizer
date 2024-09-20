@@ -29,7 +29,11 @@ module Typelizer
     class << self
       def instance
         @instance ||= new(
-          serializer_name_mapper: ->(serializer) { serializer.name.ends_with?("Serializer") ? serializer.name.delete_suffix("Serializer") : serializer.name.delete_suffix("Resource") },
+          serializer_name_mapper: ->(serializer) do
+            return "" if serializer.name.nil?
+
+            serializer.name.ends_with?("Serializer") ? serializer.name&.delete_suffix("Serializer") : serializer.name&.delete_suffix("Resource")
+          end,
           serializer_model_mapper: ->(serializer) do
             base_class = serializer_name_mapper.call(serializer)
             Object.const_get(base_class) if Object.const_defined?(base_class)
