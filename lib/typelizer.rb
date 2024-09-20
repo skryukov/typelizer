@@ -18,6 +18,8 @@ require_relative "typelizer/model_plugins/active_record"
 
 require_relative "typelizer/railtie" if defined?(Rails)
 
+require "logger"
+
 module Typelizer
   class << self
     def enabled?

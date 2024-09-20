@@ -54,6 +54,7 @@ module Typelizer
         .filter_map { |interface| interface.name if interface.name != name }
 
       custom_type_imports = attribute_types
+        .reject { |type| type.is_a?(InlineType) }
         .flat_map { |type| extract_typescript_types(type.to_s) }
         .uniq
         .reject { |type| global_type?(type) }
