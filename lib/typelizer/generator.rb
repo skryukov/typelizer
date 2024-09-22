@@ -34,7 +34,7 @@ module Typelizer
       end
 
       (base_classes + base_classes.flat_map(&:descendants)).uniq
-        .reject { |serializer| Typelizer.reject_class.call(serializer: serializer) || serializer.name.nil? }
+        .reject { |serializer| Typelizer.reject_class.call(serializer: serializer) }
         .sort_by(&:name)
     end
 

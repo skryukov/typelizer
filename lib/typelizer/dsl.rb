@@ -4,12 +4,12 @@ module Typelizer
     # typelize attribute_name: ["string", "Date", optional: true, nullable: true, multi: true]
 
     def self.included(base)
-      Typelizer.base_classes << base.to_s
+      Typelizer.base_classes << base.to_s if base.name
       base.extend(ClassMethods)
     end
 
     def self.extended(base)
-      Typelizer.base_classes << base.to_s
+      Typelizer.base_classes << base.to_s if base.name
       base.extend(ClassMethods)
     end
 
