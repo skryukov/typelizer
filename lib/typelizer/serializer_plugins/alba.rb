@@ -1,5 +1,4 @@
 require_relative "base"
-require_relative "../inline_type"
 
 module Typelizer
   module SerializerPlugins
@@ -75,10 +74,9 @@ module Typelizer
           )
         when ::Alba::Association
           resource = attr.instance_variable_get(:@resource)
-          type = (resource.is_a?(Class) && !resource.name.nil?) ? Interface.new(serializer: resource) : InlineType.new(serializer: resource, config: {})
           Property.new(
             name: name,
-            type: type,
+            type: Interface.new(serializer: resource),
             optional: false,
             nullable: false,
             multi: false, # we override this in typelize_method_transform

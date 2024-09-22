@@ -11,8 +11,16 @@ module Typelizer
       @serializer_plugin = config.serializer_plugin.new(serializer: serializer, config: config)
     end
 
+    def inline?
+      !serializer.is_a?(Class) || serializer.name.nil?
+    end
+
     def name
-      config.serializer_name_mapper.call(serializer).tr_s(":", "")
+      if inline?
+        render_template("inline_type.ts.erb", properties: properties).strip
+      else
+        config.serializer_name_mapper.call(serializer).tr_s(":", "")
+      end
     end
 
     def filename
@@ -51,10 +59,9 @@ module Typelizer
         .partition { |type| type.is_a?(Interface) }
 
       serializer_types = association_serializers
-        .filter_map { |interface| interface.name if interface.name != name }
+        .filter_map { |interface| interface.name if interface.name != name && !interface.inline? }
 
       custom_type_imports = attribute_types
-        .reject { |type| type.is_a?(InlineType) }
         .flat_map { |type| extract_typescript_types(type.to_s) }
         .uniq
         .reject { |type| global_type?(type) }
@@ -97,6 +104,11 @@ module Typelizer
 
     def model_plugin
       @model_plugin ||= config.model_plugin.new(model_class: model_class, config: config)
+    end
+
+    def render_template(template, **context)
+      ERB.new(File.read(File.join(File.dirname(__FILE__), "templates/#{template}")), trim_mode: "-")
+        .result_with_hash(context)
     end
   end
 end

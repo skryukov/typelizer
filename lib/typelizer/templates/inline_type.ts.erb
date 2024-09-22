@@ -1,0 +1,5 @@
+{
+<%- properties.each do |property| -%>
+<%= property.to_s.strip.gsub(/^/, '  ') %>;
+<%- end -%>
+}

@@ -5,20 +5,20 @@ import type {<%= interface.imports.join(", ") %>} from '<%= interface.config.typ
 <%- if interface.root_key -%>
 type <%= interface.name %>Data = {
 <%- interface.properties.each do |property| -%>
-  <%= property %>;
+<%= property.to_s.strip.gsub(/^/, '  ') %>;
 <%- end -%>
 }
 
 type <%= interface.name %> = {
   <%= interface.root_key %>: <%= interface.name %>Data;
 <%- interface.meta_fields&.each do |property| -%>
-  <%= property %>;
+<%= property.to_s.strip.gsub(/^/, '  ') %>;
 <%- end -%>
 }
 <%- else -%>
 type <%= interface.name %> = {
 <%- interface.properties.each do |property| -%>
-  <%= property %>;
+<%= property.to_s.strip.gsub(/^/, '  ') %>;
 <%- end -%>
 }
 <%- end -%>
