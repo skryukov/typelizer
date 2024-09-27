@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## Added
+
+- Support inline associations ([@okuramasafumi], [@skryukov])
+
+  Example of Alba serializer with inline associations (note the `helper Typelizer::DSL`, see [Alba's docs](https://github.com/okuramasafumi/alba?tab=readme-ov-file#helper) for more details):  
+
+  ```ruby
+  class FooSerializer
+    include Alba::Resource
+    helper Typelizer::DSL
+
+    many :bars do
+      typelize_from Bar
+
+      attributes :id, :name
+    end
+  end
+  ```
+
 ## [0.1.2] - 2024-09-05
 
 ### Fixed
