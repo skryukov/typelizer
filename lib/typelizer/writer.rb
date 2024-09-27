@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "fileutils"
-require "erb"
 
 module Typelizer
   class Writer
@@ -54,8 +53,8 @@ module Typelizer
     end
 
     def render_template(template, **context)
-      template_cache[template] ||= ERB.new(File.read(File.join(File.dirname(__FILE__), "templates/#{template}")), trim_mode: "-")
-      template_cache[template].result_with_hash(context)
+      template_cache[template] ||= Renderer.new(template)
+      template_cache[template].call(**context)
     end
 
     def cleanup_output_dir
