@@ -4,6 +4,7 @@ require_relative "typelizer/version"
 require_relative "typelizer/config"
 require_relative "typelizer/property"
 require_relative "typelizer/interface"
+require_relative "typelizer/renderer"
 require_relative "typelizer/writer"
 require_relative "typelizer/generator"
 

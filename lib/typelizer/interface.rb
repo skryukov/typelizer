@@ -17,7 +17,7 @@ module Typelizer
 
     def name
       if inline?
-        render_template("inline_type.ts.erb", properties: properties).strip
+        Renderer.new("inline_type.ts.erb").call(properties: properties).strip
       else
         config.serializer_name_mapper.call(serializer).tr_s(":", "")
       end
@@ -104,11 +104,6 @@ module Typelizer
 
     def model_plugin
       @model_plugin ||= config.model_plugin.new(model_class: model_class, config: config)
-    end
-
-    def render_template(template, **context)
-      ERB.new(File.read(File.join(File.dirname(__FILE__), "templates/#{template}")), trim_mode: "-")
-        .result_with_hash(context)
     end
   end
 end
