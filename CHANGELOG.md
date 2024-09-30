@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## Added
+
+- PORO model plugin ([@okuramasafumi])
+- Auto model plugin ([@skryukov])
+
 ## [0.1.3] - 2024-09-27
 
 ## Added

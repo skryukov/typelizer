@@ -39,7 +39,7 @@ module Typelizer
             Object.const_get(base_class) if Object.const_defined?(base_class)
           end,
 
-          model_plugin: ModelPlugins::ActiveRecord,
+          model_plugin: ModelPlugins::Auto,
           serializer_plugin: SerializerPlugins::Auto,
           plugin_configs: {},
 
