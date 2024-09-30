@@ -202,8 +202,8 @@ Typelizer.configure do |config|
   # Custom transformation for generated properties
   config.properties_transformer = ->(properties) { ... }
 
-  # Plugin for model type inference (default: ModelPlugins::ActiveRecord)
-  config.model_plugin = Typelizer::ModelPlugins::ActiveRecord
+  # Plugin for model type inference (default: ModelPlugins::Auto)
+  config.model_plugin = Typelizer::ModelPlugins::Auto
 
   # Plugin for serializer parsing (default: SerializerPlugins::Auto)
   config.serializer_plugin = Typelizer::SerializerPlugins::Auto

@@ -17,6 +17,7 @@ require_relative "typelizer/serializer_plugins/ams"
 
 require_relative "typelizer/model_plugins/active_record"
 require_relative "typelizer/model_plugins/poro"
+require_relative "typelizer/model_plugins/auto"
 
 require_relative "typelizer/railtie" if defined?(Rails)
 
