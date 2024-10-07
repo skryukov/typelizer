@@ -66,7 +66,7 @@ module Typelizer
         .uniq
         .reject { |type| global_type?(type) }
 
-      custom_type_imports + serializer_types
+      (custom_type_imports + serializer_types).uniq
     end
 
     def inspect
