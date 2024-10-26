@@ -6,10 +6,12 @@ module Typelizer
 
     initializer "typelizer.configure" do
       Typelizer.configure do |c|
-        c.dirs = [
-          Rails.root.join("app", "resources"),
-          Rails.root.join("app", "serializers")
-        ]
+        if c.dirs.empty?
+          c.dirs = [
+            Rails.root.join("app", "resources"),
+            Rails.root.join("app", "serializers")
+          ]
+        end
       end
     end
 
