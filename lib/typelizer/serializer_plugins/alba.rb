@@ -13,7 +13,13 @@ module Typelizer
 
       def properties
         serializer._attributes.map do |name, attr|
-          build_property(name, attr)
+          if has_transform_key?(serializer)
+            key = fetch_key(serializer, name)
+          else
+            key = name
+          end
+
+          build_property(key, attr)
         end
       end
 
@@ -34,7 +40,12 @@ module Typelizer
       end
 
       def root_key
-        serializer.new({}).send(:_key)
+        root = serializer.new({}).send(:_key)
+        if has_transform_key?(serializer) && should_transform_root_key?(serializer)
+          fetch_key(serializer, root)
+        else
+          root
+        end
       end
 
       def meta_fields
@@ -110,6 +121,18 @@ module Typelizer
         else
           raise ArgumentError, "Unsupported attribute type: #{attr.class}"
         end
+      end
+
+      def has_transform_key?(serializer)
+        serializer._transform_type != :none
+      end
+
+      def should_transform_root_key?(serializer)
+        serializer._transforming_root_key
+      end
+
+      def fetch_key(serializer, key)
+        ::Alba.transform_key(key, transform_type: serializer._transform_type)
       end
 
       private
