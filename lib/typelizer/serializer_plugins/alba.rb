@@ -27,8 +27,8 @@ module Typelizer
         [
           :association, :one, :has_one,
           :many, :has_many,
-          :attributes, :attribute
-          :nested_attribute, :nested
+          :attributes, :attribute,
+          :nested_attribute, :nested,
           :meta
         ]
       end
