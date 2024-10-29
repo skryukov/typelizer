@@ -24,17 +24,17 @@ module Typelizer
       end
 
       def methods_to_typelize
-        %i[
-          association one has_one
-          many has_many
-          attributes attribute
-          nested_attribute nested
-          meta
+        [
+          :association, :one, :has_one,
+          :many, :has_many,
+          :attributes, :attribute
+          :nested_attribute, :nested
+          :meta
         ]
       end
 
       def typelize_method_transform(method:, name:, binding:, type:, attrs:)
-        return {name => [type, attrs.merge(multi: true)]} if %i[many has_many].include?(method)
+        return {name => [type, attrs.merge(multi: true)]} if [:many, :has_many].include?(method)
 
         super
       end
