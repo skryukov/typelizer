@@ -13,10 +13,10 @@ module Typelizer
 
       def properties
         serializer._attributes.map do |name, attr|
-          if has_transform_key?(serializer)
-            key = fetch_key(serializer, name)
+          key = if has_transform_key?(serializer)
+            fetch_key(serializer, name)
           else
-            key = name
+            name
           end
 
           build_property(key, attr)
@@ -24,24 +24,24 @@ module Typelizer
       end
 
       def methods_to_typelize
-        [
-          :association, :one, :has_one,
-          :many, :has_many,
-          :attributes, :attribute,
-          :nested_attribute, :nested,
-          :meta
+        %i[
+          association one has_one
+          many has_many
+          attributes attribute
+          nested_attribute nested
+          meta
         ]
       end
 
       def typelize_method_transform(method:, name:, binding:, type:, attrs:)
-        return {name => [type, attrs.merge(multi: true)]} if [:many, :has_many].include?(method)
+        return {name => [type, attrs.merge(multi: true)]} if %i[many has_many].include?(method)
 
         super
       end
 
       def root_key
         root = serializer.new({}).send(:_key)
-        if has_transform_key?(serializer) && should_transform_root_key?(serializer)
+        if !root.nil? && has_transform_key?(serializer) && should_transform_root_key?(serializer)
           fetch_key(serializer, root)
         else
           root
