@@ -23,4 +23,8 @@ type <%= interface.name %> = {
 }
 <%- end -%>
 
+<%-if interface.config.verbatim_module_syntax -%>
+export type { <%= interface.name %> };
+<%- else -%>
 export default <%= interface.name %>;
+<%- end -%>
