@@ -2,8 +2,8 @@
 
 module Typelizer
   class Generator
-    def self.call
-      new.call
+    def self.call(**args)
+      new.call(**args)
     end
 
     def initialize(config = Typelizer::Config)
