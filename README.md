@@ -227,6 +227,10 @@ Typelizer.configure do |config|
   # List of type names that should be considered global in TypeScript
   # (i.e. not prefixed with the import path)
   config.types_global << %w[Array Date Record File FileList]
+
+  # Support TypeScript's Verbatim module syntax option (default: false)
+  # Will change imports and exports of types from default to support this syntax option
+  config.verbatim_module_syntax = false
 end
 ```
 
