@@ -82,6 +82,20 @@ class PostResource < ApplicationResource
 end
 ```
 
+`typelize` can be used with a Hash to specify multiple types at once.
+
+```ruby
+class PostResource < ApplicationResource
+  attributes :id, :title, :body, :published_at
+
+  attribute :author_name do |post|
+    post.author.name
+  end
+
+  typelize author_name: :string, published_at: :string
+end
+```
+
 ### TypeScript Integration
 
 Typelizer generates TypeScript interfaces in the specified output directory:
