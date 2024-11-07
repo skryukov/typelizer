@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## Added
+
+- Add TypeScript verbatim module syntax support through `verbatim_module_syntax` config option ([@patvice])
+
 ## [0.1.5] - 2024-10-07
 
 ## Fixed
@@ -58,7 +62,8 @@ and this project adheres to [Semantic Versioning].
 - Initial release ([@skryukov])
 
 [@davidrunger]: https://github.com/davidrunger
-[@okuramasafumi]: https://github.com/@okuramasafumi
+[@okuramasafumi]: https://github.com/okuramasafumi
+[@patvice]: https://github.com/patvice
 [@skryukov]: https://github.com/skryukov
 
 [Unreleased]: https://github.com/skryukov/typelizer/compare/v0.1.5...HEAD

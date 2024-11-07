@@ -24,6 +24,7 @@ module Typelizer
     :output_dir,
     :types_import_path,
     :types_global,
+    :verbatim_module_syntax,
     keyword_init: true
   ) do
     class << self
@@ -51,7 +52,8 @@ module Typelizer
           types_import_path: "@/types",
           types_global: %w[Array Date Record File FileList],
 
-          properties_transformer: nil
+          properties_transformer: nil,
+          verbatim_module_syntax: false
         )
       end
 
@@ -70,7 +72,6 @@ module Typelizer
 
       def method_missing(method, *args, &block)
         return Typelizer.send(method, *args, &block) if Typelizer.respond_to?(method)
-
         instance.send(method, *args, &block)
       end
     end
