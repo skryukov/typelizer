@@ -26,7 +26,9 @@ require "logger"
 module Typelizer
   class << self
     def enabled?
-      ENV["RAILS_ENV"] == "development" || ENV["RACK_ENV"] == "development" || ENV["TYPELIZER"] == "true"
+      return false if ENV["DISABLE_TYPELIZER"] == "true" || ENV["DISABLE_TYPELIZER"] == "1"
+
+      ENV["RAILS_ENV"] == "development" || ENV["RACK_ENV"] == "development" || ENV["DISABLE_TYPELIZER"] == "false"
     end
 
     attr_accessor :dirs

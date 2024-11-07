@@ -184,6 +184,10 @@ When [Listen](https://github.com/guard/listen) is installed, Typelizer automatic
 Typelizer.listen = false
 ```
 
+### Disabling Typelizer
+
+Sometimes we want to use Typelizer only with manual generation. To disable Typelizer during development, we can set `DISABLE_TYPELIZER` environment variable to true. This doesn't affect manual generation.
+
 ## Configuration
 
 ### Global Configuration
