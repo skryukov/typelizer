@@ -3,7 +3,7 @@ namespace :typelizer do
   task generate: :environment do
     require "benchmark"
 
-    ENV["TYPELIZER"] = "true"
+    ENV["DISABLE_TYPELIZER"] = "false"
 
     puts "Generating TypeScript interfaces..."
     serializers = []
