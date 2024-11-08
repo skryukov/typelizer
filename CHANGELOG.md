@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning].
 ## Added
 
 - Add TypeScript verbatim module syntax support through `verbatim_module_syntax` config option ([@patvice])
+- Add `typelizer:generate:refresh` command to clean output directory and regenerate all interfaces ([@patvice])
+- Allow disabling Typelizer in Rails development with `DISABLE_TYPELIZER` environment variable to `true` ([@okuramasafumi])
+
+## Fixes
+
+- Do not override `Typelizer.dirs` in the railtie initializer ([@patvice])
 
 ## [0.1.5] - 2024-10-07
 

@@ -170,11 +170,15 @@ See the [Configuration](#configuration) section for more options.
 
 ### Manual Generation
 
-To manually generate TypeScript interfaces:
+To manually generate TypeScript interfaces use one of the following commands:
 
-```
-$ rails typelizer:generate
-```
+```bash
+# Generate new interfaces
+rails typelizer:generate
+
+# Clean output directory and regenerate all interfaces
+rails typelizer:generate:refresh
+````
 
 ### Automatic Generation in Development
 
@@ -186,7 +190,7 @@ Typelizer.listen = false
 
 ### Disabling Typelizer
 
-Sometimes we want to use Typelizer only with manual generation. To disable Typelizer during development, we can set `DISABLE_TYPELIZER` environment variable to true. This doesn't affect manual generation.
+Sometimes we want to use Typelizer only with manual generation. To disable Typelizer during development, we can set `DISABLE_TYPELIZER` environment variable to `true`. This doesn't affect manual generation.
 
 ## Configuration
 
