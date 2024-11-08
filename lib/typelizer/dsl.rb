@@ -64,7 +64,7 @@ module Typelizer
 
         unless respond_to?(attribute_name)
           define_singleton_method(attribute_name) do
-            result = instance_variable_get(instance_variable)
+            result = instance_variable_get(instance_variable) || {}
             if superclass.respond_to?(attribute_name)
               result.merge(superclass.send(attribute_name))
             else

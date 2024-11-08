@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning].
 ## Fixes
 
 - Do not override `Typelizer.dirs` in the railtie initializer ([@patvice])
+- Do not raise on empty nested serializers ([@skryukov])
 
 ## [0.1.5] - 2024-10-07
 
