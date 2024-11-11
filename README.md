@@ -96,6 +96,12 @@ class PostResource < ApplicationResource
 end
 ```
 
+You can also specify more complex type definitions using a lower-level API:
+
+```ruby
+typelize attribute_name: ["string", "Date", optional: true, nullable: true, multi: true]
+```
+
 ### TypeScript Integration
 
 Typelizer generates TypeScript interfaces in the specified output directory:
