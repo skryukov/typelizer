@@ -3,7 +3,7 @@ module OjSerializers
     class AuthorSerializer < BaseSerializer
       typelize_from ::User
 
-      typelize username: [:string, nullable: true]
+      typelize username: [:string, nullable: true, comment: "Author login handle"]
       attributes :id, :username
 
       has_many :posts, serializer: PostSerializer, if: ->(u) { u.posts.any? }

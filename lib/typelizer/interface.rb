@@ -87,7 +87,11 @@ module Typelizer
       props.map do |prop|
         if serializer.respond_to?(hash_name)
           dsl_type = serializer.public_send(hash_name)[prop.name.to_sym]
-          next Property.new(prop.to_h.merge(dsl_type)) if dsl_type&.any?
+          if dsl_type&.any?
+            next Property.new(prop.to_h.merge(dsl_type)).tap do |property|
+              property.comment ||= model_plugin.comment_for(property) if config.comments && property.comment != false
+            end
+          end
         end
 
         model_plugin.infer_types(prop)

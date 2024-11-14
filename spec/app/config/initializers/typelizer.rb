@@ -4,4 +4,6 @@ Typelizer.configure do |c|
   ]
 
   c.types_global = %w[Array Date Record]
+
+  c.comments = true
 end
