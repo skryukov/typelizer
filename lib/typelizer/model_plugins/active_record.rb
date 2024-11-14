@@ -26,8 +26,16 @@ module Typelizer
         end
 
         prop.type = @config.type_mapping[column.type]
+        prop.comment = comment_for(prop)
 
         prop
+      end
+
+      def comment_for(prop)
+        column = columns_hash[prop.column_name.to_s]
+        return nil unless column
+
+        prop.comment = column.comment
       end
     end
   end

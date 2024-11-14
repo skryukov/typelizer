@@ -1,7 +1,7 @@
 module Typelizer
   Property = Struct.new(
     :name, :type, :optional, :nullable,
-    :multi, :column_name,
+    :multi, :column_name, :comment,
     keyword_init: true
   ) do
     def inspect

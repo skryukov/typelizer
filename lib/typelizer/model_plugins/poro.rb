@@ -8,6 +8,10 @@ module Typelizer
       def infer_types(prop)
         prop
       end
+
+      def comment_for(prop)
+        nil
+      end
     end
   end
 end
