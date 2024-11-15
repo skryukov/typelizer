@@ -15,7 +15,10 @@ module Alba
       # typelize typed_avatar: [:string, nullable: true]
       # typelize ["string", "null"]
       # typelize "string | null"
-      typelize :string, nullable: true
+      typelize :string, nullable: true, comment: <<~TXT
+        Typed avatar URL
+        Active user only
+      TXT
       attribute :typed_avatar do
         "https://example.com/avatar.png" if active?
       end

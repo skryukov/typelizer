@@ -5,7 +5,7 @@ import type {AmsPost} from '@/types'
 
 type AmsUserEmptyNested = {
   id: number;
-  // Author login handle
+  /** Author login handle */
   username: string | null;
   avatar: unknown;
   typed_avatar: string | null;

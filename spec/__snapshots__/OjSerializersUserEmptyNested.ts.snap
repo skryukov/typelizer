@@ -5,7 +5,7 @@ import type {OjSerializersPost} from '@/types'
 
 type OjSerializersUserEmptyNested = {
   id: number;
-  // Author login handle
+  /** Author login handle */
   username: string | null;
   posts?: Array<OjSerializersPost>;
   avatar: unknown;

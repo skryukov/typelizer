@@ -14,6 +14,7 @@ Typelizer is a Ruby gem that automatically generates TypeScript interfaces from 
   - [TypeScript Integration](#typescript-integration)
   - [Manual Generation](#manual-generation)
   - [Automatic Generation in Development](#automatic-generation-in-development)
+  - [Disabling Typelizer](#disabling-typelizer)
 - [Configuration](#configuration)
   - [Global Configuration](#global-configuration)
   - [Config Options](#config-options)
@@ -78,6 +79,11 @@ class PostResource < ApplicationResource
   typelize "string"
   attribute :author_name do |post|
     post.author.name
+  end
+
+  typelize :string, nullable: true, comment: "Author's avatar URL"
+  attribute :avatar do
+    "https://example.com/avatar.png" if active?
   end
 end
 ```
@@ -259,6 +265,10 @@ Typelizer.configure do |config|
   # Support TypeScript's Verbatim module syntax option (default: false)
   # Will change imports and exports of types from default to support this syntax option
   config.verbatim_module_syntax = false
+
+  # Support comments in generated TypeScript interfaces (default: false)
+  # Will add comments to the generated interfaces
+  config.comments = false
 end
 ```
 

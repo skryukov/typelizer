@@ -18,7 +18,7 @@ type <%= interface.name %> = {
 <%- else -%>
 type <%= interface.name %> = {
 <%- interface.properties.each do |property| -%>
-<%= indent("// #{property.comment.tr("\n", '\n')}\n") if interface.config.comments && property.comment -%>
+<%= indent("/** #{property.comment.split("\n").map(&:strip).join("\n * ")} */\n") if interface.config.comments && property.comment -%>
 <%= indent(property) %>;
 <%- end -%>
 }
