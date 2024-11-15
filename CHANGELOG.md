@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning].
 
 ## Added
 
+- Add support for comments in generated TypeScript interfaces ([@envek])
 - Add TypeScript verbatim module syntax support through `verbatim_module_syntax` config option ([@patvice])
 - Add `typelizer:generate:refresh` command to clean output directory and regenerate all interfaces ([@patvice])
 - Allow disabling Typelizer in Rails development with `DISABLE_TYPELIZER` environment variable to `true` ([@okuramasafumi])
@@ -69,6 +70,7 @@ and this project adheres to [Semantic Versioning].
 - Initial release ([@skryukov])
 
 [@davidrunger]: https://github.com/davidrunger
+[@envek]: https://github.com/envek
 [@okuramasafumi]: https://github.com/okuramasafumi
 [@patvice]: https://github.com/patvice
 [@skryukov]: https://github.com/skryukov
