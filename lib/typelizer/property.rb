@@ -1,7 +1,7 @@
 module Typelizer
   Property = Struct.new(
     :name, :type, :optional, :nullable,
-    :multi, :column_name, :comment,
+    :multi, :column_name, :comment, :enum,
     keyword_init: true
   ) do
     def inspect
@@ -20,6 +20,8 @@ module Typelizer
     private
 
     def type_name
+      return enum.map { |v| v.to_s.inspect }.join(" | ") if enum
+
       type.respond_to?(:name) ? type.name : type || "unknown"
     end
   end
