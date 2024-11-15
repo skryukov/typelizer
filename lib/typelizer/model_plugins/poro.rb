@@ -12,6 +12,10 @@ module Typelizer
       def comment_for(prop)
         nil
       end
+
+      def enum_for(prop)
+        nil
+      end
     end
   end
 end

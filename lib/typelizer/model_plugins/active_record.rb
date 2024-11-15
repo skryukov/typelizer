@@ -2,14 +2,14 @@ module Typelizer
   module ModelPlugins
     class ActiveRecord
       def initialize(model_class:, config:)
-        @columns_hash = model_class&.columns_hash || {}
+        @model_class = model_class
         @config = config
       end
 
-      attr_reader :columns_hash, :config
+      attr_reader :model_class, :config
 
       def infer_types(prop)
-        column = columns_hash[prop.column_name.to_s]
+        column = model_class&.columns_hash&.dig(prop.column_name.to_s)
         return prop unless column
 
         prop.multi = !!column.try(:array)
@@ -27,15 +27,22 @@ module Typelizer
 
         prop.type = @config.type_mapping[column.type]
         prop.comment = comment_for(prop)
+        prop.enum = enum_for(prop)
 
         prop
       end
 
       def comment_for(prop)
-        column = columns_hash[prop.column_name.to_s]
+        column = model_class&.columns_hash&.dig(prop.column_name.to_s)
         return nil unless column
 
         prop.comment = column.comment
+      end
+
+      def enum_for(prop)
+        return unless model_class&.defined_enums&.key?(prop.column_name.to_s)
+
+        prop.enum = model_class.defined_enums[prop.column_name.to_s].keys
       end
     end
   end

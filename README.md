@@ -105,7 +105,7 @@ end
 You can also specify more complex type definitions using a lower-level API:
 
 ```ruby
-typelize attribute_name: ["string", "Date", optional: true, nullable: true, multi: true]
+typelize attribute_name: ["string", "Date", optional: true, nullable: true, multi: true, enum: %w[foo bar], comment: "Attribute description"]
 ```
 
 ### TypeScript Integration
@@ -117,6 +117,7 @@ Typelizer generates TypeScript interfaces in the specified output directory:
 export interface Post {
   id: number;
   title: string;
+  category?: "news" | "article" | "blog" | null;
   body: string;
   published_at: string | null;
   author_name: string;

@@ -90,6 +90,7 @@ module Typelizer
           if dsl_type&.any?
             next Property.new(prop.to_h.merge(dsl_type)).tap do |property|
               property.comment ||= model_plugin.comment_for(property) if config.comments && property.comment != false
+              property.enum ||= model_plugin.enum_for(property) if property.enum != false
             end
           end
         end
