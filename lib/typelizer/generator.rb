@@ -16,12 +16,16 @@ module Typelizer
     def call(force: false)
       return unless Typelizer.enabled?
 
-      read_serializers
-
-      interfaces = target_serializers.map(&:typelizer_interface).reject(&:empty?)
       writer.call(interfaces, force: force)
 
       interfaces
+    end
+
+    def interfaces
+      @interfaces ||= begin
+        read_serializers
+        target_serializers.map(&:typelizer_interface).reject(&:empty?)
+      end
     end
 
     private
