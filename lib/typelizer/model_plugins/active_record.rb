@@ -28,6 +28,7 @@ module Typelizer
         prop.type = @config.type_mapping[column.type]
         prop.comment = comment_for(prop)
         prop.enum = enum_for(prop)
+        prop.type = :string if prop.enum # Ignore underlying column type for enums
 
         prop
       end

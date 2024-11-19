@@ -1,5 +1,5 @@
 class Post < ApplicationRecord
   belongs_to :user
 
-  enum category: [:news, :article, :blog].index_by(&:itself)
+  enum category: { news: 1, article: 2, blog: 3 }
 end
