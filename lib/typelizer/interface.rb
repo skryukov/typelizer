@@ -66,7 +66,7 @@ module Typelizer
         .uniq
         .reject { |type| global_type?(type) }
 
-      (custom_type_imports + serializer_types).uniq
+      (custom_type_imports + serializer_types).uniq - Array(self_type_name)
     end
 
     def inspect
@@ -74,6 +74,10 @@ module Typelizer
     end
 
     private
+
+    def self_type_name
+      serializer.name.match(/(\w+::)?(\w+)(Serializer|Resource)/)[2]
+    end
 
     def extract_typescript_types(type)
       type.split(/[<>\[\],\s|]+/)
