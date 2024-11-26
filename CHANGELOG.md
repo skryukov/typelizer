@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning].
 
 - Do not override `Typelizer.dirs` in the railtie initializer ([@patvice])
 - Do not raise on empty nested serializers ([@skryukov])
+- Attribute options merging in inherited serializers ([@Envek])
 
 ## [0.1.5] - 2024-10-07
 
