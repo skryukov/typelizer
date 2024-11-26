@@ -7,9 +7,13 @@ module Ams
 
     has_many :posts, serializer: PostSerializer
 
+    typelize id: [:string, nullable: true]
+
     class FooSerializer < UserSerializer
       typelize_from ::User
       attributes :created_at
+
+      typelize id: [:number, optional: true]
     end
   end
 end
