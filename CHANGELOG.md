@@ -11,17 +11,18 @@ and this project adheres to [Semantic Versioning].
 
 ## Added
 
-- Add support for enum attributes declared using `ActiveRecord::Enum` or explicitly in serializers ([@envek])
-- Add support for comments in generated TypeScript interfaces ([@envek])
+- Add support for enum attributes declared using `ActiveRecord::Enum` or explicitly in serializers ([@Envek])
+- Add support for comments in generated TypeScript interfaces ([@Envek])
 - Add TypeScript verbatim module syntax support through `verbatim_module_syntax` config option ([@patvice])
 - Add `typelizer:generate:refresh` command to clean output directory and regenerate all interfaces ([@patvice])
 - Allow disabling Typelizer in Rails development with `DISABLE_TYPELIZER` environment variable to `true` ([@okuramasafumi])
+- Allow to get interfaces without generating TypeScript files ([@Envek])
 
 ## Fixes
 
 - Do not override `Typelizer.dirs` in the railtie initializer ([@patvice])
 - Do not raise on empty nested serializers ([@skryukov])
-- Attribute options merging in inherited serializers ([@envek])
+- Attribute options merging in inherited serializers ([@Envek])
 - Allow recursive type definition ([@okuramasafumi])
 
 ## [0.1.5] - 2024-10-07
@@ -75,7 +76,7 @@ and this project adheres to [Semantic Versioning].
 - Initial release ([@skryukov])
 
 [@davidrunger]: https://github.com/davidrunger
-[@envek]: https://github.com/envek
+[@Envek]: https://github.com/Envek
 [@okuramasafumi]: https://github.com/okuramasafumi
 [@patvice]: https://github.com/patvice
 [@skryukov]: https://github.com/skryukov
