@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.2.0] - 2024-11-26
+
 ## Added
 
 - Add support for enum attributes declared using `ActiveRecord::Enum` or explicitly in serializers ([@envek])
@@ -19,7 +21,8 @@ and this project adheres to [Semantic Versioning].
 
 - Do not override `Typelizer.dirs` in the railtie initializer ([@patvice])
 - Do not raise on empty nested serializers ([@skryukov])
-- Attribute options merging in inherited serializers ([@Envek])
+- Attribute options merging in inherited serializers ([@envek])
+- Allow recursive type definition ([@okuramasafumi])
 
 ## [0.1.5] - 2024-10-07
 
@@ -77,7 +80,8 @@ and this project adheres to [Semantic Versioning].
 [@patvice]: https://github.com/patvice
 [@skryukov]: https://github.com/skryukov
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/skryukov/typelizer/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/skryukov/typelizer/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/skryukov/typelizer/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/skryukov/typelizer/compare/v0.1.2...v0.1.3
