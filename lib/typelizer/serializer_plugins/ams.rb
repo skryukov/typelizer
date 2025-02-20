@@ -24,6 +24,7 @@ module Typelizer
             type: type,
             optional: association.options.key?(:if) || association.options.key?(:unless),
             multi: association.respond_to?(:collection?) && association.collection?,
+            deprecated: (association.options[:deprecated] if association.options.key?(:deprecated)),
             column_name: association.name.to_s
           )
         end

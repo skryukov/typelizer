@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- Support for deprecated attributes ([@Envek])
+
+  They will be marked as deprecated using JSDoc [`@deprecated` tag](https://jsdoc.app/tags-deprecated) in TypeScript interface comments.
+
+  In ActiveModel::Serializer attributes `deprecated` option is recognized.
+
+  For other serializers, you can use `deprecated` option of `typelize` method.
+
 ## [0.2.0] - 2024-11-26
 
 ## Added
