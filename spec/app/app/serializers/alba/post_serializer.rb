@@ -16,5 +16,8 @@ module Alba
 
     attributes :next_post
     typelize next_post: "Post"
+
+    attribute :name, &:title
+    typelize name: [:string, comment: "This is name", deprecated: true]
   end
 end

@@ -8,5 +8,8 @@ module OjSerializers
     attributes :id, :title, :category, :body, :published_at
 
     has_one :user, serializer: UserSerializer
+
+    attribute :name, &:title
+    typelize name: [:string, deprecated: "Use 'title' instead."]
   end
 end

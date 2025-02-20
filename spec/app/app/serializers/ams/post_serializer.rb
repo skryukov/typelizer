@@ -8,5 +8,11 @@ module Ams
     attributes :id, :title, :category, :body, :published_at
 
     has_one :user, serializer: UserSerializer
+
+    typelize :string
+    attribute :name, deprecated: "Use 'title' instead."
+    def name
+      title
+    end
   end
 end

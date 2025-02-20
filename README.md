@@ -105,7 +105,7 @@ end
 You can also specify more complex type definitions using a lower-level API:
 
 ```ruby
-typelize attribute_name: ["string", "Date", optional: true, nullable: true, multi: true, enum: %w[foo bar], comment: "Attribute description"]
+typelize attribute_name: ["string", "Date", optional: true, nullable: true, multi: true, enum: %w[foo bar], comment: "Attribute description", deprecated: "Use `another_attribute` instead"]
 ```
 
 ### TypeScript Integration
