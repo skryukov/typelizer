@@ -32,7 +32,7 @@ module Typelizer
     end
 
     def write_interface(interface)
-      write_file("#{interface.filename}.ts", interface.inspect) do
+      write_file("#{interface.filename}.ts", interface.fingerprint) do
         render_template("interface.ts.erb", interface: interface)
       end
     end

@@ -17,6 +17,11 @@ module Typelizer
       "#{name}#{"?" if optional}: #{type_str}"
     end
 
+    def fingerprint
+      props = to_h.merge(type: type_name).reject { |_, v| v.nil? }.map { |k, v| "#{k}=#{v.inspect}" }.join(" ")
+      "<#{self.class.name} #{props}>"
+    end
+
     private
 
     def type_name

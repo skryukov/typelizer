@@ -73,6 +73,10 @@ module Typelizer
       "<#{self.class.name} #{name} properties=#{properties.inspect}>"
     end
 
+    def fingerprint
+      "<#{self.class.name} #{name} properties=[#{properties.map(&:fingerprint).join(", ")}]>"
+    end
+
     private
 
     def self_type_name
