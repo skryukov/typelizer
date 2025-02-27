@@ -13,13 +13,7 @@ module Typelizer
 
       def properties
         serializer._attributes.map do |name, attr|
-          key = if has_transform_key?(serializer)
-            fetch_key(serializer, name)
-          else
-            name
-          end
-
-          build_property(key, attr)
+          build_property(name, attr)
         end
       end
 
@@ -62,6 +56,11 @@ module Typelizer
       private
 
       def build_property(name, attr, **options)
+        column_name = name
+        if has_transform_key?(serializer)
+          name = fetch_key(serializer, name)
+        end
+
         case attr
         when Symbol
           Property.new(
@@ -70,7 +69,7 @@ module Typelizer
             optional: false,
             nullable: false,
             multi: false,
-            column_name: name,
+            column_name: column_name,
             **options
           )
         when Proc
@@ -91,7 +90,7 @@ module Typelizer
             optional: false,
             nullable: false,
             multi: false, # we override this in typelize_method_transform
-            column_name: name,
+            column_name: column_name,
             **options
           )
         when ::Alba::TypedAttribute
@@ -102,7 +101,7 @@ module Typelizer
             # not sure if that's a good default tbh
             nullable: !alba_type.instance_variable_get(:@auto_convert),
             multi: false,
-            column_name: name,
+            column_name: column_name,
             **ts_mapper[alba_type.name.to_s],
             **options
           )

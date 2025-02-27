@@ -9,13 +9,19 @@ and this project adheres to [Semantic Versioning].
 
 ### Added
 
-- Support for deprecated attributes ([@Envek])
+- Support Alba transform keys (see [Alba docs](https://github.com/okuramasafumi/alba?tab=readme-ov-file#key-transformation)). ([@patvice])
+
+- Support for deprecated attributes. ([@Envek])
 
   They will be marked as deprecated using JSDoc [`@deprecated` tag](https://jsdoc.app/tags-deprecated) in TypeScript interface comments.
 
   In ActiveModel::Serializer attributes `deprecated` option is recognized.
 
   For other serializers, you can use `deprecated` option of `typelize` method.
+
+### Fixed
+
+- Ignore `nil` values on fingerprint calculation. ([@Envek])
 
 ## [0.2.0] - 2024-11-26
 
@@ -28,7 +34,7 @@ and this project adheres to [Semantic Versioning].
 - Allow disabling Typelizer in Rails development with `DISABLE_TYPELIZER` environment variable to `true` ([@okuramasafumi])
 - Allow to get interfaces without generating TypeScript files ([@Envek])
 
-## Fixes
+## Fixed
 
 - Do not override `Typelizer.dirs` in the railtie initializer ([@patvice])
 - Do not raise on empty nested serializers ([@skryukov])
