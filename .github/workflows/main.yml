@@ -19,7 +19,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.3"
+          ruby-version: "3.4"
           bundler: latest
           bundler-cache: true
       - name: Run StandardRB
@@ -34,6 +34,7 @@ jobs:
     strategy:
       matrix:
         ruby:
+          - "3.4"
           - "3.3"
           - "3.2"
           - "3.1"
