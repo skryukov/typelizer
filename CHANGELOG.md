@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning].
 
 ### Added
 
-- Support Alba transform keys (see [Alba docs](https://github.com/okuramasafumi/alba?tab=readme-ov-file#key-transformation)). ([@patvice])
+- Support transform keys. ([@patvice, @skryukov])
 
 - Support for deprecated attributes. ([@Envek])
 

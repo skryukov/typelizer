@@ -11,7 +11,11 @@ module Typelizer
       end
 
       def properties
-        serializer._attributes
+        transform_keys = serializer.try(:_transform_keys)
+        attributes = serializer._attributes
+        attributes = attributes.transform_keys(&transform_keys) if transform_keys
+
+        attributes
           .flat_map do |key, options|
             if options[:association] == :flat
               Interface.new(serializer: options.fetch(:serializer)).properties
