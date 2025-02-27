@@ -29,10 +29,6 @@ module Typelizer
       end
 
       def typelize_method_transform(method:, name:, binding:, type:, attrs:)
-        if type.nil? || type.empty?
-          super
-        end
-
         if method == :method_added
           name = binding.local_variable_get(:method_name)
         end
