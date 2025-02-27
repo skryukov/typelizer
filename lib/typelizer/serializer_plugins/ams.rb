@@ -21,6 +21,7 @@ module Typelizer
           type = association.options[:serializer] ? Interface.new(serializer: association.options[:serializer]) : nil
           Property.new(
             name: key.to_s,
+            presentation_name: key.to_s,
             type: type,
             optional: association.options.key?(:if) || association.options.key?(:unless),
             multi: association.respond_to?(:collection?) && association.collection?,

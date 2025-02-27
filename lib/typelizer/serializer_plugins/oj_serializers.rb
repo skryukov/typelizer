@@ -19,6 +19,7 @@ module Typelizer
               type = options[:serializer] ? Interface.new(serializer: options[:serializer]) : options[:type]
               Property.new(
                 name: key,
+                presentation_name: key,
                 type: type,
                 optional: options[:optional] || options.key?(:if),
                 nullable: options[:nullable],
