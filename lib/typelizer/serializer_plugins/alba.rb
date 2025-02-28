@@ -22,13 +22,20 @@ module Typelizer
           :association, :one, :has_one,
           :many, :has_many,
           :attributes, :attribute,
+          :method_added,
           :nested_attribute, :nested,
           :meta
         ]
       end
 
       def typelize_method_transform(method:, name:, binding:, type:, attrs:)
-        return {name => [type, attrs.merge(multi: true)]} if [:many, :has_many].include?(method)
+        if method == :method_added && binding.local_variable_defined?(:method_name)
+          name = binding.local_variable_get(:method_name)
+        end
+
+        if [:many, :has_many].include?(method)
+          return {name => [type, attrs.merge(multi: true)]}
+        end
 
         super
       end
@@ -57,6 +64,7 @@ module Typelizer
 
       def build_property(name, attr, **options)
         column_name = name
+
         if has_transform_key?(serializer)
           name = fetch_key(serializer, name)
         end
@@ -79,7 +87,7 @@ module Typelizer
             optional: false,
             nullable: false,
             multi: false,
-            column_name: nil,
+            column_name: column_name,
             **options
           )
         when ::Alba::Association
@@ -112,7 +120,7 @@ module Typelizer
             optional: false,
             nullable: false,
             multi: false,
-            column_name: nil,
+            column_name: column_name,
             **options
           )
         when ::Alba::ConditionalAttribute
