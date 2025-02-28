@@ -23,7 +23,6 @@ module Typelizer
           name = adapter.transform_key_casing!(key.to_s, association.options)
           Property.new(
             name: name,
-            presentation_name: name,
             type: type,
             optional: association.options.key?(:if) || association.options.key?(:unless),
             multi: association.respond_to?(:collection?) && association.collection?,

@@ -1,6 +1,6 @@
 module Typelizer
   Property = Struct.new(
-    :name, :presentation_name, :type, :optional, :nullable,
+    :name, :type, :optional, :nullable,
     :multi, :column_name, :comment, :enum, :deprecated,
     keyword_init: true
   ) do
@@ -14,7 +14,7 @@ module Typelizer
       type_str = "Array<#{type_str}>" if multi
       type_str = "#{type_str} | null" if nullable
 
-      "#{presentation_name}#{"?" if optional}: #{type_str}"
+      "#{name}#{"?" if optional}: #{type_str}"
     end
 
     def fingerprint
