@@ -9,7 +9,24 @@ and this project adheres to [Semantic Versioning].
 
 ### Added
 
-- Support transform keys. ([@patvice, @skryukov])
+- Support transform keys. ([@patvice], [@skryukov])
+
+  Typelizer now respects `transform_keys`/`key_transform` configurations for all plugins.
+
+- Support typing method def in Alba. ([@patvice])
+
+  The `typelize` helper now can be used before a method definition:
+
+  ```ruby
+  class UserResource < ApplicationResource
+    attributes :id, :name, :email, :chars_in_name
+
+    typelize :number
+    def chars_in_name(obj)
+      obj.name.chars.count
+    end
+  end
+  ```
 
 - Support for deprecated attributes. ([@Envek])
 
