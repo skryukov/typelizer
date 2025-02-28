@@ -24,5 +24,3 @@ gem "sqlite3", "~> 1.4"
 gem "puma", ">= 5.0"
 gem "tzinfo-data", platforms: %i[windows jruby]
 gem "rspec-rails"
-
-gem "debug"
