@@ -63,18 +63,16 @@ module Typelizer
       private
 
       def build_property(name, attr, **options)
-        presentation_name = name
         column_name = name
 
         if has_transform_key?(serializer)
-          presentation_name = fetch_key(serializer, name)
+          name = fetch_key(serializer, name)
         end
 
         case attr
         when Symbol
           Property.new(
             name: name,
-            presentation_name: presentation_name,
             type: nil,
             optional: false,
             nullable: false,
@@ -85,19 +83,17 @@ module Typelizer
         when Proc
           Property.new(
             name: name,
-            presentation_name: presentation_name,
             type: nil,
             optional: false,
             nullable: false,
             multi: false,
-            column_name: nil,
+            column_name: column_name,
             **options
           )
         when ::Alba::Association
           resource = attr.instance_variable_get(:@resource)
           Property.new(
             name: name,
-            presentation_name: presentation_name,
             type: Interface.new(serializer: resource),
             optional: false,
             nullable: false,
@@ -109,7 +105,6 @@ module Typelizer
           alba_type = attr.instance_variable_get(:@type)
           Property.new(
             name: name,
-            presentation_name: presentation_name,
             optional: false,
             # not sure if that's a good default tbh
             nullable: !alba_type.instance_variable_get(:@auto_convert),
@@ -121,12 +116,11 @@ module Typelizer
         when ::Alba::NestedAttribute
           Property.new(
             name: name,
-            presentation_name: presentation_name,
             type: nil,
             optional: false,
             nullable: false,
             multi: false,
-            column_name: nil,
+            column_name: column_name,
             **options
           )
         when ::Alba::ConditionalAttribute
