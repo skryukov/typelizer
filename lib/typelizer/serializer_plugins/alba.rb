@@ -29,7 +29,7 @@ module Typelizer
       end
 
       def typelize_method_transform(method:, name:, binding:, type:, attrs:)
-        if method == :method_added
+        if method == :method_added && binding.local_variable_defined?(:method_name)
           name = binding.local_variable_get(:method_name)
         end
 
