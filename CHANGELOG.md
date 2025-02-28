@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-02-28
+
 ### Added
 
 - Support transform keys. ([@patvice], [@skryukov])
@@ -114,7 +116,8 @@ and this project adheres to [Semantic Versioning].
 [@patvice]: https://github.com/patvice
 [@skryukov]: https://github.com/skryukov
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/skryukov/typelizer/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/skryukov/typelizer/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/skryukov/typelizer/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/skryukov/typelizer/compare/v0.1.3...v0.1.4
