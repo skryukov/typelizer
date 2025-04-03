@@ -9,6 +9,7 @@ gem "tzinfo-data", platforms: %i[windows jruby]
 gem "oj_serializers"
 gem "alba"
 gem "active_model_serializers"
+gem "panko_serializer"
 
 gem "typelizer", path: "../.."
 
