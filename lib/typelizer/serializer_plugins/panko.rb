@@ -8,7 +8,6 @@ module Typelizer
       end
 
       def properties
-        puts serializer
         attributes = serializer.new.instance_variable_get(:@descriptor).attributes
         associations = serializer.new.instance_variable_get(:@descriptor).has_many_associations
 
