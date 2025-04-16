@@ -6,7 +6,7 @@ module Panko
       typelize username: [:string, nullable: true, comment: "Author login handle"]
       attributes :id, :username, :avatar, :typed_avatar
 
-      has_many :posts, serializer: PostSerializer, if: ->(u) { u.posts.any? }
+      has_many :posts, serializer: PostSerializer
 
       def avatar
         "https://example.com/avatar.png" if active?

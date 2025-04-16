@@ -8,10 +8,11 @@ module Typelizer
       end
 
       def properties
-        attributes = serializer.new.instance_variable_get(:@descriptor).attributes
-        methods_attributes = serializer.new.instance_variable_get(:@descriptor).method_fields
-        has_many_associations = serializer.new.instance_variable_get(:@descriptor).has_many_associations
-        has_one_associations = serializer.new.instance_variable_get(:@descriptor).has_one_associations
+        descriptor = serializer.new.instance_variable_get(:@descriptor)
+        attributes = descriptor.attributes
+        methods_attributes = descriptor.method_fields
+        has_many_associations = descriptor.has_many_associations
+        has_one_associations = descriptor.has_one_associations
 
         attributes.map do |att|
           attribute_property(att)
@@ -29,7 +30,6 @@ module Typelizer
       def attribute_property(att)
         Property.new(
           name: att.alias_name || att.name,
-          type: infer_type_from_model(att.name), # options[:type] ||
           optional: false,
           nullable: false,
           multi: false,
@@ -37,10 +37,10 @@ module Typelizer
         )
       end
 
-      def association_property(assoc, multi = false)
+      def association_property(assoc, multi: false)
         key = assoc.name_str
         serializer = assoc.descriptor.type
-        type = serializer ? Interface.new(serializer: serializer) : infer_type_from_association(key)
+        type = serializer ? Interface.new(serializer: serializer) : nil
         Property.new(
           name: key,
           type: type,
@@ -49,19 +49,6 @@ module Typelizer
           multi: multi,
           column_name: key
         )
-      end
-
-      def infer_type_from_model(attribute)
-        model_class = serializer.instance_variable_get(:@model_class)
-        return "unknown" unless model_class
-
-        column = model_class.columns_hash[attribute.to_s]
-        column ? column.type : "unknown"
-      end
-
-      def infer_type_from_association(attribute)
-        assoc = serializer.instance_variable_get(:@model_class).reflect_on_association(attribute)
-        assoc ? assoc.klass.name : "unknown"
       end
     end
   end
