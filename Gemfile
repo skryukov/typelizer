@@ -18,6 +18,8 @@ gem "active_model_serializers"
 
 gem "alba"
 
+gem "panko_serializer"
+
 # Rails app
 gem "rails", "~> 7.1.3"
 gem "sqlite3", "~> 1.4"

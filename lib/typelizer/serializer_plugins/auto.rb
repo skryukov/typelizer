@@ -13,6 +13,8 @@ module Typelizer
             Alba
           elsif defined?(ActiveModel::Serializer) && serializer.ancestors.include?(ActiveModel::Serializer)
             AMS
+          elsif defined?(::Panko::Serializer) && serializer.ancestors.include?(::Panko::Serializer)
+            Panko
           else
             raise "Can't guess serializer plugin for #{serializer}. " \
                     "Please specify it with `config.serializer_plugin`."
