@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning].
 
 ### Added 
 
-- Support for `panko_serializer` gem ([@skryukov, @PedroAugustoRamalhoDuarte])
+- Support for `panko_serializer` gem ([@PedroAugustoRamalhoDuarte], [@skryukov])
 
 ## [0.3.0] - 2025-02-28
 
