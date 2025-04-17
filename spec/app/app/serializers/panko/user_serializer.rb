@@ -6,6 +6,7 @@ module Panko
     has_one :invitor, serializer: UserSerializer
 
     has_many :posts, serializer: PostSerializer
+    has_one :post, resource: PostSerializer, name: :latest_post
 
     typelize id: [:string, nullable: true]
 
