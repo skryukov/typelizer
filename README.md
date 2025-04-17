@@ -50,6 +50,10 @@ Include the Typelizer DSL in your serializers:
 class ApplicationResource
   include Alba::Resource
   include Typelizer::DSL
+
+  # For Alba, we recommend using the `helper` method instead of `include`.
+  # See the documentation: https://github.com/okuramasafumi/alba/blob/main/README.md#helper
+  # helper Typelizer::DSL
 end
 
 class PostResource < ApplicationResource
