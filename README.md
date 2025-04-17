@@ -29,7 +29,7 @@ Typelizer is a Ruby gem that automatically generates TypeScript interfaces from 
 ## Features
 
 - Automatic TypeScript interface generation
-- Support for multiple serializer libraries (`Alba`, `ActiveModel::Serializer`, `Oj::Serializer`)
+- Support for multiple serializer libraries (`Alba`, `ActiveModel::Serializer`, `Oj::Serializer`, `Panko::Serializer`)
 - File watching and automatic regeneration in development
 
 ## Installation
