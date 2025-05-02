@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning].
       admin_level: number;
     }
   ```
+  
+### Fixed
+
+- Alba: always use strings for keys in properties. ([@skryukov])
+  This change will fire update of all hashes for Alba serializers, but it's necessary to support inheritance strategy.
 
 ## [0.3.0] - 2025-02-28
 

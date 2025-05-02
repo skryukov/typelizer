@@ -13,7 +13,7 @@ module Typelizer
 
       def properties
         serializer._attributes.map do |name, attr|
-          build_property(name, attr)
+          build_property(name.is_a?(Symbol) ? name.name : name, attr)
         end
       end
 
