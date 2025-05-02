@@ -257,7 +257,14 @@ Typelizer.configure do |config|
   config.null_strategy = :nullable
 
   # Strategy for handling serializer inheritance (:none, :inheritance)
+  # :none - lists all attributes of the serializer in the type
+  # :inheritance - extends the type from the parent serializer
   config.inheritance_strategy = :none
+
+  # Strategy for handling `has_one` and `belongs_to` associations nullability (:database, :active_record)
+  # :database - uses the database column nullability
+  # :active_record - uses the `required` / `optional` association options
+  config.associations_strategy = :database
 
   # Directory where TypeScript interfaces will be generated
   config.output_dir = Rails.root.join("app/javascript/types/serializers")

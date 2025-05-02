@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning].
 ### Added 
 
 - Support for `panko_serializer` gem ([@PedroAugustoRamalhoDuarte], [@skryukov])
+- Mark `has_one` and `belongs_to` association as nullable. ([@skryukov])
+
+  By default, `has_one` associations are marked as nullable in TypeScript interfaces.
+  `belongs_to` associations are marked as nullable if the database column is nullable.
+  Use the new `config.associations_strategy = :active_record` configuration option to mark associations as nullable based on the `required`/`optional` options.  
+  You can also use the type hint `typelize latest_post: {nullable: false}` in the serializer to override the defaults.
+
 - Support inherited typelization. ([@skryukov])
 
   Set `config.inheritance_strategy = :inheritance` to make Typelizer respect the inheritance hierarchy of serializers:
