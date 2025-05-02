@@ -9,6 +9,30 @@ module Typelizer
       attr_reader :model_class, :config
 
       def infer_types(prop)
+        if (association = model_class&.reflect_on_association(prop.column_name.to_sym))
+          case association.macro
+          when :belongs_to
+            foreign_key = association.foreign_key
+            column = model_class&.columns_hash&.dig(foreign_key.to_s)
+            if config.associations_strategy == :database
+              prop.nullable = column.null if column
+            elsif config.associations_strategy == :active_record
+              prop.nullable = !association.options[:required] || association.options[:optional]
+            else
+              raise "Unknown associations strategy: #{config.associations_strategy}"
+            end
+          when :has_one
+            if config.associations_strategy == :database
+              prop.nullable = true
+            elsif config.associations_strategy == :active_record
+              prop.nullable = !association.options[:required]
+            else
+              raise "Unknown associations strategy: #{config.associations_strategy}"
+            end
+          end
+          return prop
+        end
+
         column = model_class&.columns_hash&.dig(prop.column_name.to_s)
         return prop unless column
 

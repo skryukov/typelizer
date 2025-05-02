@@ -8,6 +8,9 @@ module Alba
 
       has_many :posts, resource: PostSerializer, if: ->(u) { u.posts.any? }
 
+      typelize invitor: {nullable: false}
+      has_one :invitor, resource: UserSerializer
+
       attribute :avatar do
         "https://example.com/avatar.png" if active?
       end
