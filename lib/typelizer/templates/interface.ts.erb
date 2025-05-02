@@ -1,34 +1,28 @@
-<%- if interface.imports.any? -%>
+<% if interface.imports.any? -%>
 import type {<%= interface.imports.join(", ") %>} from '<%= interface.config.types_import_path %>'
-<%- end -%>
+<% end -%>
 
-<%- if interface.root_key -%>
-type <%= interface.name %>Data = {
-<%- interface.properties.each do |property| -%>
+type <%= interface.name %><%= "Data" if interface.root_key %> = <%=
+render("inheritance.ts.erb", interface: interface).strip if interface.parent_interface
+-%>
+<% unless interface.parent_interface && interface.properties_to_print.empty? -%>
+<%= " & " if interface.parent_interface %>{
+<% interface.properties_to_print.each do |property| -%>
+<%= render("comment.ts.erb", interface: interface, property: property) -%>
 <%= indent(property) %>;
-<%- end -%>
+<% end -%>
 }
-
+<% end %><% if interface.root_key %>
 type <%= interface.name %> = {
-  <%= interface.root_key %>: <%= interface.name %>Data;
-<%- interface.meta_fields&.each do |property| -%>
+<%= indent(interface.root_key) %>: <%= interface.name %>Data;
+<% interface.meta_fields&.each do |property| -%>
 <%= indent(property) %>;
-<%- end -%>
+<% end -%>
 }
-<%- else -%>
-type <%= interface.name %> = {
-<%- interface.properties.each do |property| -%>
-<%- comment = "" -%>
-<%- comment += property.comment.to_s if interface.config.comments -%>
-<%- comment += "\n@deprecated #{property.deprecated.is_a?(String) ? property.deprecated : ''}" if property.deprecated -%>
-<%= indent("/** #{comment.strip.split("\n").map(&:strip).join("\n * ")} */\n") unless comment.empty? -%>
-<%= indent(property) %>;
-<%- end -%>
-}
-<%- end -%>
+<% end -%>
 
-<%-if interface.config.verbatim_module_syntax -%>
+<% if interface.config.verbatim_module_syntax -%>
 export type { <%= interface.name %> };
-<%- else -%>
+<% else -%>
 export default <%= interface.name %>;
-<%- end -%>
+<% end -%>

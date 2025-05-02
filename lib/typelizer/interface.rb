@@ -17,7 +17,7 @@ module Typelizer
 
     def name
       if inline?
-        Renderer.new("inline_type.ts.erb").call(properties: properties).strip
+        Renderer.call("inline_type.ts.erb", properties: properties).strip
       else
         config.serializer_name_mapper.call(serializer).tr_s(":", "")
       end
@@ -53,20 +53,46 @@ module Typelizer
       end
     end
 
+    def overwritten_properties
+      return [] unless parent_interface
+
+      @overwritten_properties ||= parent_interface.properties - properties
+    end
+
+    def own_properties
+      @own_properties ||= properties - (parent_interface&.properties || [])
+    end
+
+    def properties_to_print
+      parent_interface ? own_properties : properties
+    end
+
+    def parent_interface
+      return if config.inheritance_strategy == :none
+      return unless serializer.superclass.respond_to?(:typelizer_interface)
+
+      interface = serializer.superclass.typelizer_interface
+      return if interface.empty?
+
+      interface
+    end
+
     def imports
-      association_serializers, attribute_types = properties.filter_map(&:type)
-        .uniq
-        .partition { |type| type.is_a?(Interface) }
+      @imports ||= begin
+        association_serializers, attribute_types = properties_to_print.filter_map(&:type)
+          .uniq
+          .partition { |type| type.is_a?(Interface) }
 
-      serializer_types = association_serializers
-        .filter_map { |interface| interface.name if interface.name != name && !interface.inline? }
+        serializer_types = association_serializers
+          .filter_map { |interface| interface.name if interface.name != name && !interface.inline? }
 
-      custom_type_imports = attribute_types
-        .flat_map { |type| extract_typescript_types(type.to_s) }
-        .uniq
-        .reject { |type| global_type?(type) }
+        custom_type_imports = attribute_types
+          .flat_map { |type| extract_typescript_types(type.to_s) }
+          .uniq
+          .reject { |type| global_type?(type) }
 
-      (custom_type_imports + serializer_types).uniq - Array(self_type_name)
+        (custom_type_imports + serializer_types + Array(parent_interface&.name)).uniq - Array(self_type_name)
+      end
     end
 
     def inspect
@@ -74,7 +100,7 @@ module Typelizer
     end
 
     def fingerprint
-      "<#{self.class.name} #{name} properties=[#{properties.map(&:fingerprint).join(", ")}]>"
+      "<#{self.class.name} #{name} properties=[#{properties_to_print.map(&:fingerprint).join(", ")}]>"
     end
 
     private

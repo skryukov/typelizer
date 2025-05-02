@@ -1,0 +1,8 @@
+<%
+comment = ""
+comment += property.comment.to_s if interface.config.comments
+if property.deprecated
+  comment += "\n@deprecated #{property.deprecated.is_a?(String) ? property.deprecated : ''}"
+end
+-%>
+<%= indent("/** #{comment.strip.split("\n").map(&:strip).join("\n * ")} */\n") unless comment.empty? -%>

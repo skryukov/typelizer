@@ -9,6 +9,12 @@ module Typelizer
       "<#{self.class.name} #{props}>"
     end
 
+    def eql?(other)
+      return false unless other.is_a?(self.class)
+
+      fingerprint == other.fingerprint
+    end
+
     def to_s
       type_str = type_name
       type_str = "Array<#{type_str}>" if multi

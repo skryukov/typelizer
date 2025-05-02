@@ -1,0 +1,1 @@
+<%= interface.overwritten_properties.any? ? "Omit<" : "" %><%= interface.parent_interface.name %><%= "['#{interface.parent_interface.root_key}']" if interface.parent_interface.root_key %><%= interface.overwritten_properties.any? ? ", " + interface.overwritten_properties.map { |pr| "'#{pr.name}'" }.join(' | ') + ">" : ""%>
