@@ -25,6 +25,7 @@ module Typelizer
     :types_import_path,
     :types_global,
     :verbatim_module_syntax,
+    :inheritance_strategy,
     :comments,
     keyword_init: true
   ) do
@@ -47,6 +48,7 @@ module Typelizer
 
           type_mapping: TYPE_MAPPING,
           null_strategy: :nullable,
+          inheritance_strategy: :none,
           comments: false,
 
           output_dir: js_root.join("types/serializers"),

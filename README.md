@@ -256,6 +256,9 @@ Typelizer.configure do |config|
   # Strategy for handling null values (:nullable, :optional, or :nullable_and_optional)
   config.null_strategy = :nullable
 
+  # Strategy for handling serializer inheritance (:none, :inheritance)
+  config.inheritance_strategy = :none
+
   # Directory where TypeScript interfaces will be generated
   config.output_dir = Rails.root.join("app/javascript/types/serializers")
 

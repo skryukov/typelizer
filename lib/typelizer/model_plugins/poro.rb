@@ -1,7 +1,7 @@
 module Typelizer
   module ModelPlugins
     class Poro
-      # We don't care about intialization
+      # We don't care about initialization
       def initialize(...)
       end
 

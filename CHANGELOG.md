@@ -10,6 +10,24 @@ and this project adheres to [Semantic Versioning].
 ### Added 
 
 - Support for `panko_serializer` gem ([@PedroAugustoRamalhoDuarte], [@skryukov])
+- Support inherited typelization. ([@skryukov])
+
+  Set `config.inheritance_strategy = :inheritance` to make Typelizer respect the inheritance hierarchy of serializers:
+
+  ```ruby
+    class AdminSerializer < UserSerializer
+      attributes :admin_level
+    end
+  ```
+  
+  ```typescript
+    // app/javascript/types/serializers/Admin.ts
+    import { User } from "@/types";
+    
+    export type Admin = User & {
+      admin_level: number;
+    }
+  ```
 
 ## [0.3.0] - 2025-02-28
 
