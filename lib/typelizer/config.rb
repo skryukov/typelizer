@@ -28,6 +28,7 @@ module Typelizer
     :inheritance_strategy,
     :associations_strategy,
     :comments,
+    :prefer_double_quotes,
     keyword_init: true
   ) do
     class << self
@@ -52,6 +53,7 @@ module Typelizer
           inheritance_strategy: :none,
           associations_strategy: :database,
           comments: false,
+          prefer_double_quotes: false,
 
           output_dir: js_root.join("types/serializers"),
 

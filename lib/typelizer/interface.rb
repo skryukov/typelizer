@@ -103,6 +103,10 @@ module Typelizer
       "<#{self.class.name} #{name} properties=[#{properties_to_print.map(&:fingerprint).join(", ")}]>"
     end
 
+    def quote(str)
+      config.prefer_double_quotes ? "\"#{str}\"" : "'#{str}'"
+    end
+
     private
 
     def self_type_name

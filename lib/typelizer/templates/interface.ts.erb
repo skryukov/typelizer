@@ -1,5 +1,5 @@
 <% if interface.imports.any? -%>
-import type {<%= interface.imports.join(", ") %>} from '<%= interface.config.types_import_path %>'
+import type {<%= interface.imports.join(", ") %>} from <%= interface.quote(interface.config.types_import_path) %>
 <% end -%>
 
 type <%= interface.name %><%= "Data" if interface.root_key %> = <%=
