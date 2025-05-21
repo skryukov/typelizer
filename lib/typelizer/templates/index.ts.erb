@@ -1,7 +1,7 @@
 <%- interfaces.each do |interface| -%>
 <%- if interface.config.verbatim_module_syntax -%>
-export type { <%= interface.name %> } from './<%= interface.filename %>'
+export type { <%= interface.name %> } from <%= interface.quote('./' + interface.filename) %>
 <%- else -%>
-export type { default as <%= interface.name %> } from './<%= interface.filename %>'
+export type { default as <%= interface.name %> } from <%= interface.quote('./' + interface.filename) %>
 <%- end -%>
 <%- end -%>
