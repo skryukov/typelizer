@@ -17,7 +17,7 @@ module Typelizer
             if config.associations_strategy == :database
               prop.nullable = column.null if column
             elsif config.associations_strategy == :active_record
-              prop.nullable = !association.options[:required] || association.options[:optional]
+              prop.nullable = association.options[:optional] === true || association.options[:required] === false
             else
               raise "Unknown associations strategy: #{config.associations_strategy}"
             end
