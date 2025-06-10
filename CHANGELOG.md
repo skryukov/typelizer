@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog],
 and this project adheres to [Semantic Versioning].
 
+## [Unreleased]
+
+### Fixed
+
+-  Fix nullable detection for `belongs_to` associations with `:active_record` strategy. ([@NOX73])
+
 ## [0.4.0] - 2025-05-03
 
 ### Added 
@@ -35,7 +41,7 @@ and this project adheres to [Semantic Versioning].
       admin_level: number;
     }
   ```
-  
+
 ### Fixed
 
 - Alba: always use strings for keys in properties. ([@skryukov])
@@ -146,6 +152,7 @@ and this project adheres to [Semantic Versioning].
 
 [@davidrunger]: https://github.com/davidrunger
 [@Envek]: https://github.com/Envek
+[@NOX73]: https://github.com/NOX73
 [@okuramasafumi]: https://github.com/okuramasafumi
 [@patvice]: https://github.com/patvice
 [@skryukov]: https://github.com/skryukov
