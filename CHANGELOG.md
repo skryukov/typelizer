@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- Add option to use double quotes in generated TypeScript interfaces through `prefer_double_quotes` config option ([@kristinemcbride])
+
 ### Fixed
 
--  Fix nullable detection for `belongs_to` associations with `:active_record` strategy. ([@NOX73])
+- Fix nullable detection for `belongs_to` associations with `:active_record` strategy. ([@NOX73])
+- Alba: fix unknown type for conditional attribute with `transform_keys`. ([@nkriege])
 
 ## [0.4.0] - 2025-05-03
 
@@ -152,6 +157,8 @@ and this project adheres to [Semantic Versioning].
 
 [@davidrunger]: https://github.com/davidrunger
 [@Envek]: https://github.com/Envek
+[@kristinemcbride]: https://github.com/kristinemcbride
+[@nkriege]: https://github.com/nkriege
 [@NOX73]: https://github.com/NOX73
 [@okuramasafumi]: https://github.com/okuramasafumi
 [@patvice]: https://github.com/patvice
