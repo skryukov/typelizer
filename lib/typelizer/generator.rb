@@ -16,16 +16,14 @@ module Typelizer
     def call(force: false)
       return unless Typelizer.enabled?
 
-      writer.call(interfaces, force: force)
-
-      interfaces
+      found_interfaces = interfaces
+      writer.call(found_interfaces, force: force)
+      found_interfaces
     end
 
     def interfaces
-      @interfaces ||= begin
-        read_serializers
-        target_serializers.map(&:typelizer_interface).reject(&:empty?)
-      end
+      read_serializers
+      target_serializers.map(&:typelizer_interface).reject(&:empty?)
     end
 
     private
@@ -44,14 +42,10 @@ module Typelizer
 
     def read_serializers(files = nil)
       files ||= Typelizer.dirs.flat_map { |dir| Dir["#{dir}/**/*.rb"] }
-
       files.each do |file|
         trace = TracePoint.new(:call) do |tp|
-          begin
-            next unless tp.self.methods.include?(:typelizer_interface)
-          rescue WeakRef::RefError
-            next
-          end
+          next unless tp.self.is_a?(Class) && tp.self.respond_to?(:typelizer_interface) && tp.self.typelizer_interface.is_a?(Interface)
+
           serializer_plugin = tp.self.typelizer_interface.serializer_plugin
 
           if tp.callee_id.in?(serializer_plugin.methods_to_typelize)

@@ -24,8 +24,10 @@ module Typelizer
     end
 
     def fingerprint
-      props = to_h.merge(type: type_name).reject { |_, v| v.nil? }.map { |k, v| "#{k}=#{v.inspect}" }.join(" ")
-      "<#{self.class.name} #{props}>"
+      props = to_h
+      props[:type] = type_name
+      props = props.filter_map { |k, v| "#{k}=#{v.inspect}" unless v.nil? }
+      "<#{self.class.name} #{props.join(" ")}>"
     end
 
     private
