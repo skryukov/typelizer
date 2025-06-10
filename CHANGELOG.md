@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning].
 
 ### Fixed
 
+- Fix types not being generated on the fly since [0.2.0]. ([@skryukov])
+- Improve memory consumption (~100x less memory) & speed of types generation (~5x faster). ([@skryukov])
 - Fix nullable detection for `belongs_to` associations with `:active_record` strategy. ([@NOX73])
 - Alba: fix unknown type for conditional attribute with `transform_keys`. ([@nkriege])
 
