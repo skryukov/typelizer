@@ -281,6 +281,9 @@ Typelizer.configure do |config|
   # Will change imports and exports of types from default to support this syntax option
   config.verbatim_module_syntax = false
 
+  # Use double quotes in generated TypeScript interfaces (default: false)
+  config.prefer_double_quotes = false
+
   # Support comments in generated TypeScript interfaces (default: false)
   # Will add comments to the generated interfaces
   config.comments = false
