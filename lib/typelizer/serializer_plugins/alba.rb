@@ -124,7 +124,7 @@ module Typelizer
             **options
           )
         when ::Alba::ConditionalAttribute
-          build_property(name, attr.instance_variable_get(:@body), optional: true)
+          build_property(column_name, attr.instance_variable_get(:@body), optional: true)
         else
           raise ArgumentError, "Unsupported attribute type: #{attr.class}"
         end
