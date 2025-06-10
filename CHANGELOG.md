@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.4.1] - 2025-06-10
+
 ### Added
 
 - Add option to use double quotes in generated TypeScript interfaces through `prefer_double_quotes` config option ([@kristinemcbride])
@@ -166,7 +168,8 @@ and this project adheres to [Semantic Versioning].
 [@patvice]: https://github.com/patvice
 [@skryukov]: https://github.com/skryukov
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/skryukov/typelizer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/skryukov/typelizer/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/skryukov/typelizer/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/skryukov/typelizer/compare/v0.1.5...v0.2.0
