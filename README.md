@@ -304,6 +304,47 @@ class PostResource < ApplicationResource
 end
 ```
 
+### Multiple Formats Generation
+
+Typelizer supports generating multiple sets of TypeScript interfaces from the same serializers. 
+A common use case is to create interfaces with both snake_case and camelCase property names to serve different frontend conventions.
+
+**Each additional writer**:
+
+- inherits the current global `Typelizer::Config`
+
+- must provide its own unique `output_dir`
+
+- may tweak any other options
+
+```ruby
+# Base configuration (generates snake_case)
+Typelizer.configure do |config|
+  config.output_dir = Rails.root.join("app/javascript/types/serializers/snake_case")
+  config.null_strategy = :nullable
+  # other settings...
+end
+
+# Additional writer for camelCase
+Typelizer.add_writer do |config|
+  # Required: Set a unique output directory for this writer.
+  config.output_dir = Rails.root.join("app/javascript/types/camel_case")
+
+  # Optional: Override only the settings you need to change.
+  # Here, we add a transformer to change property names to camelCase.
+  # The `null_strategy` will remain :nullable as it was inherited.
+  config.properties_transformer = ->(properties) {
+    properties.map do |property|
+      property.name = property.name.to_s.camelize(:lower)
+      property
+    end
+  }
+end
+```
+
+With this configuration, Typelizer will generate two sets of interfaces: one with snake_case keys and another with camelCase keys.
+Each writer can have its own configuration, but must specify a unique `output_dir`.
+
 ## Credits
 
 Typelizer is inspired by [types_from_serializers](https://github.com/ElMassimo/types_from_serializers).

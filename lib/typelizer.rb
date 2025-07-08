@@ -38,16 +38,49 @@ module Typelizer
     attr_accessor :listen
 
     # @private
-    attr_reader :base_classes
+    attr_reader :base_classes, :additional_writers
 
     def configure
       yield Config
+    end
+
+    # Registers an additional writer with its own configuration
+    #
+    # This yields a complete copy of the base configuration, which can then be
+    # modified for this specific writer. A unique `output_dir` is required.
+    def add_writer
+      base_config = Config.instance
+      config = base_config.dup
+
+      config.type_mapping = base_config.type_mapping.dup
+      config.types_global = base_config.types_global.dup
+      config.plugin_configs = base_config.plugin_configs.dup
+
+      yield config if block_given?
+
+      raise ArgumentError, "output_dir must be set for additional writer" unless config.output_dir
+
+      existing_dirs = [Config.output_dir, *@additional_writers.map(&:output_dir)]
+
+      if existing_dirs.include?(config.output_dir)
+        raise ArgumentError, "output_dir '#{config.output_dir}' is already used by another writer"
+      end
+
+      @additional_writers << config
+
+      config
+    end
+
+    def reset_writers
+      additional_writers.clear
     end
 
     private
 
     attr_writer :base_classes
   end
+
+  @additional_writers = []
 
   # Set in the Railtie
   self.dirs = []

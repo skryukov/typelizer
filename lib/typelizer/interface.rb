@@ -1,6 +1,19 @@
 module Typelizer
   class Interface
     attr_reader :serializer, :serializer_plugin
+    attr_writer :properties
+
+    # method which calls by `.dup` method
+    # This ensures that when an Interface is duplicated, its instance variables (arrays, hashes) are also copied.
+    def initialize_copy(source)
+      super
+
+      @properties = source.instance_variable_get(:@properties)&.dup
+      @meta_fields = source.instance_variable_get(:@meta_fields)&.dup
+      @own_properties = source.instance_variable_get(:@own_properties)&.dup
+      @overwritten_properties = source.instance_variable_get(:@overwritten_properties)&.dup
+      @imports = source.instance_variable_get(:@imports)&.dup
+    end
 
     def config
       serializer.typelizer_config
@@ -105,6 +118,19 @@ module Typelizer
 
     def quote(str)
       config.prefer_double_quotes ? "\"#{str}\"" : "'#{str}'"
+    end
+
+    # Creates a new, transformed copy of the interface for a specific writer
+    def build_transformed_copy(config)
+      dup.tap do |copy|
+        transformer = config.properties_transformer
+
+        next unless transformer.respond_to?(:call)
+
+        original_properties = properties.map(&:dup)
+
+        copy.properties = transformer.call(original_properties)
+      end
     end
 
     private
