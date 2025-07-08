@@ -1,9 +1,10 @@
 module Typelizer
   module SerializerPlugins
     class Base
-      def initialize(serializer:, config:)
+      def initialize(serializer:, config:, context:)
         @serializer = serializer
         @config = config
+        @context = context
       end
 
       def root_key
@@ -28,7 +29,7 @@ module Typelizer
 
       private
 
-      attr_reader :serializer, :config
+      attr_reader :serializer, :config, :context
     end
   end
 end

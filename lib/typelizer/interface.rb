@@ -1,14 +1,22 @@
 module Typelizer
   class Interface
-    attr_reader :serializer, :serializer_plugin
+    attr_reader :serializer, :context
 
-    def config
-      serializer.typelizer_config
+    def initialize(serializer:, context:)
+      @serializer = serializer
+      @context = context
     end
 
-    def initialize(serializer:)
-      @serializer = serializer
-      @serializer_plugin = config.serializer_plugin.new(serializer: serializer, config: config)
+    def config
+      context.config_for(serializer)
+    end
+
+    def serializer_plugin
+      @serializer_plugin ||= config.serializer_plugin.new(
+        serializer: serializer,
+        config: config,
+        context: context
+      )
     end
 
     def inline?
@@ -69,12 +77,14 @@ module Typelizer
 
     def parent_interface
       return if config.inheritance_strategy == :none
-      return unless serializer.superclass.respond_to?(:typelizer_interface)
 
-      interface = serializer.superclass.typelizer_interface
-      return if interface.empty?
+      parent_class = serializer.superclass
+      return unless parent_class.respond_to?(:typelizer_config)
 
-      interface
+      parent_interface = context.interface_for(parent_class)
+      return if parent_interface.empty?
+
+      parent_interface
     end
 
     def imports

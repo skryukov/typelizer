@@ -92,9 +92,10 @@ module Typelizer
           )
         when ::Alba::Association
           resource = attr.instance_variable_get(:@resource)
+
           Property.new(
             name: name,
-            type: Interface.new(serializer: resource),
+            type: context.interface_for(resource),
             optional: false,
             nullable: false,
             multi: false, # we override this in typelize_method_transform

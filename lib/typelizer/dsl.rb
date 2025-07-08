@@ -14,18 +14,16 @@ module Typelizer
     end
 
     module ClassMethods
-      def typelizer_config
-        @typelizer_config ||=
-          begin
-            parent_config = superclass.respond_to?(:typelizer_config) ? superclass.typelizer_config : Config
-            Config.new(parent_config.to_h.transform_values(&:dup))
-          end
-        yield @typelizer_config if block_given?
-        @typelizer_config
-      end
+      def typelizer_config(&block)
+        # Lazily initializes and memoizes the hash for local overrides at the class level.
+        # This ensures that all subsequent DSL calls for this specific serializer class
+        # modify the same single hash, allowing settings to be accumulated
+        @serializer_overrides ||= {}
 
-      def typelizer_interface
-        @typelizer_interface ||= Interface.new(serializer: self)
+        @config_layer ||= SerializerConfigLayer.new(@serializer_overrides)
+        @config_layer.instance_eval(&block) if block
+
+        @config_layer
       end
 
       # save association of serializer to model
