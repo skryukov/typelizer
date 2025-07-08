@@ -18,7 +18,7 @@ module Typelizer
 
       def properties
         serializer._attributes_data.merge(serializer._reflections).flat_map do |key, association|
-          type = association.options[:serializer] ? Interface.new(serializer: association.options[:serializer]) : nil
+          type = association.options[:serializer] ? context.interface_for(association.options[:serializer]) : nil
           adapter = ActiveModelSerializers::Adapter.configured_adapter
           Property.new(
             name: adapter.transform_key_casing!(key.to_s, association.options),

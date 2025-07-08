@@ -26,8 +26,9 @@ module Typelizer
     def fingerprint
       props = to_h
       props[:type] = type_name
-      props = props.filter_map { |k, v| "#{k}=#{v.inspect}" unless v.nil? }
-      "<#{self.class.name} #{props.join(" ")}>"
+      props.each_with_object(+"<#{self.class.name}") do |(k, v), fp|
+        fp << " #{k}=#{v.inspect}" unless v.nil?
+      end << ">"
     end
 
     private
