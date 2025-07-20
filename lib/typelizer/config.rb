@@ -7,7 +7,8 @@ module Typelizer
     integer: :number,
     string: :string,
     text: :string,
-    citext: :string
+    citext: :string,
+    uuid: :string
   }.tap do |types|
     types.default = :unknown
   end
