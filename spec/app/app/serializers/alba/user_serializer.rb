@@ -7,6 +7,7 @@ module Alba
 
     has_many :posts, resource: PostSerializer
     has_one :latest_post, resource: PostSerializer # Duplicated association
+    has_many :posts, resource: PostSerializer, key: :custom_key_posts
 
     typelize id: [:string, nullable: true]
 
