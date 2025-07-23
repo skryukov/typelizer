@@ -98,7 +98,7 @@ module Typelizer
             optional: false,
             nullable: false,
             multi: false, # we override this in typelize_method_transform
-            column_name: column_name,
+            column_name: attr.name.is_a?(Symbol) ? attr.name.name : attr.name,
             **options
           )
         when ::Alba::TypedAttribute
