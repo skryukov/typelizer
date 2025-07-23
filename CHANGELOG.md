@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.4.2] - 2025-06-23
+
+### Added
+
+- Map `uuid` type to `string` by default. ([@ventsislaf])
+
+### Fixed
+
+- Alba: fix `has_many` with a custom `key` generates single value type instead of array. ([@skryukov])
+
 ## [0.4.1] - 2025-06-10
 
 ### Added
@@ -167,8 +177,10 @@ and this project adheres to [Semantic Versioning].
 [@okuramasafumi]: https://github.com/okuramasafumi
 [@patvice]: https://github.com/patvice
 [@skryukov]: https://github.com/skryukov
+[@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/skryukov/typelizer/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/skryukov/typelizer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/skryukov/typelizer/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/skryukov/typelizer/compare/v0.2.0...v0.3.0
