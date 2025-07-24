@@ -7,23 +7,36 @@ module Typelizer
     end
 
     def initialize(config = Typelizer::Config)
-      @config = config
-      @writer = Writer.new
+      @base_writer = Writer.new(config)
+      @additional_writers = Typelizer.additional_writers.map { |cfg| Writer.new(cfg) }
     end
 
-    attr_reader :config, :writer
+    attr_reader :base_writer, :additional_writers
+
+    def writers
+      [base_writer, *@additional_writers]
+    end
 
     def call(force: false)
       return unless Typelizer.enabled?
 
       found_interfaces = interfaces
-      writer.call(found_interfaces, force: force)
+
+      base_writer.call(found_interfaces, force: force)
+
+      # Copy properties for every additional writer
+      additional_writers.each do |aw|
+        aw.call(transform_interfaces_for_writer(found_interfaces, aw), force: force)
+      end
+
       found_interfaces
     end
 
     def interfaces
+      return @interfaces if defined?(@interfaces)
+
       read_serializers
-      target_serializers.map(&:typelizer_interface).reject(&:empty?)
+      @interfaces = target_serializers.map(&:typelizer_interface).reject(&:empty?)
     end
 
     private
@@ -60,6 +73,10 @@ module Typelizer
         require file
         trace.disable
       end
+    end
+
+    def transform_interfaces_for_writer(interfaces, writer)
+      interfaces.map { |interface| interface.build_transformed_copy(writer.config) }
     end
   end
 end

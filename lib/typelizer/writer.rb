@@ -4,9 +4,9 @@ require "fileutils"
 
 module Typelizer
   class Writer
-    def initialize
+    def initialize(config = Config)
       @template_cache = {}
-      @config = Config
+      @config = config
     end
 
     attr_reader :config, :template_cache
