@@ -2,8 +2,8 @@ module Typelizer
   module SerializerPlugins
     module Auto
       class << self
-        def new(serializer:, config:)
-          plugin(serializer).new(serializer: serializer, config: config)
+        def new(serializer:, config:, context:)
+          plugin(serializer).new(serializer: serializer, config: config, context: context)
         end
 
         def plugin(serializer)

@@ -1,16 +1,22 @@
 # frozen_string_literal: true
 
 require_relative "typelizer/version"
-require_relative "typelizer/config"
 require_relative "typelizer/property"
+require_relative "typelizer/model_plugins/auto"
+require_relative "typelizer/serializer_plugins/auto"
+
+require_relative "typelizer/config"
+require_relative "typelizer/configuration"
+require_relative "typelizer/serializer_config_layer"
+
+require_relative "typelizer/contexts/writer_context"
+require_relative "typelizer/contexts/scan_context"
 require_relative "typelizer/interface"
 require_relative "typelizer/renderer"
 require_relative "typelizer/writer"
 require_relative "typelizer/generator"
-
 require_relative "typelizer/dsl"
 
-require_relative "typelizer/serializer_plugins/auto"
 require_relative "typelizer/serializer_plugins/oj_serializers"
 require_relative "typelizer/serializer_plugins/alba"
 require_relative "typelizer/serializer_plugins/ams"
@@ -18,7 +24,6 @@ require_relative "typelizer/serializer_plugins/panko"
 
 require_relative "typelizer/model_plugins/active_record"
 require_relative "typelizer/model_plugins/poro"
-require_relative "typelizer/model_plugins/auto"
 
 require_relative "typelizer/railtie" if defined?(Rails)
 
@@ -32,16 +37,33 @@ module Typelizer
       ENV["RAILS_ENV"] == "development" || ENV["RACK_ENV"] == "development" || ENV["DISABLE_TYPELIZER"] == "false"
     end
 
-    attr_accessor :dirs
-    attr_accessor :reject_class
     attr_accessor :logger
-    attr_accessor :listen
 
     # @private
     attr_reader :base_classes
 
+    def configuration
+      @configuration ||= Configuration.new
+    end
+
     def configure
-      yield Config
+      yield configuration
+    end
+
+    def dirs
+      configuration.dirs
+    end
+
+    def reject_class
+      configuration.reject_class
+    end
+
+    def listen
+      configuration.listen
+    end
+
+    def writer(*args, &block)
+      configuration.writer(*args, &block)
     end
 
     private
@@ -50,10 +72,7 @@ module Typelizer
   end
 
   # Set in the Railtie
-  self.dirs = []
-  self.reject_class = ->(serializer:) { false }
   self.logger = Logger.new($stdout, level: :info)
-  self.listen = nil
 
   self.base_classes = Set.new
 end

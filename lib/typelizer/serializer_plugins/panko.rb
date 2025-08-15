@@ -48,7 +48,7 @@ module Typelizer
       def association_property(assoc, multi: false)
         key = assoc.name_str
         serializer = assoc.descriptor.type
-        type = serializer ? Interface.new(serializer: serializer) : nil
+        type = serializer ? context.interface_for(serializer) : nil
         Property.new(
           name: key,
           type: type,
