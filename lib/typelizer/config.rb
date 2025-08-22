@@ -1,5 +1,9 @@
+# frozen_string_literal: true
+
+require "pathname"
+
 module Typelizer
-  TYPE_MAPPING = {
+  TYPE_MAPPING = Hash.new(:unknown).update(
     boolean: :boolean,
     date: :string,
     datetime: :string,
@@ -9,11 +13,11 @@ module Typelizer
     text: :string,
     citext: :string,
     uuid: :string
-  }.tap do |types|
-    types.default = :unknown
-  end
+  ).freeze
 
-  class Config < Struct.new(
+  DEFAULT_TYPES_GLOBAL = %w[Array Date Record File FileList].freeze
+
+  Config = Struct.new(
     :serializer_name_mapper,
     :serializer_model_mapper,
     :properties_transformer,
@@ -31,59 +35,71 @@ module Typelizer
     :comments,
     :prefer_double_quotes,
     keyword_init: true
-  ) do
-    class << self
-      def instance
-        @instance ||= new(
-          serializer_name_mapper: ->(serializer) do
-            return "" if serializer.name.nil?
+  )
 
-            serializer.name.ends_with?("Serializer") ? serializer.name&.delete_suffix("Serializer") : serializer.name&.delete_suffix("Resource")
-          end,
-          serializer_model_mapper: ->(serializer) do
-            base_class = serializer_name_mapper.call(serializer)
-            Object.const_get(base_class) if Object.const_defined?(base_class)
-          end,
+  # Immutable configuration object for a single writer
+  #
+  # Use .build to construct from defaults, and #with_overrides to copy with overrides.
+  class Config
+    # Returns library defaults (built-in) for building a Config.
+    # This method creates a fresh Hash each time to avoid sharing mutable state
+    # across builds
+    def self.defaults
+      {
+        serializer_name_mapper: lambda do |serializer|
+          name = serializer.name.to_s
 
-          model_plugin: ModelPlugins::Auto,
-          serializer_plugin: SerializerPlugins::Auto,
-          plugin_configs: {},
+          return name if name.empty?
 
-          type_mapping: TYPE_MAPPING,
-          null_strategy: :nullable,
-          inheritance_strategy: :none,
-          associations_strategy: :database,
-          comments: false,
-          prefer_double_quotes: false,
+          # remove only the end of the line
+          name.sub(/(Serializer|Resource)\z/, "")
+        end,
 
-          output_dir: js_root.join("types/serializers"),
+        serializer_model_mapper: lambda do |serializer|
+          base_class = serializer_name_mapper.call(serializer)
+          Object.const_get(base_class) if Object.const_defined?(base_class)
+        end,
 
-          types_import_path: "@/types",
-          types_global: %w[Array Date Record File FileList],
+        model_plugin: ModelPlugins::Auto,
+        serializer_plugin: SerializerPlugins::Auto,
+        plugin_configs: {}.freeze,
+        type_mapping: TYPE_MAPPING,
+        null_strategy: :nullable,
+        inheritance_strategy: :none,
+        associations_strategy: :database,
+        comments: false,
+        prefer_double_quotes: false,
 
-          properties_transformer: nil,
-          verbatim_module_syntax: false
-        )
-      end
+        output_dir: -> { default_output_dir },
 
-      private
-
-      def js_root
-        root_path = defined?(Rails) ? Rails.root : Pathname.pwd
-        js_root = defined?(ViteRuby) ? ViteRuby.config.source_code_dir : "app/javascript"
-        root_path.join(js_root)
-      end
-
-      def respond_to_missing?(name, include_private = false)
-        Typelizer.respond_to?(name) ||
-          instance.respond_to?(name, include_private)
-      end
-
-      def method_missing(method, *args, &block)
-        return Typelizer.send(method, *args, &block) if Typelizer.respond_to?(method)
-        instance.send(method, *args, &block)
-      end
+        types_import_path: "@/types",
+        types_global: DEFAULT_TYPES_GLOBAL,
+        properties_transformer: nil,
+        verbatim_module_syntax: false
+      }
     end
-  end
+
+    def self.build(**overrides)
+      new(**defaults.merge(overrides))
+    end
+
+    def self.default_output_dir
+      root_path = defined?(Rails) ? Rails.root : Pathname.pwd
+      js_root = defined?(ViteRuby) ? ViteRuby.config.source_code_dir : "app/javascript"
+
+      root_path.join(js_root, "types/serializers")
+    end
+
+    def with_overrides(**overrides)
+      props = to_h
+      props.merge!(overrides) unless overrides.empty?
+
+      self.class.new(**props)
+    end
+
+    def output_dir
+      v = self[:output_dir]
+      v.respond_to?(:call) ? v.call : v
+    end
   end
 end

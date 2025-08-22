@@ -1,14 +1,22 @@
 module Typelizer
   class Interface
-    attr_reader :serializer, :serializer_plugin
+    attr_reader :serializer, :context
 
-    def config
-      serializer.typelizer_config
+    def initialize(serializer:, context:)
+      @serializer = serializer
+      @context = context
     end
 
-    def initialize(serializer:)
-      @serializer = serializer
-      @serializer_plugin = config.serializer_plugin.new(serializer: serializer, config: config)
+    def config
+      context.config_for(serializer)
+    end
+
+    def serializer_plugin
+      @serializer_plugin ||= config.serializer_plugin.new(
+        serializer: serializer,
+        config: config,
+        context: context
+      )
     end
 
     def inline?
@@ -69,12 +77,14 @@ module Typelizer
 
     def parent_interface
       return if config.inheritance_strategy == :none
-      return unless serializer.superclass.respond_to?(:typelizer_interface)
 
-      interface = serializer.superclass.typelizer_interface
-      return if interface.empty?
+      parent_class = serializer.superclass
+      return unless parent_class.respond_to?(:typelizer_config)
 
-      interface
+      parent_interface = context.interface_for(parent_class)
+      return if parent_interface.empty?
+
+      parent_interface
     end
 
     def imports
@@ -140,8 +150,12 @@ module Typelizer
     def model_class
       return serializer._typelizer_model_name if serializer.respond_to?(:_typelizer_model_name)
 
-      config.serializer_model_mapper.call(serializer)
-    rescue NameError
+      # Execute the `serializer_model_mapper` lambda in the context of the `config` object
+      # This giving a possibility to access other lambdas, for example, `serializer_name_mapper`
+      config.instance_exec(serializer, &config.serializer_model_mapper)
+    rescue NameError => e
+      Typelizer.logger.debug("model_mapper failed for serializer #{serializer.name}: #{e.class}: #{e.message}")
+
       nil
     end
 

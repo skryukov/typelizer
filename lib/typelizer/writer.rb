@@ -4,26 +4,50 @@ require "fileutils"
 
 module Typelizer
   class Writer
-    def initialize
-      @template_cache = {}
-      @config = Config
-    end
+    class WriterError < StandardError; end
 
-    attr_reader :config, :template_cache
+    def initialize(config)
+      @template_cache = {}
+      @config = config
+    end
 
     def call(interfaces, force:)
       cleanup_output_dir if force
 
-      written_files = interfaces.map { |interface| write_interface(interface) }
-      written_files << write_index(interfaces)
+      valid_interfaces = interfaces.reject(&:empty?)
+      return [] if valid_interfaces.empty?
 
-      existing_files = Dir[File.join(config.output_dir, "**/*.ts")]
-      files_to_delete = existing_files - written_files
+      written_files = []
 
-      File.delete(*files_to_delete) unless files_to_delete.empty?
+      begin
+        written_files.concat(valid_interfaces.map { |interface| write_interface(interface) })
+
+        written_files << write_index(valid_interfaces)
+
+        cleanup_stale_files(written_files) unless force
+
+        Typelizer.logger.debug("Generated #{written_files.size} TypeScript files in #{config.output_dir}")
+
+        written_files
+      rescue => e
+        # if during the file generations an error appears, we remove generated files
+        cleanup_partial_writes(written_files)
+        raise WriterError, "Failed to write TypeScript files (#{e.class}): #{e.message}"
+      end
     end
 
     private
+
+    attr_reader :config, :template_cache
+
+    def cleanup_stale_files(written_files)
+      return unless File.directory?(config.output_dir)
+
+      existing_files = Dir[File.join(config.output_dir, "**/*.ts")]
+      stale_files = existing_files - written_files
+
+      File.delete(*stale_files) unless stale_files.empty?
+    end
 
     def write_index(interfaces)
       write_file("index.ts", interfaces.map(&:filename).join) do
@@ -59,6 +83,10 @@ module Typelizer
 
     def cleanup_output_dir
       FileUtils.rm_rf(config.output_dir)
+    end
+
+    def cleanup_partial_writes(partial_files)
+      File.delete(*partial_files) unless partial_files.empty?
     end
   end
 end
