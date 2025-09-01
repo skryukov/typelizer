@@ -9,33 +9,61 @@ module Typelizer
       attr_reader :model_class, :config
 
       def infer_types(prop)
-        if (association = model_class&.reflect_on_association(prop.column_name.to_sym))
-          case association.macro
-          when :belongs_to
-            foreign_key = association.foreign_key
-            column = model_class&.columns_hash&.dig(foreign_key.to_s)
-            if config.associations_strategy == :database
-              prop.nullable = column.null if column
-            elsif config.associations_strategy == :active_record
-              prop.nullable = association.options[:optional] === true || association.options[:required] === false
-            else
-              raise "Unknown associations strategy: #{config.associations_strategy}"
-            end
-          when :has_one
-            if config.associations_strategy == :database
-              prop.nullable = true
-            elsif config.associations_strategy == :active_record
-              prop.nullable = !association.options[:required]
-            else
-              raise "Unknown associations strategy: #{config.associations_strategy}"
-            end
+        infer_types_for_association(prop) ||
+          infer_types_for_column(prop) ||
+          infer_types_for_attribute(prop)
+
+        prop
+      end
+
+      def comment_for(prop)
+        column = model_class&.columns_hash&.dig(prop.column_name.to_s)
+        return nil unless column
+
+        prop.comment = column.comment
+      end
+
+      def enum_for(prop)
+        return unless model_class&.defined_enums&.key?(prop.column_name.to_s)
+
+        prop.enum = model_class.defined_enums[prop.column_name.to_s].keys
+      end
+
+      private
+
+      def infer_types_for_association(prop)
+        association = model_class&.reflect_on_association(prop.column_name.to_sym)
+        return nil unless association
+
+        case association.macro
+        when :belongs_to
+          foreign_key = association.foreign_key
+          column = model_class&.columns_hash&.dig(foreign_key.to_s)
+          if config.associations_strategy == :database
+            prop.nullable = column.null if column
+          elsif config.associations_strategy == :active_record
+            prop.nullable = association.options[:optional] === true || association.options[:required] === false
+          else
+            raise "Unknown associations strategy: #{config.associations_strategy}"
           end
-          return prop
+        when :has_one
+          if config.associations_strategy == :database
+            prop.nullable = true
+          elsif config.associations_strategy == :active_record
+            prop.nullable = !association.options[:required]
+          else
+            raise "Unknown associations strategy: #{config.associations_strategy}"
+          end
         end
 
-        column = model_class&.columns_hash&.dig(prop.column_name.to_s)
-        return prop unless column
+        prop
+      end
 
+      def infer_types_for_column(prop)
+        column = model_class&.columns_hash&.dig(prop.column_name.to_s)
+        return nil unless column
+
+        column = model_class&.columns_hash&.dig(prop.column_name.to_s)
         prop.multi = !!column.try(:array)
         case config.null_strategy
         when :nullable
@@ -57,17 +85,20 @@ module Typelizer
         prop
       end
 
-      def comment_for(prop)
-        column = model_class&.columns_hash&.dig(prop.column_name.to_s)
-        return nil unless column
+      def infer_types_for_attribute(prop)
+        return nil unless model_class.respond_to?(:attribute_types)
 
-        prop.comment = column.comment
-      end
+        attribute_type_obj = model_class.attribute_types[prop.column_name.to_s]
+        return nil unless attribute_type_obj
 
-      def enum_for(prop)
-        return unless model_class&.defined_enums&.key?(prop.column_name.to_s)
+        if attribute_type_obj.respond_to?(:subtype)
+          prop.type = @config.type_mapping[attribute_type_obj.subtype.type]
+          prop.multi = true
+        elsif attribute_type_obj.respond_to?(:type)
+          prop.type = @config.type_mapping[attribute_type_obj.type]
+        end
 
-        prop.enum = model_class.defined_enums[prop.column_name.to_s].keys
+        prop
       end
     end
   end

@@ -26,11 +26,22 @@ jobs:
         run: bundle exec standardrb
 
   build:
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_DB: typelizer_test_app_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+
     runs-on: ubuntu-latest
     name: Ruby ${{ matrix.ruby }}
     env:
       BUNDLE_JOBS: 4
       BUNDLE_RETRY: 3
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/typelizer_test_app_test
     strategy:
       matrix:
         ruby:
