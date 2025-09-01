@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-09-01
+
+### Added
+
+- Support for multiple output writers: emit several variants (e.g., snake_case and camelCase) in parallel. ([@supdex])
+- Support for Rails' Attributes API. ([@skryukov])
+
 ## [0.4.2] - 2025-06-23
 
 ### Added
@@ -176,10 +183,13 @@ and this project adheres to [Semantic Versioning].
 [@NOX73]: https://github.com/NOX73
 [@okuramasafumi]: https://github.com/okuramasafumi
 [@patvice]: https://github.com/patvice
+[@PedroAugustoRamalhoDuarte]: https://github.com/PedroAugustoRamalhoDuarte
 [@skryukov]: https://github.com/skryukov
+[@supdex]: https://github.com/supdex
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/skryukov/typelizer/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/skryukov/typelizer/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/skryukov/typelizer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/skryukov/typelizer/compare/v0.3.0...v0.4.0

@@ -29,8 +29,9 @@ Typelizer generates TypeScript types from your Ruby serializers. It supports mul
 ## Features
 
 - Automatic TypeScript interface generation
-- Support for multiple serializer libraries (`Alba`, `ActiveModel::Serializer`, `Oj::Serializer`, `Panko::Serializer`)
-- File watching and automatic regeneration in development
+- Infers types from database columns and associations, with support for the Attributes API
+- Supports multiple serializer libraries (`Alba`, `ActiveModel::Serializer`, `Oj::Serializer`, `Panko::Serializer`)
+- File watching with automatic regeneration in development
 - Multiple output writers: emit several variants (e.g., snake_case and camelCase) in parallel
 
 ## Installation
@@ -233,7 +234,6 @@ Typelizer uses a hierarchical system to resolve settings. Settings are applied i
 2.  **Writer-Specific Settings**: Settings defined within a `config.writer(:name) { ... }` block.
 3.  **Global Settings**: Application-wide settings defined by direct assignment (e.g., `config.comments = true`) within the `Typelizer.configure` block.
 4.  **Library Defaults**: The gem's built-in default values.
-
 
 ### Simple Configuration (Single Output)
 
