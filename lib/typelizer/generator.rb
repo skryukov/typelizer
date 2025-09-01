@@ -6,24 +6,26 @@ module Typelizer
       new.call(**args)
     end
 
-    def initialize(config = Typelizer::Config)
-      @config = config
-      @writer = Writer.new
-    end
-
-    attr_reader :config, :writer
-
     def call(force: false)
-      return unless Typelizer.enabled?
+      return [] unless Typelizer.enabled?
 
-      found_interfaces = interfaces
-      writer.call(found_interfaces, force: force)
-      found_interfaces
-    end
+      # plugin scan per run cache
+      @scan_plugin_cache = {}
 
-    def interfaces
       read_serializers
-      target_serializers.map(&:typelizer_interface).reject(&:empty?)
+      serializers = target_serializers
+
+      # For each writer, build a dedicated WriterContext. The context holds that writer's
+      # configuration and resolves the effective Config for every Interface (per serializer)
+      # by merging global, writer, and per-serializer (DSL) overrides
+      Typelizer.configuration.writers.each do |writer_name, writer_config|
+        context = WriterContext.new(writer_name: writer_name)
+        interfaces = serializers.map { |klass| context.interface_for(klass) }
+
+        Writer.new(writer_config).call(interfaces, force: force)
+      end
+
+      serializers
     end
 
     private
@@ -44,9 +46,10 @@ module Typelizer
       files ||= Typelizer.dirs.flat_map { |dir| Dir["#{dir}/**/*.rb"] }
       files.each do |file|
         trace = TracePoint.new(:call) do |tp|
-          next unless tp.self.is_a?(Class) && tp.self.respond_to?(:typelizer_interface) && tp.self.typelizer_interface.is_a?(Interface)
+          next unless tp.self.is_a?(Class) && tp.self.respond_to?(:typelizer_config)
 
-          serializer_plugin = tp.self.typelizer_interface.serializer_plugin
+          serializer_plugin = build_scan_plugin_for(tp.self)
+          next unless serializer_plugin
 
           if tp.callee_id.in?(serializer_plugin.methods_to_typelize)
             type, attrs = tp.self.keyless_type
@@ -60,6 +63,23 @@ module Typelizer
         require file
         trace.disable
       end
+    end
+
+    # Builds a minimal plugin instance used only during scan time for TracePoint
+    def build_scan_plugin_for(serializer_klass)
+      return @scan_plugin_cache[serializer_klass] if @scan_plugin_cache&.key?(serializer_klass)
+
+      base = Typelizer.configuration.writer_config(:default)
+      local_configuration = serializer_klass.typelizer_config.to_h.slice(:serializer_plugin, :plugin_configs)
+      cfg = base.with_overrides(**local_configuration)
+
+      @scan_plugin_cache[serializer_klass] = cfg.serializer_plugin.new(
+        serializer: serializer_klass,
+        config: cfg,
+        context: Typelizer::ScanContext
+      )
+    rescue NameError
+      nil
     end
   end
 end

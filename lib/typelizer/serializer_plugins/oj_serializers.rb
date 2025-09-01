@@ -18,9 +18,9 @@ module Typelizer
         attributes
           .flat_map do |key, options|
             if options[:association] == :flat
-              Interface.new(serializer: options.fetch(:serializer)).properties
+              context.interface_for(options.fetch(:serializer)).properties
             else
-              type = options[:serializer] ? Interface.new(serializer: options[:serializer]) : options[:type]
+              type = options[:serializer] ? context.interface_for(options[:serializer]) : options[:type]
               Property.new(
                 name: key,
                 type: type,

@@ -2,7 +2,7 @@
 
 [![Gem Version](https://badge.fury.io/rb/typelizer.svg)](https://rubygems.org/gems/typelizer)
 
-Typelizer is a Ruby gem that automatically generates TypeScript interfaces from your Ruby serializers, bridging the gap between your Ruby backend and TypeScript frontend. It supports multiple serializer libraries and provides a flexible configuration system, making it easier to maintain type consistency across your full-stack application.
+Typelizer generates TypeScript types from your Ruby serializers. It supports multiple serializer libraries and a flexible, layered configuration model so you can keep your backend and frontend in sync without hand‑maintaining types.
 
 ## Table of Contents
 
@@ -16,8 +16,8 @@ Typelizer is a Ruby gem that automatically generates TypeScript interfaces from 
   - [Automatic Generation in Development](#automatic-generation-in-development)
   - [Disabling Typelizer](#disabling-typelizer)
 - [Configuration](#configuration)
-  - [Global Configuration](#global-configuration)
-  - [Config Options](#config-options)
+  - [Global Configuration](#simple-configuration)
+  - [Writers (multiple outputs)](#defining-multiple-writers)
   - [Per-Serializer Configuration](#per-serializer-configuration)
 - [Credits](#credits)
 - [License](#license)
@@ -31,6 +31,7 @@ Typelizer is a Ruby gem that automatically generates TypeScript interfaces from 
 - Automatic TypeScript interface generation
 - Support for multiple serializer libraries (`Alba`, `ActiveModel::Serializer`, `Oj::Serializer`, `Panko::Serializer`)
 - File watching and automatic regeneration in development
+- Multiple output writers: emit several variants (e.g., snake_case and camelCase) in parallel
 
 ## Installation
 
@@ -211,8 +212,6 @@ Sometimes we want to use Typelizer only with manual generation. To disable Typel
 
 ## Configuration
 
-### Global Configuration
-
 Typelizer provides several global configuration options:
 
 ```ruby
@@ -226,13 +225,160 @@ Typelizer.logger = Logger.new($stdout, level: :info)
 Typelizer.listen = nil
 ```
 
-### Config Options
+### Configuration Layers
 
-`Typelizer::Config` offers fine-grained control over the gem's behavior. Here's a list of available options:
+Typelizer uses a hierarchical system to resolve settings. Settings are applied in the following order of precedence, where higher numbers override lower ones:
+
+1.  **Per-Serializer Overrides**: Settings defined using `typelizer_config` directly within a serializer class. This layer has the highest priority.
+2.  **Writer-Specific Settings**: Settings defined within a `config.writer(:name) { ... }` block.
+3.  **Global Settings**: Application-wide settings defined by direct assignment (e.g., `config.comments = true`) within the `Typelizer.configure` block.
+4.  **Library Defaults**: The gem's built-in default values.
+
+
+### Simple Configuration (Single Output)
+
+For most apps, a single output is enough. All settings in an initializer apply to the `:default` writer and also act as a global baseline.
+
+- Settings like `dirs` are considered **Global** and establish a baseline for all writers.
+- Settings like `output_dir` or `comments` configure the implicit **`:default` writer**.
+
+```ruby
+# config/initializers/typelizer.rb
+Typelizer.configure do |config|
+  # This is a GLOBAL SETTING. It applies to ALL writers.
+  config.dirs = [Rails.root.join("app/serializers")]
+
+  # This setting configures the :default writer and ALSO acts as a global setting.
+  config.output_dir = "app/javascript/types/generated"
+  config.comments = true
+end
+```
+
+### Defining Multiple Writers
+
+The multi-writer system allows for the generation of multiple, distinct TypeScript outputs. Each output is managed by a named writer with an isolated configuration.
+
+
+#### Writer Inheritance Rules
+
+- By default, a new writer inherits its base settings from the Global Settings.
+- To inherit from another existing writer, use the `from:` option.
+
+
+**A Note on the :default Writer and Inheritance**
+- You usually do not need to declare `writer(:default)`. The implicit default writer automatically uses your global settings. 
+- Declare `writer(:default)` when you want to apply specific overrides to it that should not be inherited by other new writers. This provides a way to separate your application's global baseline from settings that are truly unique to the default output
+
+#### Example of the distinction:
+```ruby
+Typelizer.configure do |config|
+  # === Global Setting ===
+  # `comments: true` applies to :default and will be inherited by :camel_case.
+  config.comments = true
+
+  # === Default-Writer-Only Setting ===
+  # `prefer_double_quotes: true` applies ONLY to the :default writer.
+  # It is NOT a global setting and will NOT be inherited by :camel_case.
+  config.writer(:default) do |c|
+    c.prefer_double_quotes = true
+  end
+
+  # === New Writer Definition ===
+  config.writer(:camel_case) do |c|
+    c.output_dir = "app/javascript/types/camel_case"
+    # This writer inherits `comments: true` from globals.
+    # It does NOT inherit `prefer_double_quotes: true` from the :default writer's block.
+    # Its `prefer_double_quotes` will be `false` (the library default).
+  end
+end
+```
+
+#### Configuring Writers
+You can define writers either inside the configure block or directly on the Typelizer module.
+
+1. **Inside the configure block**
+
+This is the approach for keeping all configuration centralized.
+
+```ruby
+# config/initializers/typelizer.rb
+Typelizer.configure do |config|
+  # ... global settings ...
+
+  config.writer(:camel_case) do |c|
+    c.output_dir = "app/javascript/types/camel_case"
+    c.properties_transformer = ->(properties) { # ... transform ... }
+  end
+
+  config.writer(:admin, from: :camel_case) do |c|
+    c.output_dir = "app/javascript/types/admin"
+    c.null_strategy = :optional
+  end
+end
+```
+
+2. Top-Level Helper
+
+```ruby
+Typelizer.writer(:admin, from: :default) do |c|
+  c.output_dir = Rails.root.join("app/javascript/types/admin")
+  c.prefer_double_quotes = true
+end
+```
+
+#### Comprehensive Example
+This example configures three distinct outputs, demonstrating all inheritance mechanisms.
+
+```ruby
+# config/initializers/typelizer.rb
+Typelizer.configure do |config|
+  # === 1. Global Settings (Baseline for ALL writers) ===
+  config.comments = true
+  config.dirs = [Rails.root.join("app/serializers")]
+
+  # === 2. The :default writer (snake_case output) ===
+  config.writer(:default) do |c|
+    c.output_dir = "app/javascript/types/snake_case"
+  end
+
+  # === 3. A new :camel_case writer ===
+  # Inherits `comments: true` and `dirs` from the Global Settings.
+  config.writer(:camel_case) do |c|
+    c.output_dir = "app/javascript/types/camel_case"
+    c.properties_transformer = lambda do |properties|
+      properties.map { |prop| prop.with_overrides(name: prop.name.to_s.camelize(:lower)) }
+    end
+  end
+
+  # === 4. An "admin" writer that clones :camel_case ===
+  # Use `from:` to explicitly inherit another writer's complete configuration.
+  config.writer(:admin, from: :camel_case) do |c|
+    c.output_dir = "app/javascript/types/admin"
+    # This writer inherits the properties_transformer from :camel_case.
+    c.null_strategy = :optional
+  end
+end
+```
+
+### Per-serializer configuration
+
+Use `typelizer_config` within a serializer class to apply overrides with the highest possible priority. 
+These settings will supersede any conflicting settings from the active writer, global settings, or library defaults.
+
+```ruby
+class PostResource < ApplicationResource
+  typelizer_config do |c|
+    c.null_strategy = :nullable_and_optional
+    c.plugin_configs = { alba: { ts_mapper: { "UUID" => { type: :string } } } }
+  end
+end
+```
+
+### Option reference
 
 ```ruby
 Typelizer.configure do |config|
-  # Determines how serializer names are mapped to TypeScript interface names
+  # Name to type mapping for serializer classes
   config.serializer_name_mapper = ->(serializer) { ... }
 
   # Maps serializers to their corresponding model classes
@@ -287,20 +433,6 @@ Typelizer.configure do |config|
   # Support comments in generated TypeScript interfaces (default: false)
   # Will add comments to the generated interfaces
   config.comments = false
-end
-```
-
-### Per-Serializer Configuration
-
-You can also configure Typelizer on a per-serializer basis:
-
-```ruby
-class PostResource < ApplicationResource
-  typelizer_config do |config|
-    config.type_mapping = config.type_mapping.merge(jsonb: "Record<string, undefined>", ... )
-    config.null_strategy = :nullable
-    # ...
-  end
 end
 ```
 
