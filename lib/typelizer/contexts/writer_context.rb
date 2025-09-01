@@ -8,9 +8,9 @@ module Typelizer
   class WriterContext
     attr_reader :writer_config, :writer_name
 
-    def initialize(writer_name: :default, configuration: Typelizer.configuration)
+    def initialize(writer_name: nil, configuration: Typelizer.configuration)
       @configuration = configuration
-      @writer_name = (writer_name || :default).to_sym
+      @writer_name = (writer_name || Configuration::DEFAULT_WRITER_NAME).to_sym
       @writer_config = configuration.writer_config(@writer_name)
 
       @interface_cache = {}

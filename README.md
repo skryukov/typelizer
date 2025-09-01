@@ -1,6 +1,6 @@
 # Typelizer
 
-
+[![Gem Version](https://badge.fury.io/rb/typelizer.svg)](https://rubygems.org/gems/typelizer)
 
 Typelizer generates TypeScript types from your Ruby serializers. It supports multiple serializer libraries and a flexible, layered configuration model so you can keep your backend and frontend in sync without hand‑maintaining types.
 
@@ -22,14 +22,16 @@ Typelizer generates TypeScript types from your Ruby serializers. It supports mul
 - [Credits](#credits)
 - [License](#license)
 
----
+<a href="https://evilmartians.com/?utm_source=typelizer&utm_campaign=project_page">
+<img src="https://evilmartians.com/badges/sponsored-by-evil-martians.svg" alt="Built by Evil Martians" width="236" height="54">
+</a>
 
 ## Features
 
 - Automatic TypeScript interface generation
 - Support for multiple serializer libraries (`Alba`, `ActiveModel::Serializer`, `Oj::Serializer`, `Panko::Serializer`)
-- Multiple **writers**: emit several variants (e.g., snake\_case and camelCase) in parallel
 - File watching and automatic regeneration in development
+- Multiple output writers: emit several variants (e.g., snake_case and camelCase) in parallel
 
 ## Installation
 
@@ -360,7 +362,7 @@ end
 
 ### Per-serializer configuration
 
-Use typelizer_config within a serializer class to apply overrides with the highest possible priority. 
+Use `typelizer_config` within a serializer class to apply overrides with the highest possible priority. 
 These settings will supersede any conflicting settings from the active writer, global settings, or library defaults.
 
 ```ruby
