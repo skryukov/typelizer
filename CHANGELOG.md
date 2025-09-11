@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.5.1] - 2025-09-11
+
+### Fixed
+
+- Fix type inference when using virtual associations. ([@hkamberovic])
+
 ## [0.5.0] - 2025-09-01
 
 ### Added
@@ -178,6 +184,7 @@ and this project adheres to [Semantic Versioning].
 
 [@davidrunger]: https://github.com/davidrunger
 [@Envek]: https://github.com/Envek
+[@hkamberovic]: https://github.com/hkamberovic
 [@kristinemcbride]: https://github.com/kristinemcbride
 [@nkriege]: https://github.com/nkriege
 [@NOX73]: https://github.com/NOX73
@@ -188,7 +195,8 @@ and this project adheres to [Semantic Versioning].
 [@prog-supdex]: https://github.com/prog-supdex
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/skryukov/typelizer/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/skryukov/typelizer/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/skryukov/typelizer/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/skryukov/typelizer/compare/v0.4.0...v0.4.1
