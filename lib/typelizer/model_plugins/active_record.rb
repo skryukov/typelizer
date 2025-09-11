@@ -60,8 +60,6 @@ module Typelizer
       end
 
       def infer_types_for_column(prop)
-        return nil if prop.type.present?
-
         column = model_class&.columns_hash&.dig(prop.column_name.to_s)
         return nil unless column
 
@@ -87,10 +85,9 @@ module Typelizer
       end
 
       def infer_types_for_attribute(prop)
-        return nil if prop.type.present?
         return nil unless model_class.respond_to?(:attribute_types)
 
-        attribute_type_obj = model_class.attribute_types[prop.column_name.to_s]
+        attribute_type_obj = model_class.attribute_types.fetch(prop.column_name.to_s, nil)
         return nil unless attribute_type_obj
 
         if attribute_type_obj.respond_to?(:subtype)
