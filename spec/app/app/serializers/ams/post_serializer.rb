@@ -9,6 +9,10 @@ module Ams
 
     has_one :user, serializer: UserSerializer
 
+    belongs_to :created_by, serializer: UserSerializer do
+      object.user
+    end
+
     typelize :string
     attribute :name, deprecated: "Use 'title' instead."
     def name

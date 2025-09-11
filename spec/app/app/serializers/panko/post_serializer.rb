@@ -8,5 +8,11 @@ module Panko
     attributes :id, :title, :category, :body, :published_at
 
     has_one :user, serializer: UserSerializer
+
+    has_one :created_by, serializer: UserSerializer
+
+    def created_by
+      object.user
+    end
   end
 end

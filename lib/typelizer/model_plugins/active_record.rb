@@ -63,7 +63,6 @@ module Typelizer
         column = model_class&.columns_hash&.dig(prop.column_name.to_s)
         return nil unless column
 
-        column = model_class&.columns_hash&.dig(prop.column_name.to_s)
         prop.multi = !!column.try(:array)
         case config.null_strategy
         when :nullable
@@ -88,7 +87,7 @@ module Typelizer
       def infer_types_for_attribute(prop)
         return nil unless model_class.respond_to?(:attribute_types)
 
-        attribute_type_obj = model_class.attribute_types[prop.column_name.to_s]
+        attribute_type_obj = model_class.attribute_types.fetch(prop.column_name.to_s, nil)
         return nil unless attribute_type_obj
 
         if attribute_type_obj.respond_to?(:subtype)

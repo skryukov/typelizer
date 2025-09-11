@@ -14,6 +14,10 @@ module Alba
 
     has_one :user, serializer: UserSerializer
 
+    one :created_by, serializer: UserSerializer do
+      object.user
+    end
+
     attributes :next_post
     typelize next_post: "Post"
 
