@@ -1,7 +1,7 @@
 module Alba
   class InlineSerializer < BaseSerializer
     typelize_from ::User
-    attributes :id, :username, :active
+    attributes :id, :username, :active, :post_ids
 
     has_many :untyped_posts do
       attributes :id, :title

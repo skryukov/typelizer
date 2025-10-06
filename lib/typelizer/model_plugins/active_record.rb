@@ -11,6 +11,7 @@ module Typelizer
       def infer_types(prop)
         infer_types_for_association(prop) ||
           infer_types_for_column(prop) ||
+          infer_types_for_association_ids(prop) ||
           infer_types_for_attribute(prop)
 
         prop
@@ -81,6 +82,19 @@ module Typelizer
         prop.enum = enum_for(prop)
         prop.type = :string if prop.enum # Ignore underlying column type for enums
 
+        prop
+      end
+
+      def infer_types_for_association_ids(prop)
+        column_name = prop.column_name.to_s
+        return nil unless column_name.end_with?("_ids")
+
+        base_name = column_name.chomp("_ids").pluralize
+        association = model_class&.reflect_on_association(base_name.to_sym)
+        return nil unless association
+
+        prop.type = :number
+        prop.multi = true
         prop
       end
 
