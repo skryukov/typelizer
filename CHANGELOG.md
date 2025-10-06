@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.5.2] - 2025-10-06
+
+- Infer type for `<relation>_ids`. ([@skryukov])
+
 ## [0.5.1] - 2025-09-11
 
 ### Fixed
@@ -195,7 +199,8 @@ and this project adheres to [Semantic Versioning].
 [@prog-supdex]: https://github.com/prog-supdex
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/skryukov/typelizer/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/skryukov/typelizer/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/skryukov/typelizer/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/skryukov/typelizer/compare/v0.4.1...v0.4.2
