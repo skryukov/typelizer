@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## Fixed
+
+- Ignore trace points if they return errors on class checks to fix Rails 8.1 compatibility. ([@skryukov])
+
 ## [0.5.2] - 2025-10-06
+
+## Added
 
 - Infer type for `<relation>_ids`. ([@skryukov])
 
