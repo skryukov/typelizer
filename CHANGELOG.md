@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.5.2] - 2025-11-25
+
 ## Fixed
 
 - Ignore trace points if they return errors on class checks to fix Rails 8.1 compatibility. ([@skryukov])
@@ -205,7 +207,8 @@ and this project adheres to [Semantic Versioning].
 [@prog-supdex]: https://github.com/prog-supdex
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/skryukov/typelizer/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/skryukov/typelizer/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/skryukov/typelizer/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/skryukov/typelizer/compare/v0.4.2...v0.5.0
