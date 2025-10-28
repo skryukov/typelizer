@@ -49,7 +49,7 @@ module Typelizer
       files ||= Typelizer.dirs.flat_map { |dir| Dir["#{dir}/**/*.rb"] }
       files.each do |file|
         trace = TracePoint.new(:call) do |tp|
-          next unless tp.self.is_a?(Class) && tp.self.respond_to?(:typelizer_config)
+          next unless typelized_class?(tp.self)
 
           serializer_plugin = build_scan_plugin_for(tp.self)
           next unless serializer_plugin
@@ -66,6 +66,12 @@ module Typelizer
         require file
         trace.disable
       end
+    end
+
+    def typelized_class?(klass)
+      klass.is_a?(Class) && klass.respond_to?(:typelizer_config)
+    rescue
+      false
     end
 
     # Builds a minimal plugin instance used only during scan time for TracePoint
