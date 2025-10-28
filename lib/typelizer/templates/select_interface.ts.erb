@@ -1,0 +1,16 @@
+<% if interface.imports.any? -%>
+import type {<%= interface.imports.join(", ") %>} from <%= interface.quote(interface.config.types_import_path) %>
+<% end -%>
+
+type <%= interface.name %> = {
+<% interface.properties.each do |property| -%>
+<%= render("comment.ts.erb", interface: interface, property: property) -%>
+<%= indent(property) %>;
+<% end -%>
+}
+
+<% if interface.config.verbatim_module_syntax -%>
+export type { <%= interface.name %> };
+<% else -%>
+export default <%= interface.name %>;
+<% end -%>

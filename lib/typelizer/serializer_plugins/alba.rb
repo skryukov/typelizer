@@ -92,10 +92,19 @@ module Typelizer
           )
         when ::Alba::Association
           resource = attr.instance_variable_get(:@resource)
+          params = attr.instance_variable_get(:@params)
+
+          # Check if association has select params
+          if params && params[:select]
+            selected_fields = params[:select]
+            type = create_select_type(resource, selected_fields, name)
+          else
+            type = context.interface_for(resource)
+          end
 
           Property.new(
             name: name,
-            type: context.interface_for(resource),
+            type: type,
             optional: false,
             nullable: false,
             multi: false, # we override this in typelize_method_transform
@@ -147,6 +156,28 @@ module Typelizer
 
       def ts_mapper
         config.plugin_configs.dig(:alba, :ts_mapper) || ALBA_TS_MAPPER
+      end
+
+      # Creates a specialized type for associations with select params
+      def create_select_type(resource, selected_fields, association_name)
+        # Get the base interface for the resource
+        base_interface = context.interface_for(resource)
+
+        # Create a unique type name based on parent serializer and association
+        parent_name = serializer.name || "Unknown"
+        association_part = association_name.to_s.capitalize
+        select_type_name = "#{parent_name}#{association_part}Select"
+
+        # Get or create the select type interface
+        context.find_or_create_select_interface(
+          name: select_type_name,
+          base_interface: base_interface,
+          selected_fields: selected_fields
+        )
+      rescue => e
+        # Fallback to full interface if something goes wrong
+        Typelizer.logger.debug("Failed to create select type: #{e.message}")
+        context.interface_for(resource)
       end
     end
   end
