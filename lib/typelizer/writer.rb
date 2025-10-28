@@ -57,7 +57,9 @@ module Typelizer
 
     def write_interface(interface)
       write_file("#{interface.filename}.ts", interface.fingerprint) do
-        render_template("interface.ts.erb", interface: interface)
+        # Use select_interface template for SelectInterface instances
+        template = interface.is_a?(SelectInterface) ? "select_interface.ts.erb" : "interface.ts.erb"
+        render_template(template, interface: interface)
       end
     end
 

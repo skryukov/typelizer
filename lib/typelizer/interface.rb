@@ -91,7 +91,7 @@ module Typelizer
       @imports ||= begin
         association_serializers, attribute_types = properties_to_print.filter_map(&:type)
           .uniq
-          .partition { |type| type.is_a?(Interface) }
+          .partition { |type| type.is_a?(Interface) || type.is_a?(SelectInterface) }
 
         serializer_types = association_serializers
           .filter_map { |interface| interface.name if interface.name != name && !interface.inline? }

@@ -16,6 +16,7 @@ module Typelizer
       @interface_cache = {}
       @config_cache = {}
       @dsl_cache = {}
+      @select_interface_cache = {}
     end
 
     # Returns a memoized Interface for the given serializer class within this writer context
@@ -43,6 +44,20 @@ module Typelizer
       raise ArgumentError, "Serializer class cannot be nil" unless serializer_class
 
       @config_cache[serializer_class] ||= build_config(serializer_class)
+    end
+
+    # Finds or creates a specialized interface with only selected fields
+    # This is used for Alba associations with params: {select: [...]}
+    def find_or_create_select_interface(name:, base_interface:, selected_fields:)
+      cache_key = "#{name}_#{selected_fields.sort.join("_")}"
+
+      # Create a new select interface that filters properties
+      @select_interface_cache[cache_key] ||= SelectInterface.new(
+        name: name,
+        base_interface: base_interface,
+        selected_fields: selected_fields,
+        context: self
+      )
     end
 
     private

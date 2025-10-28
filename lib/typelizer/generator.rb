@@ -22,7 +22,10 @@ module Typelizer
         context = WriterContext.new(writer_name: writer_name)
         interfaces = serializers.map { |klass| context.interface_for(klass) }
 
-        Writer.new(writer_config).call(interfaces, force: force)
+        # Include any select interfaces that were created
+        all_interfaces = interfaces + context.instance_variable_get(:@select_interface_cache).values
+
+        Writer.new(writer_config).call(all_interfaces, force: force)
       end
 
       serializers
