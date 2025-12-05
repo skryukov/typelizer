@@ -11,6 +11,7 @@ Typelizer generates TypeScript types from your Ruby serializers. It supports mul
 - [Usage](#usage)
   - [Basic Setup](#basic-setup)
   - [Manual Typing](#manual-typing)
+  - [Alba Traits](#alba-traits)
   - [TypeScript Integration](#typescript-integration)
   - [Manual Generation](#manual-generation)
   - [Automatic Generation in Development](#automatic-generation-in-development)
@@ -112,6 +113,85 @@ You can also specify more complex type definitions using a lower-level API:
 
 ```ruby
 typelize attribute_name: ["string", "Date", optional: true, nullable: true, multi: true, enum: %w[foo bar], comment: "Attribute description", deprecated: "Use `another_attribute` instead"]
+```
+
+### Alba Traits
+
+Typelizer supports [Alba traits](https://github.com/okuramasafumi/alba#traits), generating separate TypeScript types for each trait. When using `with_traits` in associations, Typelizer generates intersection types.
+
+```ruby
+class UserResource < ApplicationResource
+  attributes :id, :name
+
+  trait :detailed do
+    attributes :email, :created_at
+  end
+
+  trait :with_posts do
+    has_many :posts, resource: PostResource, with_traits: [:summary]
+  end
+end
+```
+
+This generates:
+
+```typescript
+// User.ts
+export type User = {
+  id: number;
+  name: string;
+}
+
+type UserDetailedTrait = {
+  email: string;
+  created_at: string;
+}
+
+type UserWithPostsTrait = {
+  posts: Array<Post & PostSummaryTrait>;
+}
+
+export default User;
+```
+
+When using `with_traits` in associations, Typelizer generates intersection types combining the base type with trait types:
+
+```ruby
+class TeamResource < ApplicationResource
+  attributes :id, :name
+  has_one :lead, resource: UserResource, with_traits: [:detailed]
+  has_many :members, resource: UserResource, with_traits: [:detailed, :with_posts]
+end
+```
+
+This generates:
+
+```typescript
+// Team.ts
+import type { User, UserDetailedTrait, UserWithPostsTrait } from "@/types";
+
+export type Team = {
+  id: number;
+  name: string;
+  lead: User & UserDetailedTrait;
+  members: Array<User & UserDetailedTrait & UserWithPostsTrait>;
+}
+
+export default Team;
+```
+
+The `typelize` method works inside traits for manual type specification:
+
+```ruby
+trait :with_stats do
+  typelize :number
+  attribute :posts_count do |user|
+    user.posts.count
+  end
+
+  typelize score: :number
+  attributes :score
+end
 ```
 
 ### TypeScript Integration

@@ -60,6 +60,57 @@ module Typelizer
         ]
       end
 
+      def traits
+        return {} unless serializer.instance_variable_defined?(:@_traits)
+
+        serializer.instance_variable_get(:@_traits) || {}
+      end
+
+      def trait_properties(trait_name)
+        trait_block = traits[trait_name]
+        return [], {} unless trait_block
+
+        # Create a collector to capture attributes defined in the trait block
+        collector = TraitAttributeCollector.new
+        collector.instance_exec(&trait_block)
+
+        props = collector.collected_attributes.map do |name, attr|
+          build_trait_property(name.is_a?(Symbol) ? name.name : name, attr)
+        end
+
+        [props, collector.collected_typelizes]
+      end
+
+      def build_trait_property(name, attr)
+        case attr
+        when TraitAttributeCollector::TraitAssociation
+          with_traits = Array(attr.with_traits) if attr.with_traits
+
+          Property.new(
+            name: name,
+            type: attr.resource ? context.interface_for(attr.resource) : nil,
+            optional: false,
+            nullable: false,
+            multi: attr.multi,
+            column_name: name,
+            with_traits: with_traits
+          )
+        else
+          build_property(name, attr)
+        end
+      end
+
+      def trait_interfaces
+        traits.map do |trait_name, _|
+          TraitInterface.new(
+            serializer: serializer,
+            trait_name: trait_name,
+            context: context,
+            plugin: self
+          )
+        end
+      end
+
       private
 
       def build_property(name, attr, **options)
@@ -92,6 +143,9 @@ module Typelizer
           )
         when ::Alba::Association
           resource = attr.instance_variable_get(:@resource)
+          # Alba stores with_traits directly in @with_traits, not in @params
+          with_traits = attr.instance_variable_get(:@with_traits)
+          with_traits = Array(with_traits) if with_traits
 
           Property.new(
             name: name,
@@ -100,6 +154,7 @@ module Typelizer
             nullable: false,
             multi: false, # we override this in typelize_method_transform
             column_name: attr.name.is_a?(Symbol) ? attr.name.name : attr.name,
+            with_traits: with_traits,
             **options
           )
         when ::Alba::TypedAttribute
@@ -151,3 +206,6 @@ module Typelizer
     end
   end
 end
+
+require_relative "alba/trait_attribute_collector"
+require_relative "alba/trait_interface"

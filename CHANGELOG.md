@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- Alba: support for traits. ([@skryukov])
+
+  Typelizer now generates TypeScript types for Alba traits and supports `with_traits` in associations:
+
+  ```ruby
+  class UserResource < ApplicationResource
+    attributes :id, :name
+
+    trait :detailed do
+      attributes :email, :created_at
+    end
+
+    trait :with_posts do
+      has_many :posts, resource: PostResource, with_traits: [:summary]
+    end
+  end
+  ```
+
+  Generates:
+
+  ```typescript
+  type User = {
+    id: number;
+    name: string;
+  }
+
+  type UserDetailedTrait = {
+    email: string;
+    created_at: string;
+  }
+
+  type UserWithPostsTrait = {
+    posts: Array<Post & PostSummaryTrait>;
+  }
+  ```
+
+  When using `with_traits` in associations, Typelizer generates intersection types:
+
+  ```ruby
+  has_one :author, resource: UserResource, with_traits: [:detailed]
+  # Generates: author: User & UserDetailedTrait
+  ```
+
 ## [0.5.3] - 2025-11-25
 
 ## Fixed

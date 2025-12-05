@@ -52,6 +52,12 @@ module Typelizer
       end
     end
 
+    def trait_interfaces
+      return [] unless serializer_plugin.respond_to?(:trait_interfaces)
+
+      @trait_interfaces ||= serializer_plugin.trait_interfaces
+    end
+
     def properties
       @properties ||= begin
         props = serializer_plugin.properties
@@ -101,7 +107,16 @@ module Typelizer
           .uniq
           .reject { |type| global_type?(type) }
 
-        (custom_type_imports + serializer_types + Array(parent_interface&.name)).uniq - Array(self_type_name)
+        # Collect trait types from properties with with_traits (skip self-references)
+        all_props_with_traits = properties_to_print + trait_interfaces.flat_map(&:properties)
+        trait_imports = all_props_with_traits.flat_map do |prop|
+          next [] unless prop.with_traits&.any? && prop.type.is_a?(Interface)
+          # Skip if the trait types are from the current interface (same file)
+          next [] if prop.type.name == name
+          prop.with_traits.map { |t| "#{prop.type.name}#{t.to_s.camelize}Trait" }
+        end
+
+        (custom_type_imports + serializer_types + trait_imports + Array(parent_interface&.name)).uniq - Array(self_type_name)
       end
     end
 

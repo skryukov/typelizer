@@ -17,4 +17,14 @@ type AlbaPost = {
   name: string;
 }
 
+type AlbaPostDetailsTrait = {
+  excerpt: string;
+  word_count: number;
+}
+
+type AlbaPostWithAuthorTrait = {
+  user: AlbaUser;
+  created_by: AlbaUser;
+}
+
 export default AlbaPost;
