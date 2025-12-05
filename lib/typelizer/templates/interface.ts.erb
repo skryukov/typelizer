@@ -30,7 +30,10 @@ type <%= trait.name %> = {
 <% end -%>
 
 <% if interface.config.verbatim_module_syntax -%>
-export type { <%= interface.name %> };
+export type { <%= interface.name %><%= ", " + interface.trait_interfaces.map(&:name).join(", ") if interface.trait_interfaces.any? %> };
 <% else -%>
 export default <%= interface.name %>;
+<% if interface.trait_interfaces.any? -%>
+export type { <%= interface.trait_interfaces.map(&:name).join(", ") %> };
+<% end -%>
 <% end -%>

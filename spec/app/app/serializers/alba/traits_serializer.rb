@@ -46,7 +46,7 @@ module Alba
     # Trait with mixed attributes and associations
     trait :mixed do
       attributes :username, :name
-      has_one :invitor, resource: TraitsSerializer
+      has_one :user
       has_many :posts, resource: PostSerializer, with_traits: [:details]
     end
 

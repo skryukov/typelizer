@@ -85,10 +85,11 @@ module Typelizer
         case attr
         when TraitAttributeCollector::TraitAssociation
           with_traits = Array(attr.with_traits) if attr.with_traits
+          resource = attr.resource || infer_resource_from_name(name)
 
           Property.new(
             name: name,
-            type: attr.resource ? context.interface_for(attr.resource) : nil,
+            type: resource ? context.interface_for(resource) : nil,
             optional: false,
             nullable: false,
             multi: attr.multi,
@@ -98,6 +99,22 @@ module Typelizer
         else
           build_property(name, attr)
         end
+      end
+
+      def infer_resource_from_name(name)
+        class_name = name.to_s.classify
+        # Try common serializer naming conventions
+        ["#{class_name}Resource", "#{class_name}Serializer"].each do |resource_name|
+          return serializer.const_get(resource_name, false)
+        rescue NameError
+          # Try in parent namespace
+          begin
+            return Object.const_get("#{serializer.module_parent}::#{resource_name}")
+          rescue NameError
+            # Not found in this namespace
+          end
+        end
+        nil
       end
 
       def trait_interfaces

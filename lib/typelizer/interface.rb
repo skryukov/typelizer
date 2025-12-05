@@ -95,7 +95,10 @@ module Typelizer
 
     def imports
       @imports ||= begin
-        association_serializers, attribute_types = properties_to_print.filter_map(&:type)
+        # Include both main properties and trait properties for import collection
+        all_properties = properties_to_print + trait_interfaces.flat_map(&:properties)
+
+        association_serializers, attribute_types = all_properties.filter_map(&:type)
           .uniq
           .partition { |type| type.is_a?(Interface) }
 
@@ -108,8 +111,7 @@ module Typelizer
           .reject { |type| global_type?(type) }
 
         # Collect trait types from properties with with_traits (skip self-references)
-        all_props_with_traits = properties_to_print + trait_interfaces.flat_map(&:properties)
-        trait_imports = all_props_with_traits.flat_map do |prop|
+        trait_imports = all_properties.flat_map do |prop|
           next [] unless prop.with_traits&.any? && prop.type.is_a?(Interface)
           # Skip if the trait types are from the current interface (same file)
           next [] if prop.type.name == name
@@ -126,7 +128,12 @@ module Typelizer
     end
 
     def fingerprint
-      "<#{self.class.name} #{name} properties=[#{properties_to_print.map(&:fingerprint).join(", ")}]>"
+      if trait_interfaces.empty?
+        "<#{self.class.name} #{name} properties=[#{properties_to_print.map(&:fingerprint).join(", ")}]>"
+      else
+        traits_fingerprint = trait_interfaces.map { |t| "#{t.name}=[#{t.properties.map(&:fingerprint).join(", ")}]" }.join(", ")
+        "<#{self.class.name} #{name} properties=[#{properties_to_print.map(&:fingerprint).join(", ")}] traits=[#{traits_fingerprint}]>"
+      end
     end
 
     def quote(str)
