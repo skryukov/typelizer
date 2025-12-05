@@ -98,12 +98,12 @@ module Typelizer
       def normalize_typelize(type_def, **options)
         case type_def
         when Array
-          # [:string, nullable: true]
+          # [:string, nullable: true] or ['string?', nullable: true]
           type, *rest = type_def
           opts = rest.first || {}
-          { type: type }.merge(opts)
+          TypeParser.parse(type, **opts)
         when Symbol, String
-          { type: type_def }.merge(options)
+          TypeParser.parse(type_def, **options)
         else
           options
         end

@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning].
 
 ### Added
 
+- Type shortcuts for `typelize` method. ([@skryukov])
+
+  Use `?` suffix for optional and `[]` suffix for arrays:
+
+  ```ruby
+  typelize "string?"      # optional: true
+  typelize "number[]"     # multi: true
+  typelize "string?[]"    # optional: true, multi: true
+
+  # With hash syntax
+  typelize name: "string?", tags: "string[]"
+
+  # Combined with explicit options
+  typelize status: ["string?", nullable: true]
+  ```
+
+  Generates:
+
+  ```typescript
+  name?: string;
+  tags: Array<string>;
+  roles?: Array<string>;
+  status?: string | null;
+  ```
+
 - Alba: support for traits. ([@skryukov])
 
   Typelizer now generates TypeScript types for Alba traits and supports `with_traits` in associations:
