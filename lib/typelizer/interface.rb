@@ -113,6 +113,7 @@ module Typelizer
           next [] unless prop.with_traits&.any? && prop.type.is_a?(Interface)
           # Skip if the trait types are from the current interface (same file)
           next [] if prop.type.name == name
+
           prop.with_traits.map { |t| "#{prop.type.name}#{t.to_s.camelize}Trait" }
         end
 

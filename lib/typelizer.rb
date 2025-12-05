@@ -15,6 +15,7 @@ require_relative "typelizer/interface"
 require_relative "typelizer/renderer"
 require_relative "typelizer/writer"
 require_relative "typelizer/generator"
+require_relative "typelizer/type_parser"
 require_relative "typelizer/dsl"
 
 require_relative "typelizer/serializer_plugins/oj_serializers"

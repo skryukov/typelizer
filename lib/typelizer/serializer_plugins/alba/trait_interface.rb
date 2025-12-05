@@ -3,7 +3,6 @@
 module Typelizer
   module SerializerPlugins
     class Alba::TraitInterface
-
       attr_reader :serializer, :trait_name, :context, :plugin
 
       def initialize(serializer:, trait_name:, context:, plugin:)
@@ -24,9 +23,9 @@ module Typelizer
 
       def properties
         @properties ||= begin
-                          props, typelizes = plugin.trait_properties(trait_name)
-                          infer_types(props, typelizes)
-                        end
+          props, typelizes = plugin.trait_properties(trait_name)
+          infer_types(props, typelizes)
+        end
       end
 
       private

@@ -37,7 +37,11 @@ module Typelizer
       # can be invoked multiple times
       def typelize(type = nil, type_params = {}, **attributes)
         if type
-          @keyless_type = [type, type_params.merge(attributes)]
+          # Parse type shortcuts like 'string?', 'string[]'
+          parsed = TypeParser.parse(type)
+          merged_params = parsed.merge(type_params).merge(attributes)
+          actual_type = merged_params.delete(:type)
+          @keyless_type = [actual_type, merged_params]
         else
           assign_type_information(:_typelizer_attributes, attributes)
         end
@@ -79,7 +83,19 @@ module Typelizer
           attrs = [attrs] if attrs && !attrs.is_a?(Array)
           options = attrs.last.is_a?(Hash) ? attrs.pop : {}
 
-          options[:type] = attrs.join(" | ") if attrs.any?
+          if attrs.any?
+            # Parse type shortcuts and merge options
+            parsed_types = attrs.map { |t| TypeParser.parse(t) }
+            type_names = parsed_types.map { |p| p[:type] }
+            options[:type] = type_names.join(" | ")
+
+            # Merge modifier flags from all parsed types
+            parsed_types.each do |parsed|
+              options[:optional] = true if parsed[:optional]
+              options[:multi] = true if parsed[:multi]
+            end
+          end
+
           instance_variable_get(instance_variable)[name.to_sym] ||= {}
           instance_variable_get(instance_variable)[name.to_sym].merge!(options)
         end

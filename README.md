@@ -109,7 +109,26 @@ class PostResource < ApplicationResource
 end
 ```
 
-You can also specify more complex type definitions using a lower-level API:
+You can also use shortcut syntax for common type modifiers:
+
+```ruby
+class PostResource < ApplicationResource
+  typelize author_name: "string?"       # optional string (name?: string)
+  typelize tag_ids: "number[]"          # array of numbers (tag_ids: Array<number>)
+  typelize categories: "string?[]"      # optional array of strings (categories?: Array<string>)
+
+  # Shortcuts can be combined with explicit options
+  typelize status: ["string?", nullable: true]  # optional and nullable
+
+  # Also works with keyless typelize
+  typelize "string?"
+  attribute :nickname do |user|
+    user.nickname
+  end
+end
+```
+
+For more complex type definitions, use the full API:
 
 ```ruby
 typelize attribute_name: ["string", "Date", optional: true, nullable: true, multi: true, enum: %w[foo bar], comment: "Attribute description", deprecated: "Use `another_attribute` instead"]
