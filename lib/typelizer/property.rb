@@ -2,6 +2,7 @@ module Typelizer
   Property = Struct.new(
     :name, :type, :optional, :nullable,
     :multi, :column_name, :comment, :enum, :deprecated,
+    :with_traits,
     keyword_init: true
   ) do
     def inspect
@@ -17,6 +18,13 @@ module Typelizer
 
     def to_s
       type_str = type_name
+
+      # Handle intersection types for traits
+      if with_traits&.any? && type.respond_to?(:name)
+        trait_types = with_traits.map { |t| "#{type.name}#{t.to_s.camelize}Trait" }
+        type_str = ([type_str] + trait_types).join(" & ")
+      end
+
       type_str = "Array<#{type_str}>" if multi
       type_str = "#{type_str} | null" if nullable
 

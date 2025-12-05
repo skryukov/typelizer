@@ -20,6 +20,14 @@ type <%= interface.name %> = {
 <% end -%>
 }
 <% end -%>
+<% interface.trait_interfaces.each do |trait| -%>
+
+type <%= trait.name %> = {
+<% trait.properties.each do |property| -%>
+<%= indent(property) %>;
+<% end -%>
+}
+<% end -%>
 
 <% if interface.config.verbatim_module_syntax -%>
 export type { <%= interface.name %> };
