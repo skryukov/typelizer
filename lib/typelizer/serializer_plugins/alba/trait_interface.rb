@@ -24,7 +24,7 @@ module Typelizer
       def properties
         @properties ||= begin
           props, typelizes = plugin.trait_properties(trait_name)
-          infer_types(props, typelizes)
+          infer_types(props, typelizes).sort_by { |p| p.name.to_s }
         end
       end
 

@@ -48,14 +48,14 @@ module Typelizer
         props = serializer_plugin.meta_fields || []
         props = infer_types(props, :_typelizer_meta_attributes)
         props = config.properties_transformer.call(props) if config.properties_transformer
-        props
+        props.sort_by { |p| p.name.to_s }
       end
     end
 
     def trait_interfaces
       return [] unless serializer_plugin.respond_to?(:trait_interfaces)
 
-      @trait_interfaces ||= serializer_plugin.trait_interfaces
+      @trait_interfaces ||= serializer_plugin.trait_interfaces.sort_by { |t| t.name.to_s }
     end
 
     def properties
@@ -63,7 +63,7 @@ module Typelizer
         props = serializer_plugin.properties
         props = infer_types(props)
         props = config.properties_transformer.call(props) if config.properties_transformer
-        props
+        props.sort_by { |p| p.name.to_s }
       end
     end
 
@@ -119,7 +119,7 @@ module Typelizer
           prop.with_traits.map { |t| "#{prop.type.name}#{t.to_s.camelize}Trait" }
         end
 
-        (custom_type_imports + serializer_types + trait_imports + Array(parent_interface&.name)).uniq - Array(self_type_name)
+        (custom_type_imports + serializer_types + trait_imports + Array(parent_interface&.name)).uniq.sort - Array(self_type_name)
       end
     end
 
