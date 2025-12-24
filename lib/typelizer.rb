@@ -11,6 +11,7 @@ require_relative "typelizer/serializer_config_layer"
 
 require_relative "typelizer/contexts/writer_context"
 require_relative "typelizer/contexts/scan_context"
+require_relative "typelizer/property_sorter"
 require_relative "typelizer/interface"
 require_relative "typelizer/renderer"
 require_relative "typelizer/writer"

@@ -486,6 +486,13 @@ Typelizer.configure do |config|
   # Custom transformation for generated properties
   config.properties_transformer = ->(properties) { ... }
 
+  # Strategy for ordering properties in generated TypeScript interfaces
+  # :none - preserve serializer definition order (default)
+  # :alphabetical - sort properties A-Z (case-insensitive)
+  # :id_first_alphabetical - place 'id' first, then sort remaining A-Z
+  # Proc - custom sorting function receiving array of Property objects
+  config.properties_sort_order = :none
+
   # Plugin for model type inference (default: ModelPlugins::Auto)
   config.model_plugin = Typelizer::ModelPlugins::Auto
 
