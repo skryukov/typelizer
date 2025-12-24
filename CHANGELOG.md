@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.5.5] - 2025-12-24
+
 ### Added
 
 - New `properties_sort_order` configuration option for consistent property ordering in generated TypeScript interfaces. ([@skryukov])
@@ -308,7 +310,8 @@ and this project adheres to [Semantic Versioning].
 [@prog-supdex]: https://github.com/prog-supdex
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.5.4...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/skryukov/typelizer/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/skryukov/typelizer/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/skryukov/typelizer/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/skryukov/typelizer/compare/v0.5.1...v0.5.2
