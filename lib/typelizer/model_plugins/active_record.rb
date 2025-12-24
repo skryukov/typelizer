@@ -104,11 +104,32 @@ module Typelizer
         attribute_type_obj = model_class.attribute_types.fetch(prop.column_name.to_s, nil)
         return nil unless attribute_type_obj
 
+        if attribute_type_obj.instance_of?(::ActiveRecord::Type::Serialized)
+          return infer_types_for_serialized(prop, attribute_type_obj)
+        end
+
         if attribute_type_obj.respond_to?(:subtype)
           prop.type = @config.type_mapping[attribute_type_obj.subtype.type]
           prop.multi = true
         elsif attribute_type_obj.respond_to?(:type)
           prop.type = @config.type_mapping[attribute_type_obj.type]
+        end
+
+        prop
+      end
+
+      def infer_types_for_serialized(prop, type_obj)
+        object_class = type_obj.coder.try(:object_class) ||
+          type_obj.try(:object_class)
+
+        case object_class&.to_s
+        when "Array"
+          prop.type = :unknown
+          prop.multi = true
+        when "Hash"
+          prop.type = "Record<string, unknown>"
+        else
+          prop.type = :unknown
         end
 
         prop

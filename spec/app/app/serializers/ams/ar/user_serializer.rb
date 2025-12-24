@@ -2,7 +2,7 @@ module Ams
   module Ar
     class UserSerializer < BaseSerializer
       typelize_from ::User
-      attributes :id, :username
+      attributes :id, :username, :skills, :settings, :metadata
 
       has_one :invitor, serializer: UserSerializer
 
