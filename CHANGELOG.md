@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- New `properties_sort_order` configuration option for consistent property ordering in generated TypeScript interfaces. ([@skryukov])
+
+  ```ruby
+  Typelizer.configure do |config|
+    # Sort properties alphabetically with 'id' first
+    config.properties_sort_order = :id_first_alphabetical
+  end
+  ```
+
+  Available options:
+  - `:none` (default) - preserve serializer definition order
+  - `:alphabetical` - sort properties A-Z (case-insensitive)
+  - `:id_first_alphabetical` - place `id` first, then sort remaining A-Z
+  - `Proc` - custom sorting logic
+
+  ```ruby
+  # Custom sorting example
+  config.properties_sort_order = ->(props) {
+    priority = %w[id uuid type]
+    props.sort_by { |p| [priority.index(p.name) || 999, p.name] }
+  }
+  ```
+
 ## [0.5.4] - 2025-12-08
 
 ### Added

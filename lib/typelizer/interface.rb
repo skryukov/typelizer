@@ -48,7 +48,7 @@ module Typelizer
         props = serializer_plugin.meta_fields || []
         props = infer_types(props, :_typelizer_meta_attributes)
         props = config.properties_transformer.call(props) if config.properties_transformer
-        props
+        PropertySorter.sort(props, config.properties_sort_order)
       end
     end
 
@@ -63,7 +63,7 @@ module Typelizer
         props = serializer_plugin.properties
         props = infer_types(props)
         props = config.properties_transformer.call(props) if config.properties_transformer
-        props
+        PropertySorter.sort(props, config.properties_sort_order)
       end
     end
 
