@@ -119,7 +119,7 @@ module Typelizer
           prop.with_traits.map { |t| "#{prop.type.name}#{t.to_s.camelize}Trait" }
         end
 
-        (custom_type_imports + serializer_types + trait_imports + Array(parent_interface&.name)).uniq - Array(self_type_name)
+        (custom_type_imports + serializer_types + trait_imports + Array(parent_interface&.name)).uniq - [self_type_name, name]
       end
     end
 
