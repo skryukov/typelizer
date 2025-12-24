@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning].
   }
   ```
 
+### Fixed
+
+- Fix self-import issue when using custom `typelize` types for self-referential associations in namespaced serializers. ([@skryukov])
+
 ## [0.5.4] - 2025-12-08
 
 ### Added
