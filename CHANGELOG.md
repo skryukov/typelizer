@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning].
 
 ### Added
 
+- Type inference for serialized fields. `serialize :skills, type: Array` generates `Array<unknown>`, `serialize :settings, type: Hash` generates `Record<string, unknown>`. ([@skryukov])
+
 - New `properties_sort_order` configuration option for consistent property ordering in generated TypeScript interfaces. ([@skryukov])
 
   ```ruby

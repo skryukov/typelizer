@@ -5,6 +5,10 @@ class User < ApplicationRecord
   has_many :posts
   has_one :latest_post, class_name: "Post", foreign_key: :user_id, required: true
 
+  serialize :skills, type: Array, coder: JSON
+  serialize :settings, type: Hash, coder: JSON
+  serialize :metadata, coder: JSON
+
   attribute :attr_string, :string
   attribute :attr_integer, :integer
   attribute :attr_float, :float
