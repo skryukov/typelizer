@@ -493,6 +493,12 @@ Typelizer.configure do |config|
   # Proc - custom sorting function receiving array of Property objects
   config.properties_sort_order = :none
 
+  # Strategy for ordering imports in generated TypeScript interfaces
+  # :none - preserve original order (default)
+  # :alphabetical - sort imports A-Z (case-insensitive)
+  # Proc - custom sorting function receiving array of import strings
+  config.imports_sort_order = :none
+
   # Plugin for model type inference (default: ModelPlugins::Auto)
   config.model_plugin = Typelizer::ModelPlugins::Auto
 

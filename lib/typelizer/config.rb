@@ -24,6 +24,7 @@ module Typelizer
     :serializer_model_mapper,
     :properties_transformer,
     :properties_sort_order,
+    :imports_sort_order,
     :model_plugin,
     :serializer_plugin,
     :plugin_configs,
@@ -79,6 +80,7 @@ module Typelizer
         types_global: DEFAULT_TYPES_GLOBAL,
         properties_transformer: nil,
         properties_sort_order: :none,
+        imports_sort_order: :none,
         verbatim_module_syntax: false
       }
     end

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- New `imports_sort_order` configuration option for consistent import ordering in generated TypeScript interfaces. ([@jonmarkgo])
+
+  ```ruby
+  Typelizer.configure do |config|
+    # Sort imports alphabetically
+    config.imports_sort_order = :alphabetical
+  end
+  ```
+
+  Available options:
+  - `:none` (default) - preserve original order
+  - `:alphabetical` - sort imports A-Z (case-insensitive)
+  - `Proc` - custom sorting logic
+
 ### Fixed
 
 - Fix `index.ts` not being regenerated when traits are added or removed. ([@skryukov])
@@ -313,6 +329,7 @@ and this project adheres to [Semantic Versioning].
 
 [@davidrunger]: https://github.com/davidrunger
 [@Envek]: https://github.com/Envek
+[@jonmarkgo]: https://github.com/jonmarkgo
 [@hkamberovic]: https://github.com/hkamberovic
 [@kristinemcbride]: https://github.com/kristinemcbride
 [@nkriege]: https://github.com/nkriege
