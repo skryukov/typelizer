@@ -50,7 +50,7 @@ module Typelizer
     end
 
     def write_index(interfaces)
-      write_file("index.ts", interfaces.map(&:filename).join) do
+      write_file("index.ts", interfaces.map(&:fingerprint).join) do
         render_template("index.ts.erb", interfaces: interfaces)
       end
     end

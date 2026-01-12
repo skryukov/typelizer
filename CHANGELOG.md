@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix `index.ts` not being regenerated when traits are added or removed. ([@skryukov])
+
 ## [0.5.6] - 2026-01-12
 
 ### Added
