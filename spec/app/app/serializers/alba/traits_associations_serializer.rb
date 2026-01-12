@@ -26,5 +26,11 @@ module Alba
       has_many :posts, resource: PostSerializer, with_traits: [:details, :with_author]
       attributes :username
     end
+
+    trait :with_aliased_associations do
+      has_one :user, serializer: TraitsSerializer, key: :user_alias
+
+      has_many :posts, resource: PostSerializer, key: :custom_posts, with_traits: [:details]
+    end
   end
 end

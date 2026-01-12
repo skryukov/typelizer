@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Fixed
+
+- Alba: respect `key:` option for associations defined in traits. ([@skryukov])
+
 ## [0.5.5] - 2025-12-24
 
 ### Added

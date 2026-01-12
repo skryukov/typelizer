@@ -20,7 +20,7 @@ export type { default as AlbaPoro } from './AlbaPoro'
 export type { default as AlbaPost, AlbaPostDetailsTrait, AlbaPostWithAuthorTrait } from './AlbaPost'
 export type { default as AlbaPreferDoubleQuotes } from "./AlbaPreferDoubleQuotes"
 export type { default as AlbaSorted } from './AlbaSorted'
-export type { default as AlbaTraitsAssociations, AlbaTraitsAssociationsAssociationsTrait, AlbaTraitsAssociationsWithPostsTrait, AlbaTraitsAssociationsFullTrait } from './AlbaTraitsAssociations'
+export type { default as AlbaTraitsAssociations, AlbaTraitsAssociationsAssociationsTrait, AlbaTraitsAssociationsWithPostsTrait, AlbaTraitsAssociationsFullTrait, AlbaTraitsAssociationsWithAliasedAssociationsTrait } from './AlbaTraitsAssociations'
 export type { default as AlbaTraits, AlbaTraitsBasicTrait, AlbaTraitsTimeRelatedTrait, AlbaTraitsComplexTrait, AlbaTraitsCustomAttributesTrait, AlbaTraitsWithOptionsTrait, AlbaTraitsMixedTrait, AlbaTraitsEmptyTrait } from './AlbaTraits'
 export type { default as AlbaTransformKeys } from './AlbaTransformKeys'
 export type { default as AlbaTypeShortcuts, AlbaTypeShortcutsWithMetadataTrait } from './AlbaTypeShortcuts'

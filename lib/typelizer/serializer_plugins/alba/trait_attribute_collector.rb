@@ -54,17 +54,19 @@ module Typelizer
       end
 
       # Simple struct to hold association info from traits
-      TraitAssociation = Struct.new(:name, :resource, :with_traits, :multi, keyword_init: true)
+      TraitAssociation = Struct.new(:name, :resource, :with_traits, :multi, :key, keyword_init: true)
 
       # Support association methods that might be used in traits
       def one(name, **options, &block)
         resource = options[:resource] || options[:serializer]
         with_traits = options[:with_traits]
-        @collected_attributes[name] = TraitAssociation.new(
+        key = options[:key] || name
+        @collected_attributes[key] = TraitAssociation.new(
           name: name,
           resource: resource,
           with_traits: with_traits,
-          multi: false
+          multi: false,
+          key: key
         )
       end
 
@@ -74,11 +76,13 @@ module Typelizer
       def many(name, **options, &block)
         resource = options[:resource] || options[:serializer]
         with_traits = options[:with_traits]
-        @collected_attributes[name] = TraitAssociation.new(
+        key = options[:key] || name
+        @collected_attributes[key] = TraitAssociation.new(
           name: name,
           resource: resource,
           with_traits: with_traits,
-          multi: true
+          multi: true,
+          key: key
         )
       end
 
