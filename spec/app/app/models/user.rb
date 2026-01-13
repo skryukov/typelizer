@@ -5,6 +5,8 @@ class User < ApplicationRecord
   has_many :posts
   has_one :latest_post, class_name: "Post", foreign_key: :user_id, required: true
 
+  enum role: {guest: 0, member: 1, admin: 2, superadmin: 3}
+
   serialize :skills, type: Array, coder: JSON
   serialize :settings, type: Hash, coder: JSON
   serialize :metadata, coder: JSON

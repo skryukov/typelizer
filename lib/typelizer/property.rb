@@ -1,7 +1,7 @@
 module Typelizer
   Property = Struct.new(
     :name, :type, :optional, :nullable,
-    :multi, :column_name, :comment, :enum, :deprecated,
+    :multi, :column_name, :comment, :enum, :enum_type_name, :deprecated,
     :with_traits,
     keyword_init: true
   ) do
@@ -39,10 +39,16 @@ module Typelizer
       end << ">"
     end
 
+    def enum_definition
+      return unless enum && enum_type_name
+
+      "type #{enum_type_name} = #{enum.map { |v| v.to_s.inspect }.join(" | ")}"
+    end
+
     private
 
     def type_name
-      return enum.map { |v| v.to_s.inspect }.join(" | ") if enum
+      return enum_type_name if enum_type_name
 
       type.respond_to?(:name) ? type.name : type || "unknown"
     end

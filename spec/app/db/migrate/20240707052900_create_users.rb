@@ -5,6 +5,7 @@ class CreateUsers < ActiveRecord::Migration[7.1]
       t.string :username, null: false
       t.boolean :active, null: false, default: false
       t.references :invitor, foreign_key: {to_table: "users"}
+      t.integer :role, null: false, default: 0
 
       t.timestamps
     end

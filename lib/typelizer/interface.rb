@@ -58,6 +58,15 @@ module Typelizer
       @trait_interfaces ||= serializer_plugin.trait_interfaces
     end
 
+    def enum_types
+      @enum_types ||= begin
+        all_properties = properties + trait_interfaces.flat_map(&:properties)
+        all_properties
+          .select(&:enum_definition)
+          .uniq(&:enum_type_name)
+      end
+    end
+
     def properties
       @properties ||= begin
         props = serializer_plugin.properties
@@ -119,7 +128,10 @@ module Typelizer
           prop.with_traits.map { |t| "#{prop.type.name}#{t.to_s.camelize}Trait" }
         end
 
-        result = (custom_type_imports + serializer_types + trait_imports + Array(parent_interface&.name)).uniq - [self_type_name, name]
+        # Collect enum type names from properties
+        enum_imports = all_properties.filter_map(&:enum_type_name)
+
+        result = (custom_type_imports + serializer_types + trait_imports + enum_imports + Array(parent_interface&.name)).uniq - [self_type_name, name]
         ImportSorter.sort(result, config.imports_sort_order)
       end
     end

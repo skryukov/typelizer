@@ -1,7 +1,7 @@
 module Alba
   class UserSerializer < BaseSerializer
     typelize_from ::User
-    attributes :id, :username, :active, :name, :sir_name
+    attributes :id, :username, :active, :name, :sir_name, :role
 
     has_one :invitor, resource: UserSerializer
 

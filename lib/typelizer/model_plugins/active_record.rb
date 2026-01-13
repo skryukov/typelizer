@@ -28,6 +28,8 @@ module Typelizer
         return unless model_class&.defined_enums&.key?(prop.column_name.to_s)
 
         prop.enum = model_class.defined_enums[prop.column_name.to_s].keys
+        prop.enum_type_name = "#{model_class.name.demodulize}#{prop.column_name.to_s.camelize}"
+        prop.enum
       end
 
       private

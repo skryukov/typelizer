@@ -22,7 +22,10 @@ module Typelizer
       begin
         written_files.concat(valid_interfaces.map { |interface| write_interface(interface) })
 
-        written_files << write_index(valid_interfaces)
+        enums = collect_enums(valid_interfaces)
+        written_files << write_enums(enums) if enums.any?
+
+        written_files << write_index(valid_interfaces, enums: enums)
 
         cleanup_stale_files(written_files) unless force
 
@@ -49,9 +52,23 @@ module Typelizer
       File.delete(*stale_files) unless stale_files.empty?
     end
 
-    def write_index(interfaces)
-      write_file("index.ts", interfaces.map(&:fingerprint).join) do
-        render_template("index.ts.erb", interfaces: interfaces)
+    def collect_enums(interfaces)
+      interfaces
+        .flat_map(&:enum_types)
+        .uniq(&:enum_type_name)
+        .sort_by(&:enum_type_name)
+    end
+
+    def write_enums(enums)
+      write_file("Enums.ts", enums.map(&:fingerprint).join) do
+        render_template("enums.ts.erb", enums: enums)
+      end
+    end
+
+    def write_index(interfaces, enums: [])
+      fingerprint = interfaces.map(&:fingerprint).join + enums.map(&:fingerprint).join
+      write_file("index.ts", fingerprint) do
+        render_template("index.ts.erb", interfaces: interfaces, enums: enums)
       end
     end
 

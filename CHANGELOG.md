@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning].
   - `:alphabetical` - sort imports A-Z (case-insensitive)
   - `Proc` - custom sorting logic
 
+### Changed
+
+- Rails enum attributes now generate named types (e.g., `PostCategory`) in a separate `Enums.ts` file instead of inline unions. ([@skryukov])
+
 ### Fixed
 
 - Fix `index.ts` not being regenerated when traits are added or removed. ([@skryukov])

@@ -1,3 +1,6 @@
+<%- if enums.any? -%>
+export type { <%= enums.map(&:enum_type_name).join(", ") %> } from './Enums'
+<%- end -%>
 <%- interfaces.each do |interface| -%>
 <%- if interface.config.verbatim_module_syntax -%>
 export type { <%= interface.name %><%= ", " + interface.trait_interfaces.map(&:name).join(", ") if interface.trait_interfaces.any? %> } from <%= interface.quote('./' + interface.filename) %>
