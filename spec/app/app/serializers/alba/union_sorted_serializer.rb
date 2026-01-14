@@ -20,11 +20,16 @@ module Alba
       []
     end
 
-    # Enum values - should be sorted alphabetically
+    # Inline enum values - should be sorted alphabetically
     typelize status: [:string, enum: %w[zebra apple banana]]
     attribute :status do |user|
       "active"
     end
+
+    # Rails enum (named type in Enums.ts) - should be sorted alphabetically
+    # User.role enum has: guest, member, admin, superadmin
+    # With sorting: admin, guest, member, superadmin
+    attributes :role
 
     # Regular properties to test property sorting still works
     attributes :id, :username

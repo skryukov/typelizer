@@ -57,10 +57,15 @@ module Typelizer
       end << ">"
     end
 
-    def enum_definition
+    # Generates a TypeScript type definition for named enums
+    # @param sort_order [Symbol, Proc, nil] Sort order for enum values (:none, :alphabetical, or Proc)
+    # @return [String, nil] The type definition like "type UserRole = 'admin' | 'user'"
+    def enum_definition(sort_order: :none)
       return unless enum && enum_type_name
 
-      "type #{enum_type_name} = #{enum.map { |v| v.to_s.inspect }.join(" | ")}"
+      values = enum.map { |v| v.to_s.inspect }
+      values = values.sort_by(&:downcase) if sort_order == :alphabetical
+      "type #{enum_type_name} = #{values.join(" | ")}"
     end
 
     private

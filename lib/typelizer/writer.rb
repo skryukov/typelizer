@@ -61,7 +61,7 @@ module Typelizer
 
     def write_enums(enums)
       write_file("Enums.ts", enums.map(&:fingerprint).join) do
-        render_template("enums.ts.erb", enums: enums)
+        render_template("enums.ts.erb", enums: enums, sort_order: config.properties_sort_order)
       end
     end
 
