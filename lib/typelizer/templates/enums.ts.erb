@@ -1,3 +1,3 @@
 <%- enums.each do |property| -%>
-export <%= property.enum_definition %>;
+export <%= property.enum_definition(sort_order: sort_order) %>;
 <%- end -%>
