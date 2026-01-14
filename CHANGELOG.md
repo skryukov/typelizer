@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning].
 ### Changed
 
 - Rails enum attributes now generate named types (e.g., `PostCategory`) in a separate `Enums.ts` file instead of inline unions. ([@skryukov])
+- Replace TracePoint with module prepending for keyless `typelize` DSL, improving Rails 8.1+ compatibility. ([@skryukov])
 
 ### Fixed
 

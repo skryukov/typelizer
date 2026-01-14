@@ -15,14 +15,6 @@ module Typelizer
         nil
       end
 
-      def typelize_method_transform(method:, name:, binding:, type:, attrs:)
-        {name => [type, attrs]}
-      end
-
-      def methods_to_typelize
-        []
-      end
-
       def properties
         []
       end

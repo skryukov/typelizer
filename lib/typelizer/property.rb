@@ -5,6 +5,10 @@ module Typelizer
     :with_traits,
     keyword_init: true
   ) do
+    def with(**attrs)
+      dup.tap { |p| attrs.each { |k, v| p[k] = v } }
+    end
+
     def inspect
       props = to_h.merge(type: type_name).map { |k, v| "#{k}=#{v.inspect}" }.join(" ")
       "<#{self.class.name} #{props}>"

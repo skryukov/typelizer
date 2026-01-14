@@ -36,7 +36,7 @@ module Typelizer
           # First check for typelize DSL in the trait
           dsl_type = typelizes[prop.column_name.to_sym]
           if dsl_type&.any?
-            next Property.new(prop.to_h.merge(dsl_type)).tap do |property|
+            next prop.with(**dsl_type).tap do |property|
               property.comment ||= model_plugin.comment_for(property) if config.comments && property.comment != false
               property.enum ||= model_plugin.enum_for(property) if property.enum != false
             end

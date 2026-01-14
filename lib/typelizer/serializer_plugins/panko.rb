@@ -3,10 +3,6 @@ require_relative "base"
 module Typelizer
   module SerializerPlugins
     class Panko < Base
-      def methods_to_typelize
-        [:has_many, :has_one, :attributes, :method_added]
-      end
-
       def properties
         descriptor = serializer.new.instance_variable_get(:@descriptor)
         attributes = descriptor.attributes
@@ -23,14 +19,6 @@ module Typelizer
         end + has_one_associations.map do |assoc|
           association_property(assoc, multi: false)
         end
-      end
-
-      def typelize_method_transform(method:, name:, binding:, type:, attrs:)
-        if method == :method_added && binding.local_variable_defined?(:method)
-          name = binding.local_variable_get(:method)
-        end
-
-        super
       end
 
       private
