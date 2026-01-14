@@ -17,29 +17,6 @@ module Typelizer
         end
       end
 
-      def methods_to_typelize
-        [
-          :association, :one, :has_one,
-          :many, :has_many,
-          :attributes, :attribute,
-          :method_added,
-          :nested_attribute, :nested,
-          :meta
-        ]
-      end
-
-      def typelize_method_transform(method:, name:, binding:, type:, attrs:)
-        if method == :method_added && binding.local_variable_defined?(:method_name)
-          name = binding.local_variable_get(:method_name)
-        end
-
-        if [:many, :has_many].include?(method)
-          return {name => [type, attrs.merge(multi: true)]}
-        end
-
-        super
-      end
-
       def root_key
         root = serializer.new({}).send(:_key)
         if !root.nil? && has_transform_key?(serializer) && should_transform_root_key?(serializer)

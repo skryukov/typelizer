@@ -1,3 +1,6 @@
+require "set"
+require_relative "dsl/hooks"
+
 module Typelizer
   module DSL
     # typelize_from Model
@@ -6,11 +9,13 @@ module Typelizer
     def self.included(base)
       Typelizer.base_classes << base.to_s if base.name
       base.extend(ClassMethods)
+      Hooks.install(base)
     end
 
     def self.extended(base)
       Typelizer.base_classes << base.to_s if base.name
       base.extend(ClassMethods)
+      Hooks.install(base)
     end
 
     module ClassMethods
@@ -48,6 +53,21 @@ module Typelizer
       end
 
       attr_accessor :keyless_type
+
+      # Returns union of own + ancestors' multi attributes
+      def _typelizer_multi_attributes
+        result = @_typelizer_multi_attributes || Set.new
+        if superclass.respond_to?(:_typelizer_multi_attributes)
+          superclass._typelizer_multi_attributes | result
+        else
+          result
+        end
+      end
+
+      # Returns own Set (initializing if needed) for writing
+      def _own_typelizer_multi_attributes
+        @_typelizer_multi_attributes ||= Set.new
+      end
 
       def typelize_meta(**attributes)
         assign_type_information(:_typelizer_meta_attributes, attributes)

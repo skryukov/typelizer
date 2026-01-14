@@ -3,13 +3,6 @@ require_relative "base"
 module Typelizer
   module SerializerPlugins
     class OjSerializers < Base
-      def methods_to_typelize
-        [
-          :has_many, :has_one, :belongs_to,
-          :flat_one, :attribute, :attributes
-        ]
-      end
-
       def properties
         transform_keys = serializer.try(:_transform_keys)
         attributes = serializer._attributes

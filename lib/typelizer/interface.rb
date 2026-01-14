@@ -168,18 +168,41 @@ module Typelizer
     end
 
     def infer_types(props, hash_name = :_typelizer_attributes)
-      props.map do |prop|
-        if serializer.respond_to?(hash_name)
-          dsl_type = serializer.public_send(hash_name)[prop.column_name.to_sym]
-          if dsl_type&.any?
-            next Property.new(prop.to_h.merge(dsl_type)).tap do |property|
-              property.comment ||= model_plugin.comment_for(property) if config.comments && property.comment != false
-              property.enum ||= model_plugin.enum_for(property) if property.enum != false
-            end
-          end
-        end
+      dsl_attrs = serializer.respond_to?(hash_name) ? serializer.public_send(hash_name) : {}
+      multi_attrs = serializer.respond_to?(:_typelizer_multi_attributes) ? serializer._typelizer_multi_attributes : Set.new
 
-        model_plugin.infer_types(prop)
+      props.map do |prop|
+        has_dsl = dsl_attrs[prop.column_name.to_sym]&.any?
+
+        prop
+          .then { |p| apply_dsl_type(p, dsl_attrs) }
+          .then { |p| has_dsl ? p : apply_model_inference(p) }
+          .then { |p| apply_multi_flag(p, multi_attrs) }
+          .then { |p| apply_metadata(p) }
+      end
+    end
+
+    def apply_dsl_type(prop, dsl_attrs)
+      dsl_type = dsl_attrs[prop.column_name.to_sym]
+      return prop unless dsl_type&.any?
+
+      prop.with(**dsl_type)
+    end
+
+    def apply_model_inference(prop)
+      model_plugin.infer_types(prop)
+    end
+
+    def apply_multi_flag(prop, multi_attrs)
+      return prop unless multi_attrs.include?(prop.column_name.to_sym)
+
+      prop.with(multi: true)
+    end
+
+    def apply_metadata(prop)
+      prop.tap do |p|
+        p.comment ||= model_plugin.comment_for(p) if config.comments && p.comment != false
+        p.enum ||= model_plugin.enum_for(p) if p.enum != false
       end
     end
 
