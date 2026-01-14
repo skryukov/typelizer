@@ -19,6 +19,40 @@ module Typelizer
 
   DEFAULT_TYPES_GLOBAL = %w[Array Date Record File FileList].freeze
 
+  # Config keys that affect generated file content and must be included in fingerprints.
+  # When adding a new config, add it here if it affects output, or to CONFIGS_NOT_AFFECTING_OUTPUT.
+  CONFIGS_AFFECTING_OUTPUT = %i[
+    types_import_path
+    types_global
+    prefer_double_quotes
+    comments
+    verbatim_module_syntax
+    imports_sort_order
+    properties_sort_order
+  ].freeze
+
+  # Subset of CONFIGS_AFFECTING_OUTPUT that specifically affect index.ts output.
+  CONFIGS_AFFECTING_INDEX_OUTPUT = %i[
+    verbatim_module_syntax
+    prefer_double_quotes
+    imports_sort_order
+  ].freeze
+
+  # Config keys that don't affect file content (runtime behavior, or effects captured via properties).
+  CONFIGS_NOT_AFFECTING_OUTPUT = %i[
+    serializer_name_mapper
+    serializer_model_mapper
+    properties_transformer
+    model_plugin
+    serializer_plugin
+    plugin_configs
+    type_mapping
+    null_strategy
+    output_dir
+    inheritance_strategy
+    associations_strategy
+  ].freeze
+
   Config = Struct.new(
     :serializer_name_mapper,
     :serializer_model_mapper,

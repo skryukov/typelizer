@@ -141,12 +141,15 @@ module Typelizer
     end
 
     def fingerprint
-      if trait_interfaces.empty?
-        "<#{self.class.name} #{name} properties=[#{properties_to_print.map(&:fingerprint).join(", ")}]>"
-      else
-        traits_fingerprint = trait_interfaces.map { |t| "#{t.name}=[#{t.properties.map(&:fingerprint).join(", ")}]" }.join(", ")
-        "<#{self.class.name} #{name} properties=[#{properties_to_print.map(&:fingerprint).join(", ")}] traits=[#{traits_fingerprint}]>"
-      end
+      [
+        name,
+        properties_to_print.map(&:fingerprint),
+        parent_interface&.name,
+        root_key,
+        meta_fields.map(&:fingerprint),
+        trait_interfaces.map { |t| [t.name, t.properties.map(&:fingerprint)] },
+        CONFIGS_AFFECTING_OUTPUT.map { |key| config.public_send(key) }
+      ].inspect
     end
 
     def quote(str)

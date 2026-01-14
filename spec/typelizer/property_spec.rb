@@ -28,13 +28,19 @@ RSpec.describe Typelizer::Property do
       it "handles enum values with sorting" do
         prop = described_class.new(name: "status", enum: %w[zebra apple banana])
         result = prop.render(sort_order: :alphabetical)
-        expect(result).to eq('status: "apple" | "banana" | "zebra"')
+        expect(result).to eq("status: 'apple' | 'banana' | 'zebra'")
       end
 
       it "does not sort enum values when sort_order is :none" do
         prop = described_class.new(name: "status", enum: %w[zebra apple banana])
         result = prop.render(sort_order: :none)
-        expect(result).to eq('status: "zebra" | "apple" | "banana"')
+        expect(result).to eq("status: 'zebra' | 'apple' | 'banana'")
+      end
+
+      it "uses double quotes when prefer_double_quotes is true" do
+        prop = described_class.new(name: "status", enum: %w[zebra apple banana])
+        result = prop.render(sort_order: :alphabetical, prefer_double_quotes: true)
+        expect(result).to eq('status: "apple" | "banana" | "zebra"')
       end
 
       it "defaults to no sorting when sort_order not specified" do
