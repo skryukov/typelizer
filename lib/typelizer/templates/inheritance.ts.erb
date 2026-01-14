@@ -1,1 +1,5 @@
-<%= interface.overwritten_properties.any? ? "Omit<" : "" %><%= interface.parent_interface.name %><%= "[" + interface.quote(interface.parent_interface.root_key) + "]" if interface.parent_interface.root_key %><%= interface.overwritten_properties.any? ? ", " + interface.overwritten_properties.map { |pr| interface.quote(pr.name) }.join(' | ') + ">" : ""%>
+<%
+  omit_props = interface.overwritten_properties.map { |pr| interface.quote(pr.name) }
+  omit_props = omit_props.sort_by(&:downcase) if interface.config.properties_sort_order == :alphabetical
+-%>
+<%= interface.overwritten_properties.any? ? "Omit<" : "" %><%= interface.parent_interface.name %><%= "[" + interface.quote(interface.parent_interface.root_key) + "]" if interface.parent_interface.root_key %><%= interface.overwritten_properties.any? ? ", " + omit_props.join(' | ') + ">" : ""%>

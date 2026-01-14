@@ -9,14 +9,14 @@ render("inheritance.ts.erb", interface: interface).strip if interface.parent_int
 <%= " & " if interface.parent_interface %>{
 <% interface.properties_to_print.each do |property| -%>
 <%= render("comment.ts.erb", interface: interface, property: property) -%>
-<%= indent(property) %>;
+<%= indent(property.render(sort_order: interface.config.properties_sort_order)) %>;
 <% end -%>
 }
 <% end %><% if interface.root_key %>
 type <%= interface.name %> = {
 <%= indent(interface.root_key) %>: <%= interface.name %>Data;
 <% interface.meta_fields&.each do |property| -%>
-<%= indent(property) %>;
+<%= indent(property.render(sort_order: interface.config.properties_sort_order)) %>;
 <% end -%>
 }
 <% end -%>
@@ -24,7 +24,7 @@ type <%= interface.name %> = {
 
 type <%= trait.name %> = {
 <% trait.properties.each do |property| -%>
-<%= indent(property) %>;
+<%= indent(property.render(sort_order: interface.config.properties_sort_order)) %>;
 <% end -%>
 }
 <% end -%>

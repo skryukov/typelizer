@@ -25,7 +25,7 @@ module Typelizer
 
     def name
       if inline?
-        Renderer.call("inline_type.ts.erb", properties: properties).strip
+        Renderer.call("inline_type.ts.erb", properties: properties, sort_order: config.properties_sort_order).strip
       else
         config.serializer_name_mapper.call(serializer).tr_s(":", "")
       end
