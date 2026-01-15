@@ -60,15 +60,21 @@ module Typelizer
     end
 
     def write_enums(enums)
-      write_file("Enums.ts", enums.map(&:fingerprint).join) do
-        render_template("enums.ts.erb", enums: enums, sort_order: config.properties_sort_order)
+      fingerprint = [enums.map(&:fingerprint), config.properties_sort_order, config.prefer_double_quotes].inspect
+      write_file("Enums.ts", fingerprint) do
+        render_template("enums.ts.erb", enums: enums, sort_order: config.properties_sort_order, prefer_double_quotes: config.prefer_double_quotes)
       end
     end
 
     def write_index(interfaces, enums: [])
-      fingerprint = interfaces.map(&:fingerprint).join + enums.map(&:fingerprint).join
+      fingerprint = [
+        enums.map(&:enum_type_name),
+        interfaces.map { |i|
+          [i.name, i.filename, i.trait_interfaces.map(&:name), CONFIGS_AFFECTING_INDEX_OUTPUT.map { |key| i.config.public_send(key) }]
+        }
+      ].inspect
       write_file("index.ts", fingerprint) do
-        render_template("index.ts.erb", interfaces: interfaces, enums: enums)
+        render_template("index.ts.erb", interfaces: interfaces, enums: enums, imports_sort_order: config.imports_sort_order, prefer_double_quotes: config.prefer_double_quotes)
       end
     end
 

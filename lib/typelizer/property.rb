@@ -27,9 +27,10 @@ module Typelizer
 
     # Renders the property as a TypeScript property string
     # @param sort_order [Symbol, Proc, nil] Sort order for union types (:none, :alphabetical, or Proc)
+    # @param prefer_double_quotes [Boolean] Whether to use double quotes for string values
     # @return [String] The property string like "name?: Type1 | Type2"
-    def render(sort_order: :none)
-      type_str = type_name(sort_order: sort_order)
+    def render(sort_order: :none, prefer_double_quotes: false)
+      type_str = type_name(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
 
       # Handle intersection types for traits
       if with_traits&.any? && type.respond_to?(:name)
@@ -49,37 +50,41 @@ module Typelizer
     end
 
     def fingerprint
-      props = to_h
-      # Always use alphabetical sorting in fingerprint for deterministic change detection
-      props[:type] = UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical)
-      props.each_with_object(+"<#{self.class.name}") do |(k, v), fp|
-        fp << " #{k}=#{v.inspect}" unless v.nil?
-      end << ">"
+      # Use array format for consistent output across Ruby versions
+      # (Hash#inspect format changed in Ruby 3.4)
+      to_h.merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
+        .to_a.inspect
     end
 
     # Generates a TypeScript type definition for named enums
     # @param sort_order [Symbol, Proc, nil] Sort order for enum values (:none, :alphabetical, or Proc)
+    # @param prefer_double_quotes [Boolean] Whether to use double quotes for string values
     # @return [String, nil] The type definition like "type UserRole = 'admin' | 'user'"
-    def enum_definition(sort_order: :none)
+    def enum_definition(sort_order: :none, prefer_double_quotes: false)
       return unless enum && enum_type_name
 
-      values = enum.map { |v| v.to_s.inspect }
+      values = enum.map { |v| quote_string(v.to_s, prefer_double_quotes) }
       values = values.sort_by(&:downcase) if sort_order == :alphabetical
       "type #{enum_type_name} = #{values.join(" | ")}"
     end
 
     private
 
+    def quote_string(str, prefer_double_quotes)
+      prefer_double_quotes ? "\"#{str}\"" : "'#{str}'"
+    end
+
     # Returns the type name, optionally sorting union members
     # @param sort_order [Symbol, Proc, nil] Sort order for union types
+    # @param prefer_double_quotes [Boolean] Whether to use double quotes for string values
     # @return [String] The type name
-    def type_name(sort_order: :none)
+    def type_name(sort_order: :none, prefer_double_quotes: false)
       # If enum_type_name is set, use it (named enum type)
       return enum_type_name if enum_type_name
 
       if enum
         # Sort enum values if alphabetical sorting is requested
-        enum_values = enum.map { |v| v.to_s.inspect }
+        enum_values = enum.map { |v| quote_string(v.to_s, prefer_double_quotes) }
         enum_values = enum_values.sort_by(&:downcase) if sort_order == :alphabetical
         return enum_values.join(" | ")
       end

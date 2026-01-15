@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Changed
+
+- Use DSL hooks instead of TracePoint for `typelize` method. ([@skryukov])
+
+### Fixed
+
+- Apply sorting and quote style configs consistently to all generated files. ([@jonmarkgo], [@skryukov])
+- Fix fingerprint calculations to include all config options. ([@skryukov])
+
 ## [0.6.0] - 2026-01-14
 
 ### Added
@@ -28,7 +37,6 @@ and this project adheres to [Semantic Versioning].
 ### Changed
 
 - Rails enum attributes now generate named types (e.g., `PostCategory`) in a separate `Enums.ts` file instead of inline unions. ([@skryukov])
-- Replace TracePoint with module prepending for keyless `typelize` DSL, improving Rails 8.1+ compatibility. ([@skryukov])
 
 ### Fixed
 

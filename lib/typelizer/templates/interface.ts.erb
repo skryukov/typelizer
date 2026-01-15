@@ -9,14 +9,14 @@ render("inheritance.ts.erb", interface: interface).strip if interface.parent_int
 <%= " & " if interface.parent_interface %>{
 <% interface.properties_to_print.each do |property| -%>
 <%= render("comment.ts.erb", interface: interface, property: property) -%>
-<%= indent(property.render(sort_order: interface.config.properties_sort_order)) %>;
+<%= indent(property.render(sort_order: interface.config.properties_sort_order, prefer_double_quotes: interface.config.prefer_double_quotes)) %>;
 <% end -%>
 }
 <% end %><% if interface.root_key %>
 type <%= interface.name %> = {
 <%= indent(interface.root_key) %>: <%= interface.name %>Data;
 <% interface.meta_fields&.each do |property| -%>
-<%= indent(property.render(sort_order: interface.config.properties_sort_order)) %>;
+<%= indent(property.render(sort_order: interface.config.properties_sort_order, prefer_double_quotes: interface.config.prefer_double_quotes)) %>;
 <% end -%>
 }
 <% end -%>
@@ -24,16 +24,17 @@ type <%= interface.name %> = {
 
 type <%= trait.name %> = {
 <% trait.properties.each do |property| -%>
-<%= indent(property.render(sort_order: interface.config.properties_sort_order)) %>;
+<%= indent(property.render(sort_order: interface.config.properties_sort_order, prefer_double_quotes: interface.config.prefer_double_quotes)) %>;
 <% end -%>
 }
 <% end -%>
 
+<% sorted_trait_names = ImportSorter.sort(interface.trait_interfaces.map(&:name), interface.config.imports_sort_order) -%>
 <% if interface.config.verbatim_module_syntax -%>
-export type { <%= interface.name %><%= ", " + interface.trait_interfaces.map(&:name).join(", ") if interface.trait_interfaces.any? %> };
+export type { <%= interface.name %><%= ", " + sorted_trait_names.join(", ") if sorted_trait_names.any? %> };
 <% else -%>
 export default <%= interface.name %>;
-<% if interface.trait_interfaces.any? -%>
-export type { <%= interface.trait_interfaces.map(&:name).join(", ") %> };
+<% if sorted_trait_names.any? -%>
+export type { <%= sorted_trait_names.join(", ") %> };
 <% end -%>
 <% end -%>
