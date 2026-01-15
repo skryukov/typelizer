@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-01-15
+
 ### Changed
 
 - Use DSL hooks instead of TracePoint for `typelize` method. ([@skryukov])
@@ -356,7 +358,8 @@ and this project adheres to [Semantic Versioning].
 [@prog-supdex]: https://github.com/prog-supdex
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/skryukov/typelizer/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/skryukov/typelizer/compare/v0.5.6...v0.6.0
 [0.5.6]: https://github.com/skryukov/typelizer/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/skryukov/typelizer/compare/v0.5.4...v0.5.5
