@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning].
   Column types are automatically mapped to OpenAPI types with proper formats (`integer`, `int64`, `uuid`, `date-time`, etc.).
   Enums, nullable fields, arrays, deprecated flags, and `$ref` associations are all handled automatically.
 
+- Type inference for delegated attributes (`delegate :name, to: :user`). Typelizer now tracks `delegate` calls on ActiveRecord models and resolves types from the target association's model, including support for `prefix` and `allow_nil` options. ([@skryukov])
+
 - Reference other serializers in `typelize` method by passing the class directly. ([@skryukov])
 
 ### Fixed
