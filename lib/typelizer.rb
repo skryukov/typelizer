@@ -101,3 +101,5 @@ module Typelizer
 
   self.base_classes = Set.new
 end
+
+require_relative "typelizer/delegate_tracker"

@@ -12,6 +12,7 @@ module Typelizer
         infer_types_for_association(prop) ||
           infer_types_for_column(prop) ||
           infer_types_for_association_ids(prop) ||
+          infer_types_for_delegate(prop) ||
           infer_types_for_attribute(prop)
 
         prop
@@ -98,6 +99,25 @@ module Typelizer
 
         prop.type = :number
         prop.multi = true
+        prop
+      end
+
+      def infer_types_for_delegate(prop)
+        return nil unless model_class
+
+        info = DelegateTracker[model_class, prop.column_name.to_sym]
+        return nil unless info
+
+        assoc = model_class.reflect_on_association(info[:to])
+        return nil unless assoc
+
+        target = assoc.klass
+        col = target.columns_hash[info[:original].to_s]
+        return nil unless col
+
+        prop.type = @config.type_mapping[col.type]
+        prop.multi = !!col.try(:array)
+        prop.nullable = col.null || info[:allow_nil]
         prop
       end
 
