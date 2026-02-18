@@ -66,6 +66,7 @@ module Typelizer
         column = model_class&.columns_hash&.dig(prop.column_name.to_s)
         return nil unless column
 
+        prop.column_type = column.type
         prop.multi = !!column.try(:array)
         case config.null_strategy
         when :nullable
@@ -111,9 +112,11 @@ module Typelizer
         end
 
         if attribute_type_obj.respond_to?(:subtype)
+          prop.column_type = attribute_type_obj.subtype.type
           prop.type = @config.type_mapping[attribute_type_obj.subtype.type]
           prop.multi = true
         elsif attribute_type_obj.respond_to?(:type)
+          prop.column_type = attribute_type_obj.type
           prop.type = @config.type_mapping[attribute_type_obj.type]
         end
 

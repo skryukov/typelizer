@@ -16,6 +16,7 @@ Typelizer generates TypeScript types from your Ruby serializers. It supports mul
   - [Manual Generation](#manual-generation)
   - [Automatic Generation in Development](#automatic-generation-in-development)
   - [Disabling Typelizer](#disabling-typelizer)
+- [OpenAPI Schema Generation](#openapi-schema-generation)
 - [Configuration](#configuration)
   - [Global Configuration](#simple-configuration)
   - [Writers (multiple outputs)](#defining-multiple-writers)
@@ -309,6 +310,60 @@ Typelizer.listen = false
 ### Disabling Typelizer
 
 Sometimes we want to use Typelizer only with manual generation. To disable Typelizer during development, we can set `DISABLE_TYPELIZER` environment variable to `true`. This doesn't affect manual generation.
+
+## OpenAPI Schema Generation
+
+Typelizer can generate [OpenAPI](https://swagger.io/specification/) component schemas from your serializers. This is useful for documenting your API or integrating with tools like [rswag](https://github.com/rswag/rswag).
+
+Get all schemas as a hash:
+
+```ruby
+Typelizer.openapi_schemas
+# => {
+#   "Post" => {
+#     type: :object,
+#     properties: {
+#       id: { type: :integer },
+#       title: { type: :string },
+#       published_at: { type: :string, format: :"date-time", nullable: true }
+#     },
+#     required: [:id, :title]
+#   },
+#   "Author" => { ... }
+# }
+```
+
+By default, schemas are generated for OpenAPI 3.0. Pass `openapi_version: "3.1"` for OpenAPI 3.1 output (e.g., `type: [:string, :null]` instead of `nullable: true`):
+
+```ruby
+Typelizer.openapi_schemas(openapi_version: "3.1")
+```
+
+Generate a schema for a single interface:
+
+```ruby
+interfaces = Typelizer.interfaces
+post_interface = interfaces.find { |i| i.name == "Post" }
+Typelizer::OpenAPI.schema_for(post_interface)
+Typelizer::OpenAPI.schema_for(post_interface, openapi_version: "3.1")
+```
+
+Column types are mapped to OpenAPI types automatically:
+
+| Column type | OpenAPI type | Format |
+|---|---|---|
+| `integer` | `integer` | |
+| `bigint` | `integer` | `int64` |
+| `float` | `number` | `float` |
+| `decimal` | `number` | `double` |
+| `boolean` | `boolean` | |
+| `string`, `text`, `citext` | `string` | |
+| `uuid` | `string` | `uuid` |
+| `date` | `string` | `date` |
+| `datetime` | `string` | `date-time` |
+| `time` | `string` | `time` |
+
+Enums, nullable fields, arrays, deprecated flags, and `$ref` associations are all handled automatically.
 
 ## Configuration
 
