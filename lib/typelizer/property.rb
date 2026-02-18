@@ -1,7 +1,7 @@
 module Typelizer
   Property = Struct.new(
     :name, :type, :optional, :nullable,
-    :multi, :column_name, :comment, :enum, :enum_type_name, :deprecated,
+    :multi, :column_name, :column_type, :comment, :enum, :enum_type_name, :deprecated,
     :with_traits,
     keyword_init: true
   ) do
@@ -52,7 +52,8 @@ module Typelizer
     def fingerprint
       # Use array format for consistent output across Ruby versions
       # (Hash#inspect format changed in Ruby 3.4)
-      to_h.merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
+      # Exclude fields that do not affect generated TypeScript output
+      to_h.except(:column_type).merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
         .to_a.inspect
     end
 

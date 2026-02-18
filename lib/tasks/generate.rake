@@ -19,13 +19,13 @@ namespace :typelizer do
     ENV["DISABLE_TYPELIZER"] = "false"
 
     puts "Generating TypeScript interfaces..."
-    serializers = []
     time = Benchmark.realtime do
-      serializers = block.call
+      block.call
     end
 
+    interfaces = Typelizer.interfaces
     puts "Finished in #{time} seconds"
-    puts "Found #{serializers.size} serializers:"
-    puts serializers.map { |s| "\t#{s.name}" }.join("\n")
+    puts "Found #{interfaces.size} serializers:"
+    puts interfaces.map { |i| "\t#{i.name}" }.join("\n")
   end
 end
