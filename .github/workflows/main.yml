@@ -60,6 +60,12 @@ jobs:
         ruby-version: ${{ matrix.ruby }}
         bundler-cache: true
         bundler: latest
+
+      # Drop once the issue is fixed:
+      # https://github.com/actions/runner-images/issues/13647
+    - name: Fix gem directory permissions
+      run: sudo chmod +t $(ruby -e 'puts Gem.default_dir')/gems
+
     - name: Setup dummy database
       run: spec/app/bin/setup
     - name: Run tests
