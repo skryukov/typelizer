@@ -65,9 +65,8 @@ module Typelizer
 
     def interfaces(writer_name: nil)
       load_serializers
-      serializers = target_serializers
       context = WriterContext.new(writer_name: writer_name)
-      serializers
+      target_serializers(context.writer_config.reject_class)
         .map { |klass| context.interface_for(klass) }
         .reject(&:empty?)
     end
@@ -82,7 +81,7 @@ module Typelizer
       dirs.flat_map { |dir| Dir["#{dir}/**/*.rb"] }.each { |file| require file }
     end
 
-    def target_serializers
+    def target_serializers(reject_class)
       resolved = base_classes.filter_map do |base_class|
         Object.const_get(base_class) if Object.const_defined?(base_class)
       end

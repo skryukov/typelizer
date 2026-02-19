@@ -18,12 +18,11 @@ module Typelizer
   class Configuration
     DEFAULT_WRITER_NAME = :default
 
-    attr_accessor :dirs, :reject_class, :listen
+    attr_accessor :dirs, :listen
     attr_reader :writers, :global_settings
 
     def initialize
       @dirs = []
-      @reject_class = ->(serializer:) { false }
       @listen = nil
 
       default = Config.build

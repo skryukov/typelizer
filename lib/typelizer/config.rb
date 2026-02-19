@@ -51,6 +51,7 @@ module Typelizer
     output_dir
     inheritance_strategy
     associations_strategy
+    reject_class
   ].freeze
 
   Config = Struct.new(
@@ -70,6 +71,7 @@ module Typelizer
     :verbatim_module_syntax,
     :inheritance_strategy,
     :associations_strategy,
+    :reject_class,
     :comments,
     :prefer_double_quotes,
     keyword_init: true
@@ -105,6 +107,7 @@ module Typelizer
         null_strategy: :nullable,
         inheritance_strategy: :none,
         associations_strategy: :database,
+        reject_class: ->(serializer:) { false },
         comments: false,
         prefer_double_quotes: false,
 

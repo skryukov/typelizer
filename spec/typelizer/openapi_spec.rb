@@ -22,6 +22,44 @@ RSpec.describe Typelizer do
       expect(interfaces).not_to be_empty
     end
 
+    it "filters interfaces when reject_class is set globally" do
+      all_interfaces = Typelizer.interfaces
+      alba_names = all_interfaces.select { |i| i.serializer.name.start_with?("Alba::") }.map(&:name)
+      expect(alba_names).not_to be_empty
+
+      Typelizer.reject_class = ->(serializer:) { serializer.name.start_with?("Alba::") }
+      filtered = Typelizer.interfaces
+      filtered_names = filtered.map(&:name)
+
+      alba_names.each { |name| expect(filtered_names).not_to include(name) }
+    ensure
+      Typelizer.reject_class = ->(serializer:) { false }
+    end
+
+    it "applies global reject_class to all writer_name values" do
+      Typelizer.reject_class = ->(serializer:) { serializer.name.start_with?("Alba::") }
+
+      default_interfaces = Typelizer.interfaces(writer_name: :default)
+      default_names = default_interfaces.map { |i| i.serializer.name }
+
+      expect(default_names.none? { |n| n.start_with?("Alba::") }).to be(true)
+    ensure
+      Typelizer.reject_class = ->(serializer:) { false }
+    end
+
+    it "filters openapi_schemas when reject_class is set globally" do
+      all_schemas = Typelizer.openapi_schemas
+      alba_schema_names = all_schemas.keys.select { |n| n.start_with?("Alba") }
+      expect(alba_schema_names).not_to be_empty
+
+      Typelizer.reject_class = ->(serializer:) { serializer.name.start_with?("Alba::") }
+      filtered_schemas = Typelizer.openapi_schemas
+
+      alba_schema_names.each { |name| expect(filtered_schemas.keys).not_to include(name) }
+    ensure
+      Typelizer.reject_class = ->(serializer:) { false }
+    end
+
     it "returns empty array when no serializers are registered" do
       original = Typelizer.base_classes.dup
       Typelizer.send(:base_classes=, Set.new)
@@ -30,9 +68,80 @@ RSpec.describe Typelizer do
     ensure
       Typelizer.send(:base_classes=, original)
     end
+
+    it "uses per-writer reject_class when writer_name is given" do
+      configuration = Typelizer.configuration
+      default_output_dir = configuration.writer_config(:default).output_dir
+      v1_output_dir = Pathname(default_output_dir).parent.join("v1_types")
+
+      configuration.writer(:v1) do |c|
+        c.output_dir = v1_output_dir
+        c.reject_class = ->(serializer:) { !serializer.name.start_with?("Alba::") }
+      end
+
+      v1_interfaces = Typelizer.interfaces(writer_name: :v1)
+      v1_serializer_names = v1_interfaces.map { |i| i.serializer.name }
+
+      expect(v1_serializer_names).not_to be_empty
+      expect(v1_serializer_names).to all(start_with("Alba::"))
+
+      # Default writer should still include everything
+      default_interfaces = Typelizer.interfaces(writer_name: :default)
+      default_serializer_names = default_interfaces.map { |i| i.serializer.name }
+      non_alba = default_serializer_names.reject { |n| n.start_with?("Alba::") }
+      expect(non_alba).not_to be_empty
+    ensure
+      configuration.reset_writers!
+    end
+
+    it "allows two writers with different reject_class to return different subsets" do
+      configuration = Typelizer.configuration
+      default_output_dir = configuration.writer_config(:default).output_dir
+
+      configuration.writer(:alba_only) do |c|
+        c.output_dir = Pathname(default_output_dir).parent.join("alba_only")
+        c.reject_class = ->(serializer:) { !serializer.name.start_with?("Alba::") }
+      end
+
+      configuration.writer(:ams_only) do |c|
+        c.output_dir = Pathname(default_output_dir).parent.join("ams_only")
+        c.reject_class = ->(serializer:) { !serializer.name.start_with?("Ams::") }
+      end
+
+      alba_names = Typelizer.interfaces(writer_name: :alba_only).map { |i| i.serializer.name }
+      ams_names = Typelizer.interfaces(writer_name: :ams_only).map { |i| i.serializer.name }
+
+      expect(alba_names).to all(start_with("Alba::"))
+      expect(ams_names).to all(start_with("Ams::"))
+      expect(alba_names & ams_names).to be_empty
+    ensure
+      configuration.reset_writers!
+    end
   end
 
   describe ".openapi_schemas" do
+    it "uses per-writer reject_class to scope schemas" do
+      configuration = Typelizer.configuration
+      default_output_dir = configuration.writer_config(:default).output_dir
+
+      configuration.writer(:v1) do |c|
+        c.output_dir = Pathname(default_output_dir).parent.join("v1_schemas")
+        c.reject_class = ->(serializer:) { !serializer.name.start_with?("Alba::") }
+      end
+
+      v1_schemas = Typelizer.openapi_schemas(writer_name: :v1)
+      expect(v1_schemas).not_to be_empty
+
+      # All schema names should correspond to Alba serializers only
+      all_schemas = Typelizer.openapi_schemas
+      non_alba_schemas = all_schemas.keys.reject { |n| n.start_with?("Alba") }
+      expect(non_alba_schemas).not_to be_empty
+
+      non_alba_schemas.each { |name| expect(v1_schemas.keys).not_to include(name) }
+    ensure
+      configuration.reset_writers!
+    end
+
     it "returns a hash of interface_name => openapi_schema" do
       schemas = Typelizer.openapi_schemas
       expect(schemas).to be_a(Hash)

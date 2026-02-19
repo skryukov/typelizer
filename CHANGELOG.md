@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning].
 
 - Reference other serializers in `typelize` method by passing the class directly. ([@skryukov])
 
+- Per-writer `reject_class` configuration. Each writer can now define its own `reject_class` filter, enabling scoped output (e.g., only V1 serializers for a V1 writer). ([@skryukov])
+
 ### Fixed
 
 - `typelize` DSL metadata (optional, comment, type overrides) now correctly applies to renamed attributes (e.g., via `key:`, `alias_name`, `value_from`). Previously, metadata was looked up only by `column_name`, missing attributes where the output name differs. ([@skryukov])
