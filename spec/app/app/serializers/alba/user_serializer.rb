@@ -9,7 +9,8 @@ module Alba
     has_one :latest_post, resource: PostSerializer # Duplicated association
     has_many :posts, resource: PostSerializer, key: :custom_key_posts
 
-    typelize id: [:string, nullable: true]
+    typelize id: [:string, nullable: true],
+      custom_key_posts: [{optional: true, comment: "Aliased posts collection"}]
 
     typelize :string, comment: "This is sir name from the name"
     def sir_name(object)

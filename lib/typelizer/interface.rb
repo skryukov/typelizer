@@ -175,7 +175,7 @@ module Typelizer
       multi_attrs = serializer.respond_to?(:_typelizer_multi_attributes) ? serializer._typelizer_multi_attributes : Set.new
 
       props.map do |prop|
-        has_dsl = dsl_attrs[prop.column_name.to_sym]&.any?
+        has_dsl = dsl_attrs_for(prop, dsl_attrs)&.any?
 
         prop
           .then { |p| apply_dsl_type(p, dsl_attrs) }
@@ -185,8 +185,12 @@ module Typelizer
       end
     end
 
+    def dsl_attrs_for(prop, dsl_attrs)
+      dsl_attrs[prop.column_name.to_sym] || dsl_attrs[prop.name.to_sym]
+    end
+
     def apply_dsl_type(prop, dsl_attrs)
-      dsl_type = dsl_attrs[prop.column_name.to_sym]
+      dsl_type = dsl_attrs_for(prop, dsl_attrs)
       return prop unless dsl_type&.any?
 
       dsl_type = resolve_class_type(dsl_type)
