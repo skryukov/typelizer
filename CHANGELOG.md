@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning].
 
 - Reference other serializers in `typelize` method by passing the class directly. ([@skryukov])
 
+### Fixed
+
+- `typelize` DSL metadata (optional, comment, type overrides) now correctly applies to renamed attributes (e.g., via `key:`, `alias_name`, `value_from`). Previously, metadata was looked up only by `column_name`, missing attributes where the output name differs. ([@skryukov])
+
 ## [0.7.0] - 2026-01-15
 
 ### Changed
