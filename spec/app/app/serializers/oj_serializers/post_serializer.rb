@@ -13,6 +13,9 @@ module OjSerializers
       object.user
     end
 
+    attribute :previous_post
+    typelize previous_post: PostSerializer
+
     attribute :name, &:title
     typelize name: [:string, deprecated: "Use 'title' instead."]
   end

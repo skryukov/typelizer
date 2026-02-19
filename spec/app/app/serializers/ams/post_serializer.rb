@@ -13,6 +13,9 @@ module Ams
       object.user
     end
 
+    attributes :previous_post
+    typelize previous_post: PostSerializer
+
     typelize :string
     attribute :name, deprecated: "Use 'title' instead."
     def name

@@ -92,4 +92,65 @@ RSpec.describe Typelizer::OpenAPI do
       expect(schema).not_to have_key(:required)
     end
   end
+
+  describe "resolving serializer class references" do
+    let(:context) { Typelizer::WriterContext.new }
+
+    # Tests that `typelize field: SomeSerializer` (class constant) and
+    # `typelize field: "Module::SomeSerializer"` (class name string)
+    # both resolve to Interface objects, producing correct $ref in OpenAPI
+    # and correct type names in TypeScript.
+    {
+      "Alba" => {serializer: Alba::ClassRefSerializer, user_schema: "AlbaUser"},
+      "AMS" => {serializer: Ams::ClassRefSerializer, user_schema: "AmsUser"},
+      "OjSerializers" => {serializer: OjSerializers::ClassRefSerializer, user_schema: "OjSerializersUser"},
+      "Panko" => {serializer: Panko::ClassRefSerializer, user_schema: "PankoUser"}
+    }.each do |plugin, config|
+      context "with #{plugin}" do
+        let(:interface) { context.interface_for(config[:serializer]) }
+        let(:schema) { described_class.schema_for(interface) }
+        let(:user_schema_name) { config[:user_schema] }
+
+        it "resolves class constant in typelize to Interface" do
+          reviewer_prop = interface.properties.find { |p| p.name.to_s == "reviewer" }
+          expect(reviewer_prop.type).to be_a(Typelizer::Interface)
+        end
+
+        it "resolves class name string in typelize to Interface" do
+          editor_prop = interface.properties.find { |p| p.name.to_s == "editor" }
+          expect(editor_prop.type).to be_a(Typelizer::Interface)
+        end
+
+        it "generates $ref for class constant reference (nullable)" do
+          reviewer_schema = schema[:properties]["reviewer"]
+          expect(reviewer_schema).to include(:allOf)
+          expect(reviewer_schema[:allOf].first).to eq({"$ref" => "#/components/schemas/#{user_schema_name}"})
+          expect(reviewer_schema[:nullable]).to eq(true)
+        end
+
+        it "generates $ref for class name string reference" do
+          editor_schema = schema[:properties]["editor"]
+          expect(editor_schema).to eq({"$ref" => "#/components/schemas/#{user_schema_name}"})
+        end
+      end
+    end
+
+    # Tests that `typelize previous_post: PostSerializer` resolves self-references
+    {
+      "Alba" => {serializer: Alba::PostSerializer, post_schema: "AlbaPost"},
+      "AMS" => {serializer: Ams::PostSerializer, post_schema: "AmsPost"},
+      "OjSerializers" => {serializer: OjSerializers::PostSerializer, post_schema: "OjSerializersPost"},
+      "Panko" => {serializer: Panko::PostSerializer, post_schema: "PankoPost"}
+    }.each do |plugin, config|
+      context "#{plugin} self-referencing class constant" do
+        it "generates $ref for previous_post" do
+          interface = context.interface_for(config[:serializer])
+          schema = described_class.schema_for(interface)
+
+          previous_post_schema = schema[:properties]["previous_post"]
+          expect(previous_post_schema).to eq({"$ref" => "#/components/schemas/#{config[:post_schema]}"})
+        end
+      end
+    end
+  end
 end

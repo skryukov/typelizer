@@ -6,4 +6,8 @@ class Post < ApplicationRecord
   def next_post
     # Returns Post
   end
+
+  def previous_post
+    # Returns Post
+  end
 end

@@ -21,6 +21,9 @@ module Alba
     attributes :next_post
     typelize next_post: "Post"
 
+    attributes :previous_post
+    typelize previous_post: PostSerializer
+
     attribute :name, &:title
     typelize name: [:string, comment: "This is name", deprecated: true]
 

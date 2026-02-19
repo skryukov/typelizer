@@ -14,5 +14,8 @@ module Panko
     def created_by
       object.user
     end
+
+    attributes :previous_post
+    typelize previous_post: PostSerializer
   end
 end
