@@ -38,6 +38,29 @@ RSpec.describe Typelizer::Generator, type: :typelizer do
   describe "#call" do
     subject(:generator) { described_class.new }
 
+    it "uses each writer's own reject_class so a serializer excluded by one writer still appears in another" do
+      alba_only_dir = default_output_dir.parent.join("generator_alba_only")
+
+      configuration.writer(:alba_only) do |c|
+        c.output_dir = alba_only_dir
+        c.reject_class = ->(serializer:) { !serializer.name.start_with?("Alba::") }
+      end
+
+      expect { generator.call(force: true) }.not_to raise_error
+
+      # alba_only writer should have Alba files
+      expect(alba_only_dir.join("AlbaPost.ts")).to exist
+
+      # alba_only writer should NOT have non-Alba files
+      expect(alba_only_dir.join("AmsPost.ts")).not_to exist
+
+      # default writer should still have both
+      expect(default_output_dir.join("AlbaPost.ts")).to exist
+      expect(default_output_dir.join("AmsPost.ts")).to exist
+    ensure
+      FileUtils.rm_rf(alba_only_dir)
+    end
+
     it "generates files for all writers and applies writer-specific transformers" do
       expect { generator.call(force: true) }.not_to raise_error
 

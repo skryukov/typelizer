@@ -176,6 +176,55 @@ RSpec.describe Typelizer::Configuration, type: :typelizer do
     end
   end
 
+  describe "reject_class (current global behavior)" do
+    it "is readable and writable via the flat accessor on Configuration" do
+      custom_filter = ->(serializer:) { serializer.name.start_with?("Alba::") }
+      configuration.reject_class = custom_filter
+
+      expect(configuration.reject_class).to eq(custom_filter)
+    ensure
+      configuration.reject_class = ->(serializer:) { false }
+    end
+
+    it "defaults to accepting all serializers" do
+      expect(configuration.reject_class.call(serializer: Alba::UserSerializer)).to be(false)
+    end
+  end
+
+  describe "reject_class as per-writer Config member" do
+    it "can be set in a writer block" do
+      filter = ->(serializer:) { serializer.name.start_with?("Alba::") }
+      configuration.writer(:v1) do |c|
+        c.output_dir = custom_output_dir
+        c.reject_class = filter
+      end
+
+      expect(configuration.writer_config(:v1).reject_class).to eq(filter)
+    end
+
+    it "inherits from global_settings when set via flat setter" do
+      filter = ->(serializer:) { serializer.name.start_with?("Alba::") }
+      configuration.reject_class = filter
+
+      configuration.writer(:v1) do |c|
+        c.output_dir = custom_output_dir
+      end
+
+      expect(configuration.writer_config(:v1).reject_class).to eq(filter)
+    ensure
+      configuration.reject_class = ->(serializer:) { false }
+    end
+
+    it "defaults to accepting all serializers in new writers" do
+      configuration.writer(:v1) do |c|
+        c.output_dir = custom_output_dir
+      end
+
+      result = configuration.writer_config(:v1).reject_class.call(serializer: Alba::UserSerializer)
+      expect(result).to be(false)
+    end
+  end
+
   describe "#writer_config" do
     it "returns the default writer config when no name is given" do
       expect(config_manager.writer_config).to eq(config_manager.writers[:default])
