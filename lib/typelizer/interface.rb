@@ -189,7 +189,20 @@ module Typelizer
       dsl_type = dsl_attrs[prop.column_name.to_sym]
       return prop unless dsl_type&.any?
 
+      dsl_type = resolve_class_type(dsl_type)
       prop.with(**dsl_type)
+    end
+
+    def resolve_class_type(attrs)
+      type = attrs[:type]
+      return attrs unless type.is_a?(String) || type.is_a?(Symbol)
+
+      klass = Object.const_get(type.to_s)
+      return attrs unless klass.respond_to?(:typelizer_config)
+
+      attrs.merge(type: context.interface_for(klass))
+    rescue NameError
+      attrs
     end
 
     def apply_model_inference(prop)

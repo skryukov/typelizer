@@ -129,6 +129,26 @@ class PostResource < ApplicationResource
 end
 ```
 
+You can reference other serializers directly by passing the class. Typelizer resolves the class to its generated type name automatically:
+
+```ruby
+class PostResource < ApplicationResource
+  attributes :id, :title
+
+  # Reference another serializer — resolves to its generated TypeScript type
+  typelize reviewer: [AuthorResource, {optional: true, nullable: true}]
+  attribute :reviewer do |post|
+    post.reviewer
+  end
+
+  # Self-reference works too
+  typelize previous_post: PostResource
+  attribute :previous_post do |post|
+    post.previous_post
+  end
+end
+```
+
 For more complex type definitions, use the full API:
 
 ```ruby
