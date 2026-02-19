@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- OpenAPI schema generation from serializers, supporting both OpenAPI 3.0 and 3.1. ([@skryukov])
+
+  ```ruby
+  # Get all schemas as a hash
+  Typelizer.openapi_schemas
+  # => { "Post" => { type: :object, properties: { ... }, required: [...] }, ... }
+
+  # OpenAPI 3.1 output
+  Typelizer.openapi_schemas(openapi_version: "3.1")
+  ```
+
+  Column types are automatically mapped to OpenAPI types with proper formats (`integer`, `int64`, `uuid`, `date-time`, etc.).
+  Enums, nullable fields, arrays, deprecated flags, and `$ref` associations are all handled automatically.
+
+- Reference other serializers in `typelize` method by passing the class directly. ([@skryukov])
+
 ## [0.7.0] - 2026-01-15
 
 ### Changed
