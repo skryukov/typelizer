@@ -48,19 +48,19 @@ module Typelizer
         return [], {} unless trait_block
 
         # Create a collector to capture attributes defined in the trait block
-        collector = TraitAttributeCollector.new
+        collector = BlockAttributeCollector.new
         collector.instance_exec(&trait_block)
 
         props = collector.collected_attributes.map do |name, attr|
-          build_trait_property(name.is_a?(Symbol) ? name.name : name, attr)
+          build_collected_property(name.is_a?(Symbol) ? name.name : name, attr)
         end
 
         [props, collector.collected_typelizes]
       end
 
-      def build_trait_property(name, attr)
+      def build_collected_property(name, attr)
         case attr
-        when TraitAttributeCollector::TraitAssociation
+        when BlockAttributeCollector::BlockAssociation
           with_traits = Array(attr.with_traits) if attr.with_traits
           resource = attr.resource || infer_resource_from_name(name)
 
@@ -95,7 +95,7 @@ module Typelizer
       end
 
       def trait_interfaces
-        traits.map do |trait_name, _|
+        @trait_interfaces ||= traits.map do |trait_name, _|
           TraitInterface.new(
             serializer: serializer,
             trait_name: trait_name,
@@ -164,6 +164,8 @@ module Typelizer
             **options
           )
         when ::Alba::NestedAttribute
+          block = attr.instance_variable_get(:@block)
+          nested_props, nested_typelizes = collect_nested_block(block)
           Property.new(
             name: name,
             type: nil,
@@ -171,6 +173,8 @@ module Typelizer
             nullable: false,
             multi: false,
             column_name: column_name,
+            nested_properties: nested_props,
+            nested_typelizes: nested_typelizes,
             **options
           )
         when ::Alba::ConditionalAttribute
@@ -197,9 +201,37 @@ module Typelizer
       def ts_mapper
         config.plugin_configs.dig(:alba, :ts_mapper) || ALBA_TS_MAPPER
       end
+
+      def collect_nested_block(block)
+        collector = BlockAttributeCollector.new
+        collector.instance_exec(&block)
+
+        props = collector.collected_attributes.map do |attr_name, attr|
+          attr_name_str = attr_name.is_a?(Symbol) ? attr_name.name : attr_name
+
+          if attr.is_a?(BlockAttributeCollector::BlockNestedAttribute)
+            prop_name = has_transform_key?(serializer) ? fetch_key(serializer, attr_name_str) : attr_name_str
+            inner_props, inner_typelizes = collect_nested_block(attr.block)
+            Property.new(
+              name: prop_name,
+              type: nil,
+              optional: false,
+              nullable: false,
+              multi: false,
+              column_name: attr_name_str,
+              nested_properties: inner_props,
+              nested_typelizes: inner_typelizes
+            )
+          else
+            build_collected_property(attr_name_str, attr)
+          end
+        end
+
+        [props, collector.collected_typelizes]
+      end
     end
   end
 end
 
-require_relative "alba/trait_attribute_collector"
+require_relative "alba/block_attribute_collector"
 require_relative "alba/trait_interface"

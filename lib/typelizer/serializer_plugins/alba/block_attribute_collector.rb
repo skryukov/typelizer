@@ -2,7 +2,7 @@
 
 module Typelizer
   module SerializerPlugins
-    class Alba::TraitAttributeCollector
+    class Alba::BlockAttributeCollector
       attr_reader :collected_attributes, :collected_typelizes
 
       def initialize
@@ -53,15 +53,26 @@ module Typelizer
         end
       end
 
-      # Simple struct to hold association info from traits
-      TraitAssociation = Struct.new(:name, :resource, :with_traits, :multi, :key, keyword_init: true)
+      # Simple struct to hold association info from blocks
+      BlockAssociation = Struct.new(:name, :resource, :with_traits, :multi, :key, keyword_init: true)
+
+      # Struct to hold nested attribute info captured within a block
+      BlockNestedAttribute = Struct.new(:name, :block, keyword_init: true)
+
+      def nested_attribute(name, **options, &block)
+        raise ArgumentError, "Block is required for nested_attribute" unless block
+
+        @collected_attributes[name] = BlockNestedAttribute.new(name: name, block: block)
+      end
+
+      alias_method :nested, :nested_attribute
 
       # Support association methods that might be used in traits
       def one(name, **options, &block)
         resource = options[:resource] || options[:serializer]
         with_traits = options[:with_traits]
         key = options[:key] || name
-        @collected_attributes[key] = TraitAssociation.new(
+        @collected_attributes[key] = BlockAssociation.new(
           name: name,
           resource: resource,
           with_traits: with_traits,
@@ -77,7 +88,7 @@ module Typelizer
         resource = options[:resource] || options[:serializer]
         with_traits = options[:with_traits]
         key = options[:key] || name
-        @collected_attributes[key] = TraitAssociation.new(
+        @collected_attributes[key] = BlockAssociation.new(
           name: name,
           resource: resource,
           with_traits: with_traits,
