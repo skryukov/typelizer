@@ -2,7 +2,7 @@ module Typelizer
   Property = Struct.new(
     :name, :type, :optional, :nullable,
     :multi, :column_name, :column_type, :comment, :enum, :enum_type_name, :deprecated,
-    :with_traits,
+    :with_traits, :nested_properties, :nested_typelizes,
     keyword_init: true
   ) do
     def with(**attrs)
@@ -52,8 +52,13 @@ module Typelizer
     def fingerprint
       # Use array format for consistent output across Ruby versions
       # (Hash#inspect format changed in Ruby 3.4)
-      # Exclude fields that do not affect generated TypeScript output
-      to_h.except(:column_type).merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
+      # Exclude fields that do not affect generated TypeScript output.
+      # Exclude nested_properties/nested_typelizes from to_h to avoid changing
+      # fingerprints for properties that don't use them.
+      # nested_typelizes is excluded entirely as it only affects inference, not output.
+      to_h.except(:column_type, :nested_properties, :nested_typelizes)
+        .merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
+        .then { |h| nested_properties&.any? ? h.merge(nested_properties: nested_properties.map(&:fingerprint)) : h }
         .to_a.inspect
     end
 
@@ -88,6 +93,14 @@ module Typelizer
         enum_values = enum.map { |v| quote_string(v.to_s, prefer_double_quotes) }
         enum_values = enum_values.sort_by(&:downcase) if sort_order == :alphabetical
         return enum_values.join(" | ")
+      end
+
+      if type.nil? && nested_properties&.any?
+        inner = nested_properties.map { |p|
+          rendered = p.render(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes) + ";"
+          rendered.gsub(/^/, "  ")
+        }.join("\n")
+        return "{\n#{inner}\n}"
       end
 
       type.respond_to?(:name) ? type.name : type || "unknown"

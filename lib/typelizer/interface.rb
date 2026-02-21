@@ -60,7 +60,7 @@ module Typelizer
 
     def enum_types
       @enum_types ||= begin
-        all_properties = properties + trait_interfaces.flat_map(&:properties)
+        all_properties = collect_all_properties(properties + trait_interfaces.flat_map(&:properties))
         all_properties
           .select(&:enum_definition)
           .uniq(&:enum_type_name)
@@ -104,8 +104,9 @@ module Typelizer
 
     def imports
       @imports ||= begin
-        # Include both main properties and trait properties for import collection
-        all_properties = properties_to_print + trait_interfaces.flat_map(&:properties)
+        # Include both main properties and trait properties for import collection,
+        # recursively including nested sub-properties
+        all_properties = collect_all_properties(properties_to_print + trait_interfaces.flat_map(&:properties))
 
         association_serializers, attribute_types = all_properties.filter_map(&:type)
           .uniq
@@ -158,6 +159,16 @@ module Typelizer
 
     private
 
+    def collect_all_properties(props)
+      props.flat_map do |prop|
+        if prop.nested_properties&.any?
+          [prop] + collect_all_properties(prop.nested_properties)
+        else
+          [prop]
+        end
+      end
+    end
+
     def self_type_name
       serializer.name.match(/(\w+::)?(\w+)(Serializer|Resource)/)[2]
     end
@@ -182,6 +193,7 @@ module Typelizer
           .then { |p| has_dsl ? p : apply_model_inference(p) }
           .then { |p| apply_multi_flag(p, multi_attrs) }
           .then { |p| apply_metadata(p) }
+          .then { |p| infer_nested_property_types(p) }
       end
     end
 
@@ -224,6 +236,21 @@ module Typelizer
         p.comment ||= model_plugin.comment_for(p) if config.comments && p.comment != false
         p.enum ||= model_plugin.enum_for(p) if p.enum != false
       end
+    end
+
+    def infer_nested_property_types(prop)
+      return prop unless prop.nested_properties&.any?
+
+      typelizes = prop.nested_typelizes || {}
+      inferred = prop.nested_properties.map do |sub_prop|
+        dsl_type = typelizes[sub_prop.column_name.to_sym] || typelizes[sub_prop.name.to_sym]
+        sub_prop
+          .then { |p| dsl_type&.any? ? p.with(**dsl_type) : apply_model_inference(p) }
+          .then { |p| apply_metadata(p) }
+          .then { |p| infer_nested_property_types(p) }
+      end
+
+      prop.with(nested_properties: inferred)
     end
 
     def model_class
