@@ -73,6 +73,19 @@ module Typelizer
             column_name: name,
             with_traits: with_traits
           )
+        when BlockAttributeCollector::BlockNestedAttribute
+          prop_name = has_transform_key?(serializer) ? fetch_key(serializer, name) : name
+          nested_props, nested_typelizes = collect_nested_block(attr.block)
+          Property.new(
+            name: prop_name,
+            type: nil,
+            optional: false,
+            nullable: false,
+            multi: false,
+            column_name: name,
+            nested_properties: nested_props,
+            nested_typelizes: nested_typelizes
+          )
         else
           build_property(name, attr)
         end
@@ -208,23 +221,7 @@ module Typelizer
 
         props = collector.collected_attributes.map do |attr_name, attr|
           attr_name_str = attr_name.is_a?(Symbol) ? attr_name.name : attr_name
-
-          if attr.is_a?(BlockAttributeCollector::BlockNestedAttribute)
-            prop_name = has_transform_key?(serializer) ? fetch_key(serializer, attr_name_str) : attr_name_str
-            inner_props, inner_typelizes = collect_nested_block(attr.block)
-            Property.new(
-              name: prop_name,
-              type: nil,
-              optional: false,
-              nullable: false,
-              multi: false,
-              column_name: attr_name_str,
-              nested_properties: inner_props,
-              nested_typelizes: inner_typelizes
-            )
-          else
-            build_collected_property(attr_name_str, attr)
-          end
+          build_collected_property(attr_name_str, attr)
         end
 
         [props, collector.collected_typelizes]
