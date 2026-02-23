@@ -1,8 +1,12 @@
 # frozen_string_literal: true
 
+require_relative "../../type_inference"
+
 module Typelizer
   module SerializerPlugins
     class Alba::TraitInterface
+      include TypeInference
+
       attr_reader :serializer, :trait_name, :context, :plugin
 
       def initialize(serializer:, trait_name:, context:, plugin:)
@@ -33,30 +37,12 @@ module Typelizer
 
       def infer_types(props, typelizes)
         props.map do |prop|
-          # First check for typelize DSL in the trait
           dsl_type = typelizes[prop.column_name.to_sym] || typelizes[prop.name.to_sym]
-          if dsl_type&.any?
-            next prop.with(**dsl_type).tap do |property|
-              property.comment ||= model_plugin.comment_for(property) if config.comments && property.comment != false
-              property.enum ||= model_plugin.enum_for(property) if property.enum != false
-            end
-          end
-
-          # Fall back to model plugin for type inference
-          model_plugin.infer_types(prop)
+          prop
+            .then { |p| dsl_type&.any? ? p.with(**dsl_type) : apply_model_inference(p) }
+            .then { |p| apply_metadata(p) }
+            .then { |p| infer_nested_property_types(p) }
         end
-      end
-
-      def model_class
-        return serializer._typelizer_model_name if serializer.respond_to?(:_typelizer_model_name)
-
-        config.instance_exec(serializer, &config.serializer_model_mapper)
-      rescue NameError
-        nil
-      end
-
-      def model_plugin
-        @model_plugin ||= config.model_plugin.new(model_class: model_class, config: config)
       end
     end
   end
