@@ -13,5 +13,17 @@ module Alba
     # Test: typelize with a serializer class name string resolves to $ref in OpenAPI
     attributes :editor
     typelize editor: "Alba::UserSerializer"
+
+    # Test: typelize with "Serializer | null" extracts nullable and resolves the class
+    attributes :approver
+    typelize approver: "Alba::UserSerializer | null"
+
+    # Test: typelize with union of two serializer classes generates anyOf in OpenAPI
+    attributes :commentable
+    typelize commentable: ["Alba::UserSerializer", "Alba::CommentSerializer"]
+
+    # Test: typelize with mixed string and class constant in union
+    attributes :mixed_ref
+    typelize mixed_ref: ["Alba::UserSerializer", CommentSerializer]
   end
 end

@@ -13,5 +13,17 @@ module Panko
     # Test: typelize with a serializer class name string resolves to $ref in OpenAPI
     attributes :editor
     typelize editor: "Panko::UserSerializer"
+
+    # Test: typelize with "Serializer | null" extracts nullable and resolves the class
+    attributes :approver
+    typelize approver: "Panko::UserSerializer | null"
+
+    # Test: typelize with union of two serializer classes generates anyOf in OpenAPI
+    attributes :commentable
+    typelize commentable: ["Panko::UserSerializer", "Panko::CommentSerializer"]
+
+    # Test: typelize with mixed string and class constant in union
+    attributes :mixed_ref
+    typelize mixed_ref: ["Panko::UserSerializer", CommentSerializer]
   end
 end

@@ -13,5 +13,17 @@ module OjSerializers
     # Test: typelize with a serializer class name string resolves to $ref in OpenAPI
     attribute :editor
     typelize editor: "OjSerializers::UserSerializer"
+
+    # Test: typelize with "Serializer | null" extracts nullable and resolves the class
+    attribute :approver
+    typelize approver: "OjSerializers::UserSerializer | null"
+
+    # Test: typelize with union of two serializer classes generates anyOf in OpenAPI
+    attribute :commentable
+    typelize commentable: ["OjSerializers::UserSerializer", "OjSerializers::CommentSerializer"]
+
+    # Test: typelize with mixed string and class constant in union
+    attribute :mixed_ref
+    typelize mixed_ref: ["OjSerializers::UserSerializer", CommentSerializer]
   end
 end

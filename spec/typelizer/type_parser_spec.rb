@@ -10,32 +10,61 @@ RSpec.describe Typelizer::TypeParser do
         typelize age: "number[]"
         typelize tags: "string?[]"
         typelize score: ["number?", nullable: true]
+        typelize bio: "string | null"
+        typelize role: ["string", "null"]
+        typelize status: ["string | null", optional: true]
+        typelize priority: ["number | null"]
       end
     end
 
     it "parses optional shortcut in typelize hash" do
       attrs = serializer_class._typelizer_attributes[:name]
-      expect(attrs[:type]).to eq("string")
+      expect(attrs[:type]).to eq(:string)
       expect(attrs[:optional]).to be true
     end
 
     it "parses multi shortcut in typelize hash" do
       attrs = serializer_class._typelizer_attributes[:age]
-      expect(attrs[:type]).to eq("number")
+      expect(attrs[:type]).to eq(:number)
       expect(attrs[:multi]).to be true
     end
 
     it "parses combined shortcuts in typelize hash" do
       attrs = serializer_class._typelizer_attributes[:tags]
-      expect(attrs[:type]).to eq("string")
+      expect(attrs[:type]).to eq(:string)
       expect(attrs[:optional]).to be true
       expect(attrs[:multi]).to be true
     end
 
     it "merges shortcuts with explicit options" do
       attrs = serializer_class._typelizer_attributes[:score]
-      expect(attrs[:type]).to eq("number")
+      expect(attrs[:type]).to eq(:number)
       expect(attrs[:optional]).to be true
+      expect(attrs[:nullable]).to be true
+    end
+
+    it "extracts nullable from single string union with null" do
+      attrs = serializer_class._typelizer_attributes[:bio]
+      expect(attrs[:type]).to eq(:string)
+      expect(attrs[:nullable]).to be true
+    end
+
+    it "extracts nullable from multi-arg with null" do
+      attrs = serializer_class._typelizer_attributes[:role]
+      expect(attrs[:type]).to eq(:string)
+      expect(attrs[:nullable]).to be true
+    end
+
+    it "extracts nullable from union and preserves explicit options" do
+      attrs = serializer_class._typelizer_attributes[:status]
+      expect(attrs[:type]).to eq(:string)
+      expect(attrs[:nullable]).to be true
+      expect(attrs[:optional]).to be true
+    end
+
+    it "extracts nullable from inline union type" do
+      attrs = serializer_class._typelizer_attributes[:priority]
+      expect(attrs[:type]).to eq(:number)
       expect(attrs[:nullable]).to be true
     end
   end

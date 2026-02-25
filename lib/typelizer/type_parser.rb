@@ -14,6 +14,8 @@ module Typelizer
         return options if type_def.nil?
 
         type_str = type_def.to_s
+        return parse_union(type_str, **options) if type_str.include?("|")
+
         match = TYPE_PATTERN.match(type_str)
 
         return {type: type_def}.merge(options) unless match
@@ -33,6 +35,18 @@ module Typelizer
 
         type_str = type_def.to_s
         type_str.end_with?("?", "[]")
+      end
+
+      private
+
+      def parse_union(type_str, **options)
+        parts = type_str.split(/\s*\|\s*/)
+        options[:nullable] = true if parts.delete("null")
+        if parts.size == 1
+          parse(parts.first, **options)
+        else
+          {type: parts.map(&:to_sym)}.merge(options)
+        end
       end
     end
   end

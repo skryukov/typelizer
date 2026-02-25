@@ -104,16 +104,16 @@ module Typelizer
           options = attrs.last.is_a?(Hash) ? attrs.pop : {}
 
           if attrs.any?
-            # Parse type shortcuts and merge options
             parsed_types = attrs.map { |t| TypeParser.parse(t) }
-            type_names = parsed_types.map { |p| p[:type] }
-            options[:type] = type_names.join(" | ")
-
-            # Merge modifier flags from all parsed types
+            all_types = parsed_types.flat_map { |p| Array(p[:type]) }
             parsed_types.each do |parsed|
               options[:optional] = true if parsed[:optional]
               options[:multi] = true if parsed[:multi]
+              options[:nullable] = true if parsed[:nullable]
             end
+            options[:nullable] = true if all_types.delete(:null)
+            # Unwrap single-element arrays: typelize field: ["string"] behaves like typelize field: "string"
+            options[:type] = (all_types.size == 1) ? all_types.first : all_types
           end
 
           instance_variable_get(instance_variable)[name.to_sym] ||= {}

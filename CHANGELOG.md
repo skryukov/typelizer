@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- Union type support in `typelize` for polymorphic associations. ([@skryukov])
+
+  ```ruby
+  # Serializer class references — resolve to generated type names
+  typelize commentable: [UserResource, CommentResource]
+  typelize approver: "AuthorResource | null"
+  typelize target: "UserResource | CommentResource"
+
+  # Plain TypeScript type names — passed through as-is
+  typelize content: "TextBlock | ImageBlock"
+  ```
+
+  Supports serializer class constants, class name strings, pipe-delimited strings, and plain TypeScript type names. Generates correct imports, TypeScript union types, and `anyOf` schemas in OpenAPI output.
+
+### Fixed
+
+- OpenAPI: TypeScript-only types (`any`, `unknown`, `never`) and generic types (`Record<string, unknown>`, `Partial<T>`, etc.) no longer produce invalid `$ref` entries. They are mapped to `{type: :object}` instead. ([@skryukov])
+
+### Changed
+
+- **Internal:** Union types are now stored as arrays of symbols instead of pipe-delimited strings. This fixes import resolution for serializer classes inside unions and eliminates redundant string splitting/joining across the DSL, Interface, and OpenAPI layers. ([@skryukov])
+
 ## [0.8.0] - 2026-02-19
 
 ### Added

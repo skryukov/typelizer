@@ -112,9 +112,8 @@ module Typelizer
         # recursively including nested sub-properties
         all_properties = collect_all_properties(properties_to_print + trait_interfaces.flat_map(&:properties))
 
-        association_serializers, attribute_types = all_properties.filter_map(&:type)
-          .uniq
-          .partition { |type| type.is_a?(Interface) }
+        flat_types = all_properties.filter_map(&:type).flat_map { |t| Array(t) }.uniq
+        association_serializers, attribute_types = flat_types.partition { |type| type.is_a?(Interface) }
 
         serializer_types = association_serializers
           .filter_map { |interface| interface.name if interface.name != name && !interface.inline? }
@@ -215,14 +214,32 @@ module Typelizer
 
     def resolve_class_type(attrs)
       type = attrs[:type]
-      return attrs unless type.is_a?(String) || type.is_a?(Symbol)
 
-      klass = Object.const_get(type.to_s)
-      return attrs unless klass.respond_to?(:typelizer_config)
+      case type
+      when Array
+        resolve_union_class_types(attrs)
+      when String, Symbol
+        resolve_single_class_type(attrs)
+      else
+        attrs
+      end
+    end
 
-      attrs.merge(type: context.interface_for(klass))
+    def resolve_single_class_type(attrs)
+      attrs.merge(type: resolve_type_part(attrs[:type]))
+    end
+
+    def resolve_union_class_types(attrs)
+      resolved = attrs[:type].map { |part| resolve_type_part(part) }
+      # Unwrap single-element arrays (e.g., after null extraction from ["Serializer", null])
+      attrs.merge(type: (resolved.size == 1) ? resolved.first : resolved)
+    end
+
+    def resolve_type_part(part)
+      klass = Object.const_get(part.to_s)
+      klass.respond_to?(:typelizer_config) ? context.interface_for(klass) : part
     rescue NameError
-      attrs
+      part
     end
 
     def apply_multi_flag(prop, multi_attrs)
