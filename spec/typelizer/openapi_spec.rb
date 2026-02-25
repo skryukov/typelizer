@@ -244,6 +244,57 @@ RSpec.describe Typelizer::OpenAPI do
       end
     end
 
+    # Tests that `typelize field: "Serializer | null"` extracts nullable and resolves the class
+    {
+      "Alba" => {serializer: Alba::ClassRefSerializer, user_schema: "AlbaUser", comment_schema: "AlbaComment"},
+      "AMS" => {serializer: Ams::ClassRefSerializer, user_schema: "AmsUser", comment_schema: "AmsComment"},
+      "OjSerializers" => {serializer: OjSerializers::ClassRefSerializer, user_schema: "OjSerializersUser", comment_schema: "OjSerializersComment"},
+      "Panko" => {serializer: Panko::ClassRefSerializer, user_schema: "PankoUser", comment_schema: "PankoComment"}
+    }.each do |plugin, config|
+      context "#{plugin} nullable union string" do
+        let(:interface) { context.interface_for(config[:serializer]) }
+        let(:schema) { described_class.schema_for(interface) }
+
+        it "extracts nullable from 'Serializer | null' and resolves class" do
+          approver_prop = interface.properties.find { |p| p.name.to_s == "approver" }
+          expect(approver_prop.type).to be_a(Typelizer::Interface)
+          expect(approver_prop.type.name).to eq(config[:user_schema])
+          expect(approver_prop.nullable).to be true
+        end
+
+        it "generates nullable $ref for 'Serializer | null' in OpenAPI 3.0" do
+          approver_schema = schema[:properties]["approver"]
+          expect(approver_schema).to include(:allOf)
+          expect(approver_schema[:allOf].first).to eq({"$ref" => "#/components/schemas/#{config[:user_schema]}"})
+          expect(approver_schema[:nullable]).to eq(true)
+        end
+
+        it "generates anyOf for union of two serializer classes" do
+          commentable_schema = schema[:properties]["commentable"]
+          expect(commentable_schema).to include(:anyOf)
+          expect(commentable_schema[:anyOf]).to contain_exactly(
+            {"$ref" => "#/components/schemas/#{config[:user_schema]}"},
+            {"$ref" => "#/components/schemas/#{config[:comment_schema]}"}
+          )
+        end
+
+        it "resolves mixed string and class constant union to Interfaces" do
+          mixed_prop = interface.properties.find { |p| p.name.to_s == "mixed_ref" }
+          expect(mixed_prop.type).to be_an(Array)
+          expect(mixed_prop.type).to all(be_a(Typelizer::Interface))
+        end
+
+        it "generates anyOf for mixed string and class constant union" do
+          mixed_schema = schema[:properties]["mixed_ref"]
+          expect(mixed_schema).to include(:anyOf)
+          expect(mixed_schema[:anyOf]).to contain_exactly(
+            {"$ref" => "#/components/schemas/#{config[:user_schema]}"},
+            {"$ref" => "#/components/schemas/#{config[:comment_schema]}"}
+          )
+        end
+      end
+    end
+
     # Tests that `typelize previous_post: PostSerializer` resolves self-references
     {
       "Alba" => {serializer: Alba::PostSerializer, post_schema: "AlbaPost"},

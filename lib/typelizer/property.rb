@@ -103,7 +103,12 @@ module Typelizer
         return "{\n#{inner}\n}"
       end
 
-      type.respond_to?(:name) ? type.name : type || "unknown"
+      case type
+      when Array
+        type.map { |t| t.respond_to?(:name) ? t.name : t.to_s }.join(" | ")
+      else
+        type.respond_to?(:name) ? type.name : type&.to_s || "unknown"
+      end
     end
   end
 end

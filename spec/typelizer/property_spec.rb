@@ -4,23 +4,23 @@ RSpec.describe Typelizer::Property do
   describe "#to_s" do
     describe "union type sorting" do
       it "does not sort unions when sort_order is :none" do
-        prop = described_class.new(name: "field", type: "TypeZ | TypeA | TypeB")
+        prop = described_class.new(name: "field", type: [:TypeZ, :TypeA, :TypeB])
         expect(prop.render(sort_order: :none)).to eq("field: TypeZ | TypeA | TypeB")
       end
 
       it "sorts unions alphabetically when sort_order is :alphabetical" do
-        prop = described_class.new(name: "field", type: "TypeZ | TypeA | TypeB")
+        prop = described_class.new(name: "field", type: [:TypeZ, :TypeA, :TypeB])
         expect(prop.render(sort_order: :alphabetical)).to eq("field: TypeA | TypeB | TypeZ")
       end
 
       it "sorts unions in Array<> types" do
-        prop = described_class.new(name: "items", type: "TypeZ | TypeA | TypeB", multi: true)
+        prop = described_class.new(name: "items", type: [:TypeZ, :TypeA, :TypeB], multi: true)
         result = prop.render(sort_order: :alphabetical)
         expect(result).to eq("items: Array<TypeA | TypeB | TypeZ>")
       end
 
       it "keeps null at the end when nullable" do
-        prop = described_class.new(name: "field", type: "TypeZ | TypeA", nullable: true)
+        prop = described_class.new(name: "field", type: [:TypeZ, :TypeA], nullable: true)
         result = prop.render(sort_order: :alphabetical)
         expect(result).to eq("field: TypeA | TypeZ | null")
       end
@@ -44,7 +44,7 @@ RSpec.describe Typelizer::Property do
       end
 
       it "defaults to no sorting when sort_order not specified" do
-        prop = described_class.new(name: "field", type: "TypeZ | TypeA | TypeB")
+        prop = described_class.new(name: "field", type: [:TypeZ, :TypeA, :TypeB])
         expect(prop.to_s).to eq("field: TypeZ | TypeA | TypeB")
       end
     end
@@ -77,7 +77,7 @@ RSpec.describe Typelizer::Property do
       end
 
       it "handles union type with optional, nullable, and multi" do
-        prop = described_class.new(name: "items", type: "TypeZ | TypeA", optional: true, nullable: true, multi: true)
+        prop = described_class.new(name: "items", type: [:TypeZ, :TypeA], optional: true, nullable: true, multi: true)
         result = prop.render(sort_order: :alphabetical)
         expect(result).to eq("items?: Array<TypeA | TypeZ> | null")
       end
@@ -153,6 +153,43 @@ RSpec.describe Typelizer::Property do
     it "falls back to object for unmapped types" do
       prop = described_class.new(name: "data", type: :unknown)
       expect(Typelizer::OpenAPI.property_schema(prop)).to eq({type: :object})
+    end
+
+    it "maps :any to object" do
+      prop = described_class.new(name: "data", type: :any)
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({type: :object})
+    end
+
+    it "maps :never to object" do
+      prop = described_class.new(name: "data", type: :never)
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({type: :object})
+    end
+
+    it "maps Record<string, unknown> to object" do
+      prop = described_class.new(name: "metadata", type: :"Record<string, unknown>")
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({type: :object})
+    end
+
+    it "maps Partial<User> to object" do
+      prop = described_class.new(name: "partial_user", type: :"Partial<User>")
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({type: :object})
+    end
+
+    it "maps Pick<User, 'name'> to object" do
+      prop = described_class.new(name: "user_name", type: :"Pick<User, 'name'>")
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({type: :object})
+    end
+
+    it "maps generic types with angle brackets to object" do
+      prop = described_class.new(name: "data", type: :"Map<string, number>")
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({type: :object})
+    end
+
+    it "maps TS-only types to object inside unions" do
+      prop = described_class.new(name: "data", type: [:string, :any])
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({
+        anyOf: [{type: :string}, {type: :object}]
+      })
     end
 
     it "treats string types as $ref" do
@@ -347,13 +384,97 @@ RSpec.describe Typelizer::Property do
         items: {type: :string, description: "User roles", enum: %w[admin user]}
       })
     end
+
+    it "generates anyOf for union of reference types" do
+      prop = described_class.new(name: "item", type: [:Post, :Comment])
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({
+        anyOf: [
+          {"$ref" => "#/components/schemas/Post"},
+          {"$ref" => "#/components/schemas/Comment"}
+        ]
+      })
+    end
+
+    it "generates anyOf for union of primitive types" do
+      prop = described_class.new(name: "value", type: [:string, :number])
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({
+        anyOf: [{type: :string}, {type: :number}]
+      })
+    end
+
+    it "generates anyOf for mixed union types" do
+      prop = described_class.new(name: "item", type: [:string, :Post])
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({
+        anyOf: [{type: :string}, {"$ref" => "#/components/schemas/Post"}]
+      })
+    end
+
+    it "generates nullable anyOf in 3.0" do
+      prop = described_class.new(name: "item", type: [:Post, :Comment], nullable: true)
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({
+        anyOf: [
+          {"$ref" => "#/components/schemas/Post"},
+          {"$ref" => "#/components/schemas/Comment"}
+        ],
+        nullable: true
+      })
+    end
+
+    it "generates nullable anyOf in 3.1" do
+      prop = described_class.new(name: "item", type: [:Post, :Comment], nullable: true)
+      expect(Typelizer::OpenAPI.property_schema(prop, openapi_version: "3.1")).to eq({
+        anyOf: [
+          {"$ref" => "#/components/schemas/Post"},
+          {"$ref" => "#/components/schemas/Comment"},
+          {type: :null}
+        ]
+      })
+    end
+
+    it "wraps anyOf in array for multi union types" do
+      prop = described_class.new(name: "items", type: [:Post, :Comment], multi: true)
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({
+        type: :array,
+        items: {
+          anyOf: [
+            {"$ref" => "#/components/schemas/Post"},
+            {"$ref" => "#/components/schemas/Comment"}
+          ]
+        }
+      })
+    end
+
+    it "includes description and deprecated on union types" do
+      prop = described_class.new(name: "item", type: [:Post, :Comment], comment: "Polymorphic item", deprecated: true)
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({
+        anyOf: [
+          {"$ref" => "#/components/schemas/Post"},
+          {"$ref" => "#/components/schemas/Comment"}
+        ],
+        description: "Polymorphic item",
+        deprecated: true
+      })
+    end
+
+    it "generates anyOf for union of Interface types" do
+      post_iface = instance_double(Typelizer::Interface, name: "Post", properties: [])
+      comment_iface = instance_double(Typelizer::Interface, name: "Comment", properties: [])
+
+      prop = described_class.new(name: "item", type: [post_iface, comment_iface])
+      expect(Typelizer::OpenAPI.property_schema(prop)).to eq({
+        anyOf: [
+          {"$ref" => "#/components/schemas/Post"},
+          {"$ref" => "#/components/schemas/Comment"}
+        ]
+      })
+    end
   end
 
   describe "determinism" do
     it "produces identical output on multiple runs with sorting" do
       prop = described_class.new(
         name: "sections",
-        type: "WebStrapiSectionsPartnerHero | WebStrapiSectionsAboutUs | WebStrapiSectionsChallenges",
+        type: [:WebStrapiSectionsPartnerHero, :WebStrapiSectionsAboutUs, :WebStrapiSectionsChallenges],
         multi: true
       )
 

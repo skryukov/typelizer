@@ -149,6 +149,57 @@ class PostResource < ApplicationResource
 end
 ```
 
+Union types are supported for polymorphic associations. You can use serializer class references, which resolve to their generated type names:
+
+```ruby
+class PostResource < ApplicationResource
+  attributes :id, :title
+
+  # Union of two serializers — resolves to generated type names
+  typelize commentable: [UserResource, CommentResource]
+  attribute :commentable
+
+  # Nullable union — extracts null and marks as nullable
+  typelize approver: "AuthorResource | null"
+  attribute :approver
+
+  # Pipe-delimited string with serializer names
+  typelize target: "UserResource | CommentResource"
+  attribute :target
+
+  # String and class constant can be mixed
+  typelize item: ["Namespace::UserResource", CommentResource]
+  attribute :item
+end
+```
+
+You can also use plain TypeScript type names for custom types that aren't backed by serializers:
+
+```ruby
+class PostResource < ApplicationResource
+  attributes :id, :title
+
+  # Plain type names — passed through as-is to TypeScript
+  typelize content: "TextBlock | ImageBlock"
+  attribute :content
+
+  # Works with arrays too
+  typelize sections: ["TextBlock", "ImageBlock"]
+  attribute :sections
+end
+```
+
+This generates:
+
+```typescript
+type Post = {
+  id: number;
+  title: string;
+  content: TextBlock | ImageBlock;
+  sections: TextBlock | ImageBlock;
+}
+```
+
 For more complex type definitions, use the full API:
 
 ```ruby
