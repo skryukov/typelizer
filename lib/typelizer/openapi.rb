@@ -48,7 +48,7 @@ module Typelizer
         return union_schema(property, version: version)
       end
 
-      definition = base_type(property)
+      definition = base_type(property, openapi_version: openapi_version)
       ref = definition.delete("$ref")
 
       definition = if ref
@@ -159,10 +159,10 @@ module Typelizer
       definition
     end
 
-    def self.base_type(property)
+    def self.base_type(property, openapi_version: "3.0")
       if property.type.respond_to?(:properties)
         if property.type.respond_to?(:inline?) && property.type.inline?
-          schema_for(property.type)
+          schema_for(property.type, openapi_version: openapi_version)
         else
           {"$ref" => "#/components/schemas/#{property.type.name}"}
         end
@@ -179,7 +179,7 @@ module Typelizer
     end
 
     def self.ts_only_type?(type_str)
-      type_str.include?("<") || TS_OBJECT_TYPES.include?(type_str.split("<", 2).first)
+      type_str.start_with?("{") || type_str.include?("<") || TS_OBJECT_TYPES.include?(type_str.split("<", 2).first)
     end
 
     def self.validate_version!(openapi_version)

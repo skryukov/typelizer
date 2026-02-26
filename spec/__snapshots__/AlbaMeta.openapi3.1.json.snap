@@ -11,7 +11,7 @@
       ]
     },
     "address": {
-      "$ref": "#/components/schemas/{city: string, zipcode: string}"
+      "type": "object"
     }
   },
   "required": [

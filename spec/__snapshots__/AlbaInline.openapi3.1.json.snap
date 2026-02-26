@@ -62,8 +62,10 @@
             "type": "integer"
           },
           "title": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "user": {
             "type": "object",
