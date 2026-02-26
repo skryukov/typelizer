@@ -25,5 +25,9 @@ module Panko
     # Test: typelize with mixed string and class constant in union
     attributes :mixed_ref
     typelize mixed_ref: ["Panko::UserSerializer", CommentSerializer]
+
+    # Test: nullable array of refs — nullable applies to array, not items
+    attributes :contributors
+    typelize contributors: [UserSerializer, {multi: true, nullable: true}]
   end
 end

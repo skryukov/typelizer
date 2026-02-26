@@ -53,6 +53,15 @@
           "$ref": "#/components/schemas/AlbaComment"
         }
       ]
+    },
+    "contributors": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/components/schemas/AlbaUser"
+      }
     }
   },
   "required": [
@@ -60,6 +69,7 @@
     "editor",
     "approver",
     "commentable",
-    "mixed_ref"
+    "mixed_ref",
+    "contributors"
   ]
 }

@@ -62,13 +62,14 @@ module Typelizer
 
       def ref_schema(ref, property, openapi_version:)
         ref_obj = {"$ref" => ref}
+        item_nullable = !property.multi && property.nullable
 
         if v31?(openapi_version)
-          definition = property.nullable ? {oneOf: [ref_obj, {type: :null}]} : ref_obj
+          definition = item_nullable ? {oneOf: [ref_obj, {type: :null}]} : ref_obj
         else
-          needs_wrapper = property.nullable || (!property.multi && (property.comment.is_a?(String) || property.deprecated))
+          needs_wrapper = item_nullable || (!property.multi && (property.comment.is_a?(String) || property.deprecated))
           definition = needs_wrapper ? {allOf: [ref_obj]} : ref_obj
-          definition[:nullable] = true if property.nullable
+          definition[:nullable] = true if item_nullable
         end
 
         apply_metadata(definition, property) unless property.multi

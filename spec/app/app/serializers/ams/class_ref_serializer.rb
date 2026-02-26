@@ -25,5 +25,9 @@ module Ams
     # Test: typelize with mixed string and class constant in union
     attribute :mixed_ref
     typelize mixed_ref: ["Ams::UserSerializer", CommentSerializer]
+
+    # Test: nullable array of refs — nullable applies to array, not items
+    attribute :contributors
+    typelize contributors: [UserSerializer, {multi: true, nullable: true}]
   end
 end

@@ -6,20 +6,22 @@ require "json_schemer"
 RSpec.describe "OpenAPI schema validation" do
   # External types referenced via manual `typelize` overrides or union types
   # that don't have corresponding serializers in the test app.
-  EXTERNAL_SCHEMAS = %w[
-    AlphaSection
-    BetaSection
-    Post
-    TypeA
-    TypeM
-    TypeZ
-    ZebraSection
-  ].freeze
+  let(:external_schemas) do
+    %w[
+      AlphaSection
+      BetaSection
+      Post
+      TypeA
+      TypeM
+      TypeZ
+      ZebraSection
+    ]
+  end
 
   %w[3.0 3.1].each do |version|
     it "generates a valid OpenAPI #{version} document with all schemas" do
       schemas = Typelizer.openapi_schemas(openapi_version: version)
-      EXTERNAL_SCHEMAS.each { |name| schemas[name] = {type: "object"} }
+      external_schemas.each { |name| schemas[name] = {type: "object"} }
 
       openapi_version = (version == "3.0") ? "3.0.3" : "3.1.0"
       document = {
