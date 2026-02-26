@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-02-26
+
+### Fixed
+
+- Fix string literal unions in OpenAPI and bracket-aware union type splitting. ([@skryukov])
+
 ## [0.9.1] - 2026-02-26
 
 ### Fixed
@@ -420,7 +426,8 @@ and this project adheres to [Semantic Versioning].
 [@skryukov]: https://github.com/skryukov
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/skryukov/typelizer/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/skryukov/typelizer/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/skryukov/typelizer/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/skryukov/typelizer/compare/v0.7.0...v0.8.0
