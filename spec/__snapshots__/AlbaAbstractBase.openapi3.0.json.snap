@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "custom_attr": {
+      "type": "object"
+    },
+    "label": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "custom_attr",
+    "label"
+  ]
+}

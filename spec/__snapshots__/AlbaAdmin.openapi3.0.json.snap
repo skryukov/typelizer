@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "properties": {
+    "custom_attr": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "guest",
+        "member",
+        "admin",
+        "superadmin"
+      ]
+    },
+    "active": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "custom_attr",
+    "label",
+    "id",
+    "username",
+    "name",
+    "role",
+    "active"
+  ]
+}

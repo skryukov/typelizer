@@ -19,7 +19,7 @@ module Typelizer
       end
 
       def comment_for(prop)
-        column = model_class&.columns_hash&.dig(prop.column_name.to_s)
+        column = columns_hash&.dig(prop.column_name.to_s)
         return nil unless column
 
         prop.comment = column.comment
@@ -35,6 +35,20 @@ module Typelizer
 
       private
 
+      def columns_hash
+        return nil unless model_class
+        return nil if model_class.abstract_class?
+
+        model_class.columns_hash
+      end
+
+      def attribute_types
+        return nil unless model_class&.respond_to?(:attribute_types)
+        return nil if model_class.abstract_class?
+
+        model_class.attribute_types
+      end
+
       def infer_types_for_association(prop)
         association = model_class&.reflect_on_association(prop.column_name.to_sym)
         return nil unless association
@@ -42,7 +56,7 @@ module Typelizer
         case association.macro
         when :belongs_to
           foreign_key = association.foreign_key
-          column = model_class&.columns_hash&.dig(foreign_key.to_s)
+          column = columns_hash&.dig(foreign_key.to_s)
           if config.associations_strategy == :database
             prop.nullable = column.null if column
           elsif config.associations_strategy == :active_record
@@ -64,7 +78,7 @@ module Typelizer
       end
 
       def infer_types_for_column(prop)
-        column = model_class&.columns_hash&.dig(prop.column_name.to_s)
+        column = columns_hash&.dig(prop.column_name.to_s)
         return nil unless column
 
         prop.column_type = column.type
@@ -122,9 +136,7 @@ module Typelizer
       end
 
       def infer_types_for_attribute(prop)
-        return nil unless model_class.respond_to?(:attribute_types)
-
-        attribute_type_obj = model_class.attribute_types.fetch(prop.column_name.to_s, nil)
+        attribute_type_obj = attribute_types&.fetch(prop.column_name.to_s, nil)
         return nil unless attribute_type_obj
 
         if attribute_type_obj.instance_of?(::ActiveRecord::Type::Serialized)
