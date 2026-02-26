@@ -89,9 +89,11 @@ module Typelizer
       end
 
       def union_schema(property, openapi_version:)
-        schemas = property.type.map { |part| union_member_schema(part) }
-
-        definition = {anyOf: schemas}
+        definition = if property.type.all? { |part| string_literal?(part) }
+          {type: :string, enum: property.type.map { |part| unquote_string_literal(part) }}
+        else
+          {anyOf: property.type.map { |part| union_member_schema(part) }}
+        end
 
         unless property.multi
           apply_nullable(definition, property, openapi_version: openapi_version)
@@ -154,6 +156,8 @@ module Typelizer
         elsif definition[:type]
           v31?(openapi_version) ? definition[:type] = [definition[:type], :null] : definition[:nullable] = true
         end
+
+        definition[:enum] << nil if definition[:enum].is_a?(Array) && !definition[:enum].include?(nil)
       end
 
       def wrap_multi(definition, property, openapi_version:)
@@ -180,6 +184,8 @@ module Typelizer
           result = COLUMN_TYPE_MAP[property.column_type].dup
           result[:type] = :string if property.enum
           result
+        elsif string_literal?(property.type)
+          {type: :string, enum: [unquote_string_literal(property.type)]}
         elsif (property.type.is_a?(String) || property.type.is_a?(Symbol)) && !OPENAPI_TYPES.include?(property.type.to_sym) && !ts_only_type?(property.type.to_s)
           {"$ref" => "#/components/schemas/#{property.type}"}
         else
@@ -204,6 +210,16 @@ module Typelizer
 
       def ts_only_type?(type_str)
         type_str.start_with?("{", "[") || type_str.include?("<") || TS_OBJECT_TYPES.include?(type_str)
+      end
+
+      def string_literal?(type)
+        str = type.to_s
+        str.length > 2 &&
+          ((str.start_with?("'") && str.end_with?("'")) || (str.start_with?('"') && str.end_with?('"')))
+      end
+
+      def unquote_string_literal(type)
+        type.to_s[1..-2]
       end
 
       def validate_version!(openapi_version)
