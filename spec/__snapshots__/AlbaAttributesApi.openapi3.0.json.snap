@@ -1,0 +1,62 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "attr_string": {
+      "type": "string"
+    },
+    "attr_integer": {
+      "type": "integer"
+    },
+    "attr_float": {
+      "type": "number",
+      "format": "float"
+    },
+    "attr_boolean": {
+      "type": "boolean"
+    },
+    "attr_datetime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attr_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "attr_time": {
+      "type": "string",
+      "format": "time"
+    },
+    "attr_json": {
+      "type": "object"
+    },
+    "attr_array": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "attr_range": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "attr_string",
+    "attr_integer",
+    "attr_float",
+    "attr_boolean",
+    "attr_datetime",
+    "attr_date",
+    "attr_time",
+    "attr_json",
+    "attr_array",
+    "attr_range"
+  ]
+}

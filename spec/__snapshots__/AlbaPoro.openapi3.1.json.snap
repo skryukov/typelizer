@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "foo": {
+      "type": "object"
+    },
+    "bar": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "details": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "foo",
+    "bar",
+    "details"
+  ]
+}

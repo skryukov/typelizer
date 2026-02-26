@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "body": {
+      "type": "string"
+    },
+    "parent": {
+      "$ref": "#/components/schemas/AlbaComment"
+    },
+    "replies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AlbaComment"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "body",
+    "replies"
+  ]
+}

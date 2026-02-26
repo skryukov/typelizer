@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "user": {
+      "oneOf": [
+        {
+          "$ref": "#/components/schemas/AmsArUser"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "user"
+  ]
+}

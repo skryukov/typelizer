@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "user_username": {
+      "type": "string"
+    },
+    "author_active": {
+      "type": "boolean"
+    },
+    "user_role": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "user_username",
+    "author_active",
+    "user_role"
+  ]
+}

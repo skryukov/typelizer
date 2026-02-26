@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "body": {
+      "type": "string"
+    },
+    "parent": {
+      "$ref": "#/components/schemas/OjSerializersComment"
+    },
+    "replies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/OjSerializersComment"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "body",
+    "replies"
+  ]
+}

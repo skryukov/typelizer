@@ -1,0 +1,82 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string"
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "sirName": {
+      "type": "string",
+      "description": "This is sir name from the name"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "guest",
+        "member",
+        "admin",
+        "superadmin"
+      ]
+    },
+    "invitor": {
+      "oneOf": [
+        {
+          "$ref": "#/components/schemas/AlbaUser"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AlbaPost"
+      }
+    },
+    "latestPost": {
+      "oneOf": [
+        {
+          "$ref": "#/components/schemas/AlbaPost"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "customKeyPosts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AlbaPost"
+      }
+    },
+    "firstName": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "username",
+    "active",
+    "name",
+    "sirName",
+    "role",
+    "invitor",
+    "posts",
+    "latestPost",
+    "customKeyPosts",
+    "firstName"
+  ]
+}

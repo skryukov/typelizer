@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "category": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "news",
+        "article",
+        "blog",
+        null
+      ]
+    },
+    "body": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "published_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "previous_post": {
+      "$ref": "#/components/schemas/AmsPost"
+    },
+    "name": {
+      "type": "string",
+      "deprecated": true
+    },
+    "user": {
+      "$ref": "#/components/schemas/AmsUser"
+    },
+    "created_by": {
+      "$ref": "#/components/schemas/AmsUser"
+    }
+  },
+  "required": [
+    "id",
+    "previous_post",
+    "name",
+    "user",
+    "created_by"
+  ]
+}

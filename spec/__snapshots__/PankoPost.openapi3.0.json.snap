@@ -1,0 +1,46 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "title": {
+      "type": "string",
+      "nullable": true
+    },
+    "category": {
+      "type": "string",
+      "nullable": true,
+      "enum": [
+        "news",
+        "article",
+        "blog",
+        null
+      ]
+    },
+    "body": {
+      "type": "string",
+      "nullable": true
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+    },
+    "previous_post": {
+      "$ref": "#/components/schemas/PankoPost"
+    },
+    "user": {
+      "$ref": "#/components/schemas/PankoUser"
+    },
+    "created_by": {
+      "$ref": "#/components/schemas/PankoUser"
+    }
+  },
+  "required": [
+    "id",
+    "previous_post",
+    "user",
+    "created_by"
+  ]
+}

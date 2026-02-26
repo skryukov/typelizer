@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Author login handle"
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AlbaPost"
+      }
+    },
+    "invitor": {
+      "$ref": "#/components/schemas/AlbaUser"
+    },
+    "avatar": {
+      "type": "object"
+    },
+    "typed_avatar": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Typed avatar URL\nActive user only\n"
+    }
+  },
+  "required": [
+    "id",
+    "username",
+    "invitor",
+    "avatar",
+    "typed_avatar"
+  ]
+}

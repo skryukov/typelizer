@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "invitor": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/AlbaTraits"
+        }
+      ],
+      "nullable": true
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AlbaPost"
+      }
+    },
+    "latest_post": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/AlbaPost"
+        }
+      ],
+      "nullable": true
+    }
+  },
+  "required": [
+    "id",
+    "invitor",
+    "posts",
+    "latest_post"
+  ]
+}

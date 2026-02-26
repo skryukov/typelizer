@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "properties": {
+    "user": {
+      "$ref": "#/components/schemas/AlbaTraits"
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AlbaPost"
+      }
+    },
+    "latest_post": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/AlbaPost"
+        }
+      ],
+      "nullable": true
+    }
+  },
+  "required": [
+    "user",
+    "posts",
+    "latest_post"
+  ]
+}

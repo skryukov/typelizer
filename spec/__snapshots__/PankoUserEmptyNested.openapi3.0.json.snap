@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string",
+      "nullable": true,
+      "description": "Author login handle"
+    },
+    "avatar": {
+      "type": "object"
+    },
+    "typed_avatar": {
+      "type": "string",
+      "nullable": true
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/PankoPost"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "username",
+    "avatar",
+    "typed_avatar",
+    "posts"
+  ]
+}

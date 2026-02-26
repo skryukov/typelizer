@@ -1,0 +1,70 @@
+{
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TypeZ"
+          },
+          {
+            "$ref": "#/components/schemas/TypeA"
+          },
+          {
+            "$ref": "#/components/schemas/TypeM"
+          }
+        ]
+      }
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "guest",
+        "member",
+        "admin",
+        "superadmin"
+      ]
+    },
+    "sections": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/ZebraSection"
+        },
+        {
+          "$ref": "#/components/schemas/AlphaSection"
+        },
+        {
+          "$ref": "#/components/schemas/BetaSection"
+        }
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "zebra",
+        "apple",
+        "banana"
+      ]
+    },
+    "username": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "email",
+    "id",
+    "items",
+    "role",
+    "sections",
+    "status",
+    "username"
+  ]
+}

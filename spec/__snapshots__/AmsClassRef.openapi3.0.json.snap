@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "title": {
+      "type": "string",
+      "nullable": true
+    },
+    "reviewer": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/AmsUser"
+        }
+      ],
+      "nullable": true
+    },
+    "editor": {
+      "$ref": "#/components/schemas/AmsUser"
+    },
+    "approver": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/AmsUser"
+        }
+      ],
+      "nullable": true
+    },
+    "commentable": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/AmsUser"
+        },
+        {
+          "$ref": "#/components/schemas/AmsComment"
+        }
+      ]
+    },
+    "mixed_ref": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/AmsUser"
+        },
+        {
+          "$ref": "#/components/schemas/AmsComment"
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "editor",
+    "approver",
+    "commentable",
+    "mixed_ref"
+  ]
+}
