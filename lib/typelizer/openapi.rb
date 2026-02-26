@@ -203,7 +203,7 @@ module Typelizer
       end
 
       def ts_only_type?(type_str)
-        type_str.start_with?("{") || type_str.include?("<") || TS_OBJECT_TYPES.include?(type_str)
+        type_str.start_with?("{", "[") || type_str.include?("<") || TS_OBJECT_TYPES.include?(type_str)
       end
 
       def validate_version!(openapi_version)

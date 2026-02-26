@@ -177,7 +177,7 @@ module Typelizer
     end
 
     def extract_typescript_types(type)
-      type.split(/[<>\[\],\s|]+/)
+      type.split(/[<>\[\],\s|]+/).reject(&:empty?)
     end
 
     def global_type?(type)
