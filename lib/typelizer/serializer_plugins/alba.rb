@@ -209,8 +209,6 @@ module Typelizer
         ::Alba.transform_key(key, transform_type: serializer._transform_type)
       end
 
-      private
-
       def ts_mapper
         config.plugin_configs.dig(:alba, :ts_mapper) || ALBA_TS_MAPPER
       end
