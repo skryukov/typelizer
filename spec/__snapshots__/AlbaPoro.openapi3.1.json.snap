@@ -11,7 +11,19 @@
       ]
     },
     "details": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "baz": {
+          "type": "object"
+        },
+        "qux": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "baz",
+        "qux"
+      ]
     }
   },
   "required": [

@@ -2,18 +2,45 @@
   "type": "object",
   "properties": {
     "user": {
-      "$ref": "#/components/schemas/AlbaTraits"
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/AlbaTraits"
+        },
+        {
+          "$ref": "#/components/schemas/AlbaTraitsBasicTrait"
+        },
+        {
+          "$ref": "#/components/schemas/AlbaTraitsComplexTrait"
+        }
+      ]
     },
     "posts": {
       "type": "array",
       "items": {
-        "$ref": "#/components/schemas/AlbaPost"
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AlbaPost"
+          },
+          {
+            "$ref": "#/components/schemas/AlbaPostDetailsTrait"
+          },
+          {
+            "$ref": "#/components/schemas/AlbaPostWithAuthorTrait"
+          }
+        ]
       }
     },
     "latest_post": {
       "oneOf": [
         {
-          "$ref": "#/components/schemas/AlbaPost"
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/AlbaPost"
+            },
+            {
+              "$ref": "#/components/schemas/AlbaPostDetailsTrait"
+            }
+          ]
         },
         {
           "type": "null"
