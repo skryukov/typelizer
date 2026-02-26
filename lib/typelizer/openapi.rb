@@ -192,6 +192,8 @@ module Typelizer
         else
           {"$ref" => "#/components/schemas/#{property.type.name}"}
         end
+      elsif property.type.nil? && property.respond_to?(:nested_properties) && property.nested_properties&.any?
+        nested_schema(property, openapi_version: openapi_version)
       elsif property.column_type && COLUMN_TYPE_MAP.key?(property.column_type)
         result = COLUMN_TYPE_MAP[property.column_type].dup
         result[:type] = :string if property.enum
@@ -204,6 +206,16 @@ module Typelizer
       end
     end
 
+    def self.nested_schema(property, openapi_version:)
+      required = property.nested_properties.reject(&:optional).map(&:name)
+      schema = {
+        type: :object,
+        properties: property.nested_properties.to_h { |p| [p.name, property_schema(p, openapi_version: openapi_version)] }
+      }
+      schema[:required] = required if required.any?
+      schema
+    end
+
     def self.ts_only_type?(type_str)
       type_str.start_with?("{") || type_str.include?("<") || TS_OBJECT_TYPES.include?(type_str.split("<", 2).first)
     end
@@ -212,6 +224,6 @@ module Typelizer
       raise ArgumentError, "Unsupported openapi_version: #{openapi_version}. Must be one of: #{SUPPORTED_VERSIONS.join(", ")}" unless SUPPORTED_VERSIONS.include?(openapi_version.to_s)
     end
 
-    private_class_method :base_type, :ts_only_type?, :apply_nullable, :wrap_traits, :wrap_multi, :validate_version!
+    private_class_method :base_type, :nested_schema, :ts_only_type?, :apply_nullable, :wrap_traits, :wrap_multi, :validate_version!
   end
 end

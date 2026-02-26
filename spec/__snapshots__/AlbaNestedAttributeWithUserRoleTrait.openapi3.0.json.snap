@@ -2,7 +2,21 @@
   "type": "object",
   "properties": {
     "user_role": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "guest",
+            "member",
+            "admin",
+            "superadmin"
+          ]
+        }
+      },
+      "required": [
+        "role"
+      ]
     }
   },
   "required": [

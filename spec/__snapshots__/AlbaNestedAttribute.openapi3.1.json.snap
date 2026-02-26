@@ -8,7 +8,39 @@
       "type": "string"
     },
     "details": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "guest",
+            "member",
+            "admin",
+            "superadmin"
+          ]
+        },
+        "timestamps": {
+          "type": "object",
+          "properties": {
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "created_at",
+            "updated_at"
+          ]
+        }
+      },
+      "required": [
+        "role",
+        "timestamps"
+      ]
     }
   },
   "required": [
