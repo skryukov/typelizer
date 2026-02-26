@@ -57,6 +57,7 @@ module Typelizer
         inline_schema(definition, property, version: version)
       end
 
+      definition = wrap_traits(definition, property, version: version, openapi_version: openapi_version)
       wrap_multi(definition, property, version: version)
     end
 
@@ -125,6 +126,31 @@ module Typelizer
 
     private_class_method :ref_schema, :inline_schema, :union_schema, :single_type_schema
 
+    def self.wrap_traits(definition, property, version:, openapi_version:)
+      return definition unless property.respond_to?(:with_traits) && property.with_traits&.any? && property.type.respond_to?(:name)
+
+      trait_refs = property.with_traits.map do |t|
+        {"$ref" => "#/components/schemas/#{property.type.name}#{t.to_s.camelize}Trait"}
+      end
+
+      base_ref = definition.delete("$ref")
+      if base_ref
+        definition = {allOf: [{"$ref" => base_ref}] + trait_refs}
+      elsif definition[:oneOf]
+        non_null = definition[:oneOf].reject { |s| s[:type] == :null }
+        null_schemas = definition[:oneOf].select { |s| s[:type] == :null }
+        all_of = non_null + trait_refs
+        definition = null_schemas.any? ? {oneOf: [{allOf: all_of}, *null_schemas]} : {allOf: all_of}
+      elsif definition[:allOf]
+        definition[:allOf].concat(trait_refs)
+      else
+        raise ArgumentError, "Unexpected schema shape for traits on property #{property.name}: #{definition.inspect}"
+      end
+
+      definition[:nullable] = true if !(version >= Gem::Version.new("3.1")) && property.nullable
+      definition
+    end
+
     def self.apply_nullable(definition, property, version:)
       return unless property.nullable
 
@@ -186,6 +212,6 @@ module Typelizer
       raise ArgumentError, "Unsupported openapi_version: #{openapi_version}. Must be one of: #{SUPPORTED_VERSIONS.join(", ")}" unless SUPPORTED_VERSIONS.include?(openapi_version.to_s)
     end
 
-    private_class_method :base_type, :ts_only_type?, :apply_nullable, :wrap_multi, :validate_version!
+    private_class_method :base_type, :ts_only_type?, :apply_nullable, :wrap_traits, :wrap_multi, :validate_version!
   end
 end

@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "posts": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AlbaPost"
+          },
+          {
+            "$ref": "#/components/schemas/AlbaPostDetailsTrait"
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "posts"
+  ]
+}

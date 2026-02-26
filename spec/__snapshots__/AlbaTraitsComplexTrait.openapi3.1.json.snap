@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "properties": {
+    "attr_json": {
+      "type": "object"
+    },
+    "attr_array": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "attr_range": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    }
+  },
+  "required": [
+    "attr_json",
+    "attr_array",
+    "attr_range"
+  ]
+}

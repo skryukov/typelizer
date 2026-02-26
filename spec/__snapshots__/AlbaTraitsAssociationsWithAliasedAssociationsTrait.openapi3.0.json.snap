@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "properties": {
+    "user_alias": {
+      "$ref": "#/components/schemas/AlbaTraits"
+    },
+    "custom_posts": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AlbaPost"
+          },
+          {
+            "$ref": "#/components/schemas/AlbaPostDetailsTrait"
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "user_alias",
+    "custom_posts"
+  ]
+}

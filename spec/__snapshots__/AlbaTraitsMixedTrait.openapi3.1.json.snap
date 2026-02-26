@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "properties": {
+    "username": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "user": {
+      "$ref": "#/components/schemas/AlbaUser"
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AlbaPost"
+          },
+          {
+            "$ref": "#/components/schemas/AlbaPostDetailsTrait"
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "username",
+    "name",
+    "user",
+    "posts"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "excerpt": {
+      "type": "string"
+    },
+    "word_count": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "excerpt",
+    "word_count"
+  ]
+}

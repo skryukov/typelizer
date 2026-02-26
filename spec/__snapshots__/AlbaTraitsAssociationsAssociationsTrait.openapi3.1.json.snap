@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "user": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/AlbaTraits"
+        },
+        {
+          "$ref": "#/components/schemas/AlbaTraitsCustomAttributesTrait"
+        }
+      ]
+    }
+  },
+  "required": [
+    "user"
+  ]
+}
