@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "username": {
+      "type": "string"
+    },
+    "coordinates": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "username",
+    "coordinates"
+  ]
+}
