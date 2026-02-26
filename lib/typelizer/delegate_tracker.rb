@@ -15,7 +15,7 @@ module Typelizer
     module Hook
       def delegate(*methods, to:, allow_nil: nil, prefix: nil, **)
         super.tap do
-          next unless is_a?(Class) && defined?(ActiveRecord::Base) && self < ActiveRecord::Base
+          next unless is_a?(Class) && defined?(ActiveRecord::Base) && !ActiveRecord.autoload?(:Base) && self < ActiveRecord::Base
 
           method_prefix = if prefix == true
             "#{to}_"

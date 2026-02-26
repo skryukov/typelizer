@@ -85,7 +85,10 @@ module Typelizer
       resolved = base_classes.filter_map do |base_class|
         Object.const_get(base_class) if Object.const_defined?(base_class)
       end
-      raise ArgumentError, "No serializers found. Please ensure all your serializers include Typelizer::DSL." if base_classes.any? && resolved.none?
+      if base_classes.any? && resolved.none?
+        logger.warn("Typelizer: No serializers found. Ensure your serializers include Typelizer::DSL.")
+        return []
+      end
 
       (resolved + resolved.flat_map(&:descendants)).uniq
         .reject { |serializer| reject_class.call(serializer: serializer) }
