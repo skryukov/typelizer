@@ -24,6 +24,8 @@ namespace :typelizer do
     end
 
     interfaces = Typelizer.interfaces
+    raise ArgumentError, "No serializers found. Please ensure all your serializers include Typelizer::DSL." if interfaces.empty?
+
     puts "Finished in #{time} seconds"
     puts "Found #{interfaces.size} serializers:"
     puts interfaces.map { |i| "\t#{i.name}" }.join("\n")

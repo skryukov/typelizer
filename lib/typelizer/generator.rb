@@ -11,7 +11,7 @@ module Typelizer
 
       Typelizer.configuration.writers.each do |writer_name, writer_config|
         interfaces = Typelizer.interfaces(writer_name: writer_name)
-        raise ArgumentError, "No serializers found. Please ensure all your serializers include Typelizer::DSL." if interfaces.empty?
+        next if interfaces.empty?
 
         Writer.new(writer_config).call(interfaces, force: force)
       end

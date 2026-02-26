@@ -61,6 +61,17 @@ RSpec.describe Typelizer::Generator, type: :typelizer do
       FileUtils.rm_rf(alba_only_dir)
     end
 
+    it "silently skips writers with no serializers" do
+      configuration.writer(:empty) do |c|
+        c.output_dir = default_output_dir.parent.join("generator_empty")
+        c.reject_class = ->(**) { true }
+      end
+
+      expect { generator.call(force: true) }.not_to raise_error
+    ensure
+      FileUtils.rm_rf(default_output_dir.parent.join("generator_empty"))
+    end
+
     it "generates files for all writers and applies writer-specific transformers" do
       expect { generator.call(force: true) }.not_to raise_error
 
