@@ -6,5 +6,9 @@ module Alba
     typelize_from Poro
 
     attributes :foo, bar: :String
+
+    nested :details do
+      attributes :baz, :qux
+    end
   end
 end
