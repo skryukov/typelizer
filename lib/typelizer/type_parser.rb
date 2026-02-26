@@ -40,7 +40,11 @@ module Typelizer
       private
 
       def parse_union(type_str, **options)
-        parts = type_str.split(/\s*\|\s*/)
+        parts = UnionTypeSorter.split_union_members(type_str)
+
+        # No top-level | found — the | is nested inside brackets
+        return {type: type_str.to_sym}.merge(options) if parts.size <= 1
+
         options[:nullable] = true if parts.delete("null")
         if parts.size == 1
           parse(parts.first, **options)

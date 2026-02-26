@@ -98,10 +98,10 @@ module Typelizer
 
       str.each_char do |char|
         case char
-        when "<", "("
+        when "<", "(", "{", "["
           depth += 1
           current << char
-        when ">", ")"
+        when ">", ")", "}", "]"
           depth -= 1
           current << char
         when "|"
@@ -126,6 +126,8 @@ module Typelizer
     def self.balanced_brackets?(str)
       angle_depth = 0
       paren_depth = 0
+      brace_depth = 0
+      bracket_depth = 0
 
       str.each_char do |char|
         case char
@@ -139,10 +141,20 @@ module Typelizer
         when ")"
           paren_depth -= 1
           return false if paren_depth < 0
+        when "{"
+          brace_depth += 1
+        when "}"
+          brace_depth -= 1
+          return false if brace_depth < 0
+        when "["
+          bracket_depth += 1
+        when "]"
+          bracket_depth -= 1
+          return false if bracket_depth < 0
         end
       end
 
-      angle_depth == 0 && paren_depth == 0
+      angle_depth == 0 && paren_depth == 0 && brace_depth == 0 && bracket_depth == 0
     end
   end
 end

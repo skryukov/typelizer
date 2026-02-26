@@ -1,0 +1,67 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "provider": {
+      "type": "string",
+      "enum": [
+        "cloudpayments",
+        "tiptoppay"
+      ]
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "lookup": {
+      "type": "object"
+    },
+    "pair": {
+      "type": "object"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "object"
+        }
+      ]
+    },
+    "config": {
+      "type": "object",
+      "nullable": true
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive",
+        null
+      ],
+      "nullable": true
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "user",
+        null
+      ],
+      "nullable": true
+    }
+  },
+  "required": [
+    "id",
+    "provider",
+    "metadata",
+    "lookup",
+    "pair",
+    "result",
+    "config",
+    "status",
+    "kind"
+  ]
+}
