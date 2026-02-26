@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "username"
+  ]
+}

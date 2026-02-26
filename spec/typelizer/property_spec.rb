@@ -365,8 +365,8 @@ RSpec.describe Typelizer::Property do
         comment: "User roles"
       )
       expect(Typelizer::OpenAPI.property_schema(prop)).to eq({
-        type: :array, nullable: true,
-        items: {type: :string, description: "User roles", enum: %w[admin user]}
+        type: :array, nullable: true, description: "User roles",
+        items: {type: :string, enum: %w[admin user]}
       })
     end
 
@@ -380,8 +380,8 @@ RSpec.describe Typelizer::Property do
         comment: "User roles"
       )
       expect(Typelizer::OpenAPI.property_schema(prop, openapi_version: "3.1")).to eq({
-        type: [:array, :null],
-        items: {type: :string, description: "User roles", enum: %w[admin user]}
+        type: [:array, :null], description: "User roles",
+        items: {type: :string, enum: %w[admin user]}
       })
     end
 

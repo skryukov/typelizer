@@ -1,0 +1,56 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "title": {
+      "type": "string",
+      "nullable": true
+    },
+    "category": {
+      "type": "string",
+      "nullable": true,
+      "enum": [
+        "news",
+        "article",
+        "blog",
+        null
+      ]
+    },
+    "body": {
+      "type": "string",
+      "nullable": true
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+    },
+    "user": {
+      "$ref": "#/components/schemas/AlbaUser"
+    },
+    "created_by": {
+      "$ref": "#/components/schemas/AlbaUser"
+    },
+    "next_post": {
+      "$ref": "#/components/schemas/Post"
+    },
+    "previous_post": {
+      "$ref": "#/components/schemas/AlbaPost"
+    },
+    "name": {
+      "type": "string",
+      "description": "This is name",
+      "deprecated": true
+    }
+  },
+  "required": [
+    "id",
+    "user",
+    "created_by",
+    "next_post",
+    "previous_post",
+    "name"
+  ]
+}

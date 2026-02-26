@@ -1,0 +1,50 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string"
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "invitor": {
+      "oneOf": [
+        {
+          "$ref": "#/components/schemas/OjSerializersUser"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/OjSerializersPost"
+      }
+    },
+    "first_name": {
+      "type": "string"
+    },
+    "full_name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "username",
+    "active",
+    "name",
+    "invitor",
+    "posts",
+    "first_name",
+    "full_name"
+  ]
+}

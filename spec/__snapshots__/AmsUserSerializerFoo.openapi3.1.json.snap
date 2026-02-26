@@ -1,0 +1,53 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string"
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "first_name": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "invitor": {
+      "oneOf": [
+        {
+          "$ref": "#/components/schemas/AmsUser"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AmsPost"
+      }
+    }
+  },
+  "required": [
+    "username",
+    "active",
+    "name",
+    "first_name",
+    "created_at",
+    "invitor",
+    "posts"
+  ]
+}

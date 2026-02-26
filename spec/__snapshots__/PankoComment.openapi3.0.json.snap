@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "body": {
+      "type": "string"
+    },
+    "replies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/PankoComment"
+      }
+    },
+    "parent": {
+      "$ref": "#/components/schemas/PankoComment"
+    }
+  },
+  "required": [
+    "id",
+    "body",
+    "replies"
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string"
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "settings": {
+      "type": "object"
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "invitor": {
+      "$ref": "#/components/schemas/AmsArUser"
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AmsArPost"
+      }
+    },
+    "latest_post": {
+      "$ref": "#/components/schemas/AmsArPost"
+    }
+  },
+  "required": [
+    "id",
+    "username",
+    "skills",
+    "settings",
+    "metadata",
+    "invitor",
+    "posts",
+    "latest_post"
+  ]
+}

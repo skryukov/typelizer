@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Author login handle"
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/OjSerializersPost"
+      }
+    },
+    "avatar": {
+      "type": "object"
+    },
+    "typed_avatar": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "username",
+    "avatar",
+    "typed_avatar"
+  ]
+}

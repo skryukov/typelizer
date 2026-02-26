@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "title": {
+      "type": "string",
+      "nullable": true
+    },
+    "reviewer": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PankoUser"
+        }
+      ],
+      "nullable": true
+    },
+    "editor": {
+      "$ref": "#/components/schemas/PankoUser"
+    },
+    "approver": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PankoUser"
+        }
+      ],
+      "nullable": true
+    },
+    "commentable": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/PankoUser"
+        },
+        {
+          "$ref": "#/components/schemas/PankoComment"
+        }
+      ]
+    },
+    "mixed_ref": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/PankoUser"
+        },
+        {
+          "$ref": "#/components/schemas/PankoComment"
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "editor",
+    "approver",
+    "commentable",
+    "mixed_ref"
+  ]
+}

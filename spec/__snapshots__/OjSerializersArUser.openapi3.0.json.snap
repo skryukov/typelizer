@@ -1,0 +1,46 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string"
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "settings": {
+      "type": "object"
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "invitor": {
+      "$ref": "#/components/schemas/OjSerializersArUser"
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/OjSerializersArPost"
+      }
+    },
+    "latest_post": {
+      "$ref": "#/components/schemas/OjSerializersArPost"
+    }
+  },
+  "required": [
+    "id",
+    "username",
+    "skills",
+    "settings",
+    "metadata",
+    "invitor",
+    "posts",
+    "latest_post"
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string"
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "post_ids": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "untyped_posts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "object"
+          },
+          "title": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ]
+      }
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ]
+      }
+    },
+    "deep_posts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "username": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "username"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "user"
+        ]
+      }
+    }
+  },
+  "required": [
+    "id",
+    "username",
+    "active",
+    "post_ids",
+    "untyped_posts",
+    "posts",
+    "deep_posts"
+  ]
+}

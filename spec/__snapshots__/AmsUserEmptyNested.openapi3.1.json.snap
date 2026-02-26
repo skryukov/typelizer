@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Author login handle"
+    },
+    "avatar": {
+      "type": "object"
+    },
+    "typed_avatar": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AmsPost"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "username",
+    "avatar",
+    "typed_avatar"
+  ]
+}

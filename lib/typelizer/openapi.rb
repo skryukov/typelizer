@@ -61,7 +61,7 @@ module Typelizer
     end
 
     def self.ref_schema(ref, property, version:)
-      has_siblings = property.nullable || property.comment.is_a?(String) || property.deprecated
+      has_siblings = property.nullable || (!property.multi && (property.comment.is_a?(String) || property.deprecated))
       ref_obj = {"$ref" => ref}
 
       if version >= Gem::Version.new("3.1")
@@ -72,21 +72,25 @@ module Typelizer
         definition[:nullable] = true if property.nullable
       end
 
-      definition[:description] = property.comment if property.comment.is_a?(String)
-      definition[:deprecated] = true if property.deprecated
+      # For multi properties, description/deprecated go on the array wrapper (applied in wrap_multi)
+      unless property.multi
+        definition[:description] = property.comment if property.comment.is_a?(String)
+        definition[:deprecated] = true if property.deprecated
+      end
       definition
     end
 
     def self.inline_schema(definition, property, version:)
-      # For multi properties, nullable is applied to the array container in wrap_multi
-      apply_nullable(definition, property, version: version) unless property.multi
-
-      definition[:description] = property.comment if property.comment.is_a?(String)
+      # For multi properties, nullable/description/deprecated are applied to the array container in wrap_multi
+      unless property.multi
+        apply_nullable(definition, property, version: version)
+        definition[:description] = property.comment if property.comment.is_a?(String)
+        definition[:deprecated] = true if property.deprecated
+      end
       if property.enum.is_a?(Array)
         items_nullable = !property.multi && property.nullable
         definition[:enum] = (items_nullable && !property.enum.include?(nil)) ? property.enum + [nil] : property.enum
       end
-      definition[:deprecated] = true if property.deprecated
       definition
     end
 
@@ -95,10 +99,11 @@ module Typelizer
 
       definition = {anyOf: schemas}
 
-      apply_nullable(definition, property, version: version) unless property.multi
-
-      definition[:description] = property.comment if property.comment.is_a?(String)
-      definition[:deprecated] = true if property.deprecated
+      unless property.multi
+        apply_nullable(definition, property, version: version)
+        definition[:description] = property.comment if property.comment.is_a?(String)
+        definition[:deprecated] = true if property.deprecated
+      end
 
       wrap_multi(definition, property, version: version)
     end
@@ -142,6 +147,8 @@ module Typelizer
       return definition unless property.multi
 
       definition = {type: :array, items: definition}
+      definition[:description] = property.comment if property.comment.is_a?(String)
+      definition[:deprecated] = true if property.deprecated
       if property.nullable
         if version >= Gem::Version.new("3.1")
           definition[:type] = [:array, :null]
@@ -154,7 +161,11 @@ module Typelizer
 
     def self.base_type(property)
       if property.type.respond_to?(:properties)
-        {"$ref" => "#/components/schemas/#{property.type.name}"}
+        if property.type.respond_to?(:inline?) && property.type.inline?
+          schema_for(property.type)
+        else
+          {"$ref" => "#/components/schemas/#{property.type.name}"}
+        end
       elsif property.column_type && COLUMN_TYPE_MAP.key?(property.column_type)
         result = COLUMN_TYPE_MAP[property.column_type].dup
         result[:type] = :string if property.enum

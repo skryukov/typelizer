@@ -1,0 +1,51 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "title": {
+      "type": "string",
+      "nullable": true
+    },
+    "category": {
+      "type": "string",
+      "nullable": true,
+      "enum": [
+        "news",
+        "article",
+        "blog",
+        null
+      ]
+    },
+    "body": {
+      "type": "string",
+      "nullable": true
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+    },
+    "user": {
+      "$ref": "#/components/schemas/OjSerializersUser"
+    },
+    "created_by": {
+      "$ref": "#/components/schemas/OjSerializersUser"
+    },
+    "previous_post": {
+      "$ref": "#/components/schemas/OjSerializersPost"
+    },
+    "name": {
+      "type": "string",
+      "deprecated": true
+    }
+  },
+  "required": [
+    "id",
+    "user",
+    "created_by",
+    "previous_post",
+    "name"
+  ]
+}

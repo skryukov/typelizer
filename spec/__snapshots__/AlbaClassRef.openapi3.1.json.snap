@@ -1,0 +1,65 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reviewer": {
+      "oneOf": [
+        {
+          "$ref": "#/components/schemas/AlbaUser"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "editor": {
+      "$ref": "#/components/schemas/AlbaUser"
+    },
+    "approver": {
+      "oneOf": [
+        {
+          "$ref": "#/components/schemas/AlbaUser"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "commentable": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/AlbaUser"
+        },
+        {
+          "$ref": "#/components/schemas/AlbaComment"
+        }
+      ]
+    },
+    "mixed_ref": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/AlbaUser"
+        },
+        {
+          "$ref": "#/components/schemas/AlbaComment"
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "editor",
+    "approver",
+    "commentable",
+    "mixed_ref"
+  ]
+}

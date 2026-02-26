@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "username": {
+      "type": "string"
+    },
+    "full_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "address": {
+      "$ref": "#/components/schemas/{city: string, zipcode: string}"
+    }
+  },
+  "required": [
+    "username",
+    "full_name",
+    "address"
+  ]
+}

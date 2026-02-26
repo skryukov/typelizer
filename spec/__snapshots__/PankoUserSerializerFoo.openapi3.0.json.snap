@@ -1,0 +1,58 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "number",
+      "nullable": true,
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string"
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "first_name": {
+      "type": "string"
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/PankoPost"
+      }
+    },
+    "invitor": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PankoUser"
+        }
+      ],
+      "nullable": true
+    },
+    "latest_post": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PankoPost"
+        }
+      ],
+      "nullable": true
+    }
+  },
+  "required": [
+    "username",
+    "active",
+    "name",
+    "created_at",
+    "first_name",
+    "posts",
+    "invitor",
+    "latest_post"
+  ]
+}

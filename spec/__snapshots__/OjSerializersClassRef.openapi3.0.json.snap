@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "title": {
+      "type": "string",
+      "nullable": true
+    },
+    "reviewer": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/OjSerializersUser"
+        }
+      ],
+      "nullable": true
+    },
+    "editor": {
+      "$ref": "#/components/schemas/OjSerializersUser"
+    },
+    "approver": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/OjSerializersUser"
+        }
+      ],
+      "nullable": true
+    },
+    "commentable": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/OjSerializersUser"
+        },
+        {
+          "$ref": "#/components/schemas/OjSerializersComment"
+        }
+      ]
+    },
+    "mixed_ref": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/OjSerializersUser"
+        },
+        {
+          "$ref": "#/components/schemas/OjSerializersComment"
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "editor",
+    "approver",
+    "commentable",
+    "mixed_ref"
+  ]
+}
