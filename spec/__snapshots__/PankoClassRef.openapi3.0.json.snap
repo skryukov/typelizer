@@ -47,6 +47,13 @@
           "$ref": "#/components/schemas/PankoComment"
         }
       ]
+    },
+    "contributors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/PankoUser"
+      },
+      "nullable": true
     }
   },
   "required": [
@@ -54,6 +61,7 @@
     "editor",
     "approver",
     "commentable",
-    "mixed_ref"
+    "mixed_ref",
+    "contributors"
   ]
 }

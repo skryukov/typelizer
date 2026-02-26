@@ -47,6 +47,13 @@
           "$ref": "#/components/schemas/AmsComment"
         }
       ]
+    },
+    "contributors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AmsUser"
+      },
+      "nullable": true
     }
   },
   "required": [
@@ -54,6 +61,7 @@
     "editor",
     "approver",
     "commentable",
-    "mixed_ref"
+    "mixed_ref",
+    "contributors"
   ]
 }
