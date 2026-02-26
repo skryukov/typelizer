@@ -7,25 +7,27 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-02-26
+
 ### Added
 
-- Union type support in `typelize` for polymorphic associations. ([@skryukov])
+- Alba: nested attributes (`nested` / `nested_attribute`) now generate inline nested TypeScript types with full type inference support, including within traits. ([@pgiblock])
+
+- OpenAPI: support for traits in schema generation. ([@skryukov])
+
+- Union types in `typelize` for polymorphic associations. Supports serializer class references, pipe-delimited strings, and plain TypeScript type names. ([@skryukov])
 
   ```ruby
-  # Serializer class references — resolve to generated type names
   typelize commentable: [UserResource, CommentResource]
   typelize approver: "AuthorResource | null"
-  typelize target: "UserResource | CommentResource"
-
-  # Plain TypeScript type names — passed through as-is
   typelize content: "TextBlock | ImageBlock"
   ```
-
-  Supports serializer class constants, class name strings, pipe-delimited strings, and plain TypeScript type names. Generates correct imports, TypeScript union types, and `anyOf` schemas in OpenAPI output.
 
 ### Fixed
 
 - OpenAPI: TypeScript-only types (`any`, `unknown`, `never`) and generic types (`Record<string, unknown>`, `Partial<T>`, etc.) no longer produce invalid `$ref` entries. They are mapped to `{type: :object}` instead. ([@skryukov])
+- OpenAPI: fix nullable arrays producing incorrect schemas. ([@skryukov])
+- Fix Typelizer not loading gracefully when required gems are missing at boot time. ([@skryukov])
 
 ### Changed
 
@@ -405,12 +407,14 @@ and this project adheres to [Semantic Versioning].
 [@NOX73]: https://github.com/NOX73
 [@okuramasafumi]: https://github.com/okuramasafumi
 [@patvice]: https://github.com/patvice
+[@pgiblock]: https://github.com/pgiblock
+[@prog-supdex]: https://github.com/prog-supdex
 [@PedroAugustoRamalhoDuarte]: https://github.com/PedroAugustoRamalhoDuarte
 [@skryukov]: https://github.com/skryukov
-[@prog-supdex]: https://github.com/prog-supdex
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/skryukov/typelizer/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/skryukov/typelizer/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/skryukov/typelizer/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/skryukov/typelizer/compare/v0.5.6...v0.6.0
