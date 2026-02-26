@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "optional_field": {
+      "type": "string",
+      "nullable": true,
+      "description": "Optional field"
+    },
+    "nullable_name": {
+      "type": "string",
+      "nullable": true
+    }
+  },
+  "required": [
+    "optional_field",
+    "nullable_name"
+  ]
+}

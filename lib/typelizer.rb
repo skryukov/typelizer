@@ -72,7 +72,14 @@ module Typelizer
     end
 
     def openapi_schemas(writer_name: nil, openapi_version: "3.0")
-      interfaces(writer_name: writer_name).to_h { |i| [i.name, OpenAPI.schema_for(i, openapi_version: openapi_version)] }
+      result = {}
+      interfaces(writer_name: writer_name).each do |i|
+        result[i.name] = OpenAPI.schema_for(i, openapi_version: openapi_version)
+        i.trait_interfaces.each do |trait|
+          result[trait.name] = OpenAPI.schema_for(trait, openapi_version: openapi_version)
+        end
+      end
+      result
     end
 
     private

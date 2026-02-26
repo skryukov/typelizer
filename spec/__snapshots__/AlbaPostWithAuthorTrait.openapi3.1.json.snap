@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "user": {
+      "$ref": "#/components/schemas/AlbaUser"
+    },
+    "created_by": {
+      "$ref": "#/components/schemas/AlbaUser"
+    }
+  },
+  "required": [
+    "user",
+    "created_by"
+  ]
+}

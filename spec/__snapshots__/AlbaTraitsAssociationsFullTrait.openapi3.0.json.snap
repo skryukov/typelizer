@@ -1,10 +1,6 @@
 {
   "type": "object",
   "properties": {
-    "id": {
-      "type": "string",
-      "description": "Unique identifier"
-    },
     "invitor": {
       "allOf": [
         {
@@ -12,9 +8,6 @@
         },
         {
           "$ref": "#/components/schemas/AlbaTraitsBasicTrait"
-        },
-        {
-          "$ref": "#/components/schemas/AlbaTraitsComplexTrait"
         }
       ],
       "nullable": true
@@ -28,26 +21,20 @@
           },
           {
             "$ref": "#/components/schemas/AlbaPostDetailsTrait"
+          },
+          {
+            "$ref": "#/components/schemas/AlbaPostWithAuthorTrait"
           }
         ]
       }
     },
-    "latest_post": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/AlbaPost"
-        },
-        {
-          "$ref": "#/components/schemas/AlbaPostDetailsTrait"
-        }
-      ],
-      "nullable": true
+    "username": {
+      "type": "string"
     }
   },
   "required": [
-    "id",
     "invitor",
     "posts",
-    "latest_post"
+    "username"
   ]
 }

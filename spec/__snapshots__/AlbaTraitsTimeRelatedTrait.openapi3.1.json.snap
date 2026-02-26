@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "attr_datetime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attr_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "attr_time": {
+      "type": "string",
+      "format": "time"
+    }
+  },
+  "required": [
+    "attr_datetime",
+    "attr_date",
+    "attr_time"
+  ]
+}

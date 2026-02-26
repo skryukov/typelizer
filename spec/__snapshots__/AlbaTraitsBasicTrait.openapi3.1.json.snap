@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "attr_string": {
+      "type": "string"
+    },
+    "attr_integer": {
+      "type": "integer"
+    },
+    "attr_float": {
+      "type": "number",
+      "format": "float"
+    },
+    "attr_boolean": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "attr_string",
+    "attr_integer",
+    "attr_float",
+    "attr_boolean"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "properties": {
+    "metadata_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "counts": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    }
+  },
+  "required": [
+    "metadata_tags"
+  ]
+}
