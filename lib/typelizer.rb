@@ -18,6 +18,9 @@ require_relative "typelizer/renderer"
 require_relative "typelizer/writer"
 require_relative "typelizer/openapi"
 require_relative "typelizer/generator"
+require_relative "typelizer/route_config"
+require_relative "typelizer/route_generator"
+require_relative "typelizer/route_writer"
 require_relative "typelizer/type_parser"
 require_relative "typelizer/dsl"
 
@@ -44,10 +47,17 @@ module Typelizer
     # writers
     def_delegators :configuration, :dirs=, :reject_class=, :listen=
 
+    # Is Typelizer active?
+    #
+    # Precedence: TYPELIZER env var > development? detection
+    # Legacy DISABLE_TYPELIZER is mapped to TYPELIZER with a deprecation warning.
     def enabled?
-      return false if ENV["DISABLE_TYPELIZER"] == "true" || ENV["DISABLE_TYPELIZER"] == "1"
+      migrate_legacy_env!
 
-      ENV["RAILS_ENV"] == "development" || ENV["RACK_ENV"] == "development" || ENV["DISABLE_TYPELIZER"] == "false"
+      val = ENV["TYPELIZER"]
+      return val == "true" || val == "1" if val
+
+      development?
     end
 
     attr_accessor :logger
@@ -83,6 +93,26 @@ module Typelizer
     end
 
     private
+
+    def development?
+      ENV["RAILS_ENV"] == "development" || ENV["RACK_ENV"] == "development"
+    end
+
+    # Maps legacy DISABLE_TYPELIZER to TYPELIZER with a deprecation warning.
+    # Only takes effect if TYPELIZER is not already set.
+    def migrate_legacy_env!
+      return if @legacy_env_migrated
+      @legacy_env_migrated = true
+
+      val = ENV["DISABLE_TYPELIZER"]
+      return unless val
+
+      new_val = (val == "true" || val == "1") ? "false" : "true"
+      logger.warn(
+        "[Typelizer] DISABLE_TYPELIZER is deprecated, use TYPELIZER=#{new_val} instead."
+      )
+      ENV["TYPELIZER"] ||= new_val
+    end
 
     def load_serializers
       dirs.flat_map { |dir| Dir["#{dir}/**/*.rb"] }.each { |file| require file }

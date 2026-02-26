@@ -20,7 +20,7 @@ module Typelizer
 
       generator = Typelizer::Generator.new
 
-      if Typelizer.listen == true || Gem.loaded_specs["listen"] && Typelizer.listen != false
+      if Typelizer.listen == true || (Gem.loaded_specs["listen"] && Typelizer.listen != false)
         require_relative "listen"
         app.config.after_initialize do
           Typelizer::Listen.call do
@@ -31,6 +31,7 @@ module Typelizer
 
       app.config.to_prepare do
         generator.call
+        RouteGenerator.call
       end
     end
   end

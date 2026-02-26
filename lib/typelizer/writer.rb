@@ -88,7 +88,7 @@ module Typelizer
     def write_file(filename, fingerprint, output_dir: config.output_dir)
       output_file = File.join(output_dir, filename)
       existing_content = File.exist?(output_file) ? File.read(output_file) : nil
-      digest = render_template("fingerprint.ts.erb", fingerprint: fingerprint)
+      digest = render_template("fingerprint.erb", fingerprint: fingerprint)
 
       return output_file if existing_content&.start_with?(digest)
 

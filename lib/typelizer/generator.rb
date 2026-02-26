@@ -6,8 +6,8 @@ module Typelizer
       new.call(**args)
     end
 
-    def call(force: false)
-      return [] unless Typelizer.enabled?
+    def call(force: false, skip_check: false)
+      return [] unless skip_check || Typelizer.enabled?
 
       Typelizer.configuration.writers.each do |writer_name, writer_config|
         interfaces = Typelizer.interfaces(writer_name: writer_name)

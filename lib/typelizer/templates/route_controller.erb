@@ -1,0 +1,76 @@
+<%- if ts -%>
+import type { RouteDefinition, FormDefinition, RouteOptions } from '<%= runtime_import %>'
+<%- end -%>
+import { buildUrl, formAction } from '<%= runtime_import %>'
+
+export default {
+<%- routes.each_with_index do |route, idx| -%>
+<%= "\n" if idx > 0 -%>
+<%- parts = route[:required_params].map { |p| "#{p}#{ts ? ": string | number" : ""}" } -%>
+<%- parts += route[:optional_params].map { |p| "#{p}#{ts ? "?: string | number" : ""}" } -%>
+<%- has_params = parts.any? -%>
+<%- needs_form = !%w[get post].include?(route[:verb]) -%>
+  /** <%= route[:verb].upcase %> <%= route[:path] %> */
+<%- if needs_form -%>
+<%- if has_params -%>
+<%- if ts -%>
+  <%= route[:key] %>: Object.assign(
+    (
+      params: { <%= parts.join('; ') %> }<%= " | string | number" if route[:single_required] %>,
+      options?: RouteOptions,
+    ): RouteDefinition<<%= "'#{route[:verb]}'" %>> => ({
+      url: buildUrl('<%= route[:path] %>', params, options),
+      method: '<%= route[:verb] %>',
+    }),
+    { form: (
+      params: { <%= parts.join('; ') %> }<%= " | string | number" if route[:single_required] %>,
+      options?: RouteOptions,
+    ): FormDefinition =>
+      formAction(buildUrl('<%= route[:path] %>', params, options), '<%= route[:verb] %>') },
+  ),
+<%- else -%>
+  <%= route[:key] %>: Object.assign(
+    (params, options) => ({
+      url: buildUrl('<%= route[:path] %>', params, options),
+      method: '<%= route[:verb] %>',
+    }),
+    { form: (params, options) =>
+      formAction(buildUrl('<%= route[:path] %>', params, options), '<%= route[:verb] %>') },
+  ),
+<%- end -%>
+<%- else -%>
+<%- if ts -%>
+  <%= route[:key] %>: Object.assign(
+    (options?: RouteOptions): RouteDefinition<<%= "'#{route[:verb]}'" %>> => ({
+      url: buildUrl('<%= route[:path] %>', {}, options),
+      method: '<%= route[:verb] %>',
+    }),
+    { form: (options?: RouteOptions): FormDefinition =>
+      formAction(buildUrl('<%= route[:path] %>', {}, options), '<%= route[:verb] %>') },
+  ),
+<%- end -%>
+<%- end -%>
+<%- elsif has_params -%>
+<%- if ts -%>
+  <%= route[:key] %>: (
+    params: { <%= parts.join('; ') %> }<%= " | string | number" if route[:single_required] %>,
+    options?: RouteOptions,
+  ): RouteDefinition<<%= "'#{route[:verb]}'" %>> => ({
+<%- else -%>
+  <%= route[:key] %>: (params, options) => ({
+<%- end -%>
+    url: buildUrl('<%= route[:path] %>', params, options),
+    method: '<%= route[:verb] %>',
+  }),
+<%- else -%>
+<%- if ts -%>
+  <%= route[:key] %>: (options?: RouteOptions): RouteDefinition<<%= "'#{route[:verb]}'" %>> => ({
+<%- else -%>
+  <%= route[:key] %>: (options) => ({
+<%- end -%>
+    url: buildUrl('<%= route[:path] %>', {}, options),
+    method: '<%= route[:verb] %>',
+  }),
+<%- end -%>
+<%- end -%>
+}
