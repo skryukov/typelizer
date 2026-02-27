@@ -29,7 +29,7 @@ module Typelizer
           return unless keyless_type
 
           type, attrs = keyless_type
-          typelize(name => [type, attrs])
+          store_type(:_typelizer_attributes, name, attrs.merge(type: type))
           self.keyless_type = nil
         end
 
