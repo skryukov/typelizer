@@ -73,11 +73,26 @@ module Typelizer
         assign_type_information(:_typelizer_meta_attributes, attributes)
       end
 
+      def store_type(attribute_name, name, options)
+        ensure_type_store(attribute_name)
+        instance_variable_get("@#{attribute_name}")[name.to_sym] ||= {}
+        instance_variable_get("@#{attribute_name}")[name.to_sym].merge!(options)
+      end
+
       private
 
       def assign_type_information(attribute_name, attributes)
         return unless Typelizer.enabled?
 
+        attributes.each do |name, attrs|
+          next unless name
+
+          options = parse_type_declaration(attrs)
+          store_type(attribute_name, name, options)
+        end
+      end
+
+      def ensure_type_store(attribute_name)
         instance_variable = "@#{attribute_name}"
 
         unless instance_variable_get(instance_variable)
@@ -96,29 +111,26 @@ module Typelizer
             end
           end
         end
+      end
 
-        attributes.each do |name, attrs|
-          next unless name
+      def parse_type_declaration(attrs)
+        attrs = [attrs] if attrs && !attrs.is_a?(Array)
+        options = attrs.last.is_a?(Hash) ? attrs.pop : {}
 
-          attrs = [attrs] if attrs && !attrs.is_a?(Array)
-          options = attrs.last.is_a?(Hash) ? attrs.pop : {}
-
-          if attrs.any?
-            parsed_types = attrs.map { |t| TypeParser.parse(t) }
-            all_types = parsed_types.flat_map { |p| Array(p[:type]) }
-            parsed_types.each do |parsed|
-              options[:optional] = true if parsed[:optional]
-              options[:multi] = true if parsed[:multi]
-              options[:nullable] = true if parsed[:nullable]
-            end
-            options[:nullable] = true if all_types.delete(:null)
-            # Unwrap single-element arrays: typelize field: ["string"] behaves like typelize field: "string"
-            options[:type] = (all_types.size == 1) ? all_types.first : all_types
+        if attrs.any?
+          parsed_types = attrs.map { |t| TypeParser.parse(t) }
+          all_types = parsed_types.flat_map { |p| Array(p[:type]) }
+          parsed_types.each do |parsed|
+            options[:optional] = true if parsed[:optional]
+            options[:multi] = true if parsed[:multi]
+            options[:nullable] = true if parsed[:nullable]
           end
-
-          instance_variable_get(instance_variable)[name.to_sym] ||= {}
-          instance_variable_get(instance_variable)[name.to_sym].merge!(options)
+          options[:nullable] = true if all_types.delete(:null)
+          # Unwrap single-element arrays: typelize field: ["string"] behaves like typelize field: "string"
+          options[:type] = (all_types.size == 1) ? all_types.first : all_types
         end
+
+        options
       end
     end
   end
