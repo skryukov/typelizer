@@ -29,5 +29,8 @@ module Panko
 
     typelize kind: "'user' | null"
     attributes :kind
+
+    typelize tag: ["string", "number"]
+    attributes :tag
   end
 end

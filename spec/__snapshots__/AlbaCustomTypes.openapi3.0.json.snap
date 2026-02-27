@@ -51,6 +51,16 @@
         null
       ],
       "nullable": true
+    },
+    "tag": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
     }
   },
   "required": [
@@ -62,6 +72,7 @@
     "result",
     "config",
     "status",
-    "kind"
+    "kind",
+    "tag"
   ]
 }

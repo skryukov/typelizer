@@ -12,6 +12,7 @@ module Typelizer
     class << self
       def parse(type_def, **options)
         return options if type_def.nil?
+        return parse_array(type_def, **options) if type_def.is_a?(Array)
 
         type_str = type_def.to_s
         return parse_union(type_str, **options) if type_str.include?("|")
@@ -38,6 +39,25 @@ module Typelizer
       end
 
       private
+
+      def parse_array(type_defs, **options)
+        parsed = type_defs.map { |t| parse(t) }
+        types = parsed.flat_map { |p| Array(p[:type]) }
+
+        parsed.each do |p|
+          options[:optional] = true if p[:optional]
+          options[:multi] = true if p[:multi]
+          options[:nullable] = true if p[:nullable]
+        end
+
+        options[:nullable] = true if types.delete(:null)
+
+        if types.size == 1
+          {type: types.first}.merge(options)
+        else
+          {type: types}.merge(options)
+        end
+      end
 
       def parse_union(type_str, **options)
         parts = UnionTypeSorter.split_union_members(type_str)
