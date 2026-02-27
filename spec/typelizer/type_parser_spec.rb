@@ -94,6 +94,30 @@ RSpec.describe Typelizer::TypeParser do
       expect(options[:multi]).to be true
     end
 
+    it "parses array type in keyless typelize" do
+      serializer_class = Class.new do
+        extend Typelizer::DSL::ClassMethods
+
+        typelize ["string", "number"]
+      end
+
+      type, options = serializer_class.keyless_type
+      expect(type).to eq([:string, :number])
+      expect(options).to eq({})
+    end
+
+    it "parses union string in keyless typelize" do
+      serializer_class = Class.new do
+        extend Typelizer::DSL::ClassMethods
+
+        typelize "'a' | 'b'"
+      end
+
+      type, options = serializer_class.keyless_type
+      expect(type).to eq([:"'a'", :"'b'"])
+      expect(options).to eq({})
+    end
+
     it "merges keyless typelize with explicit options" do
       serializer_class = Class.new do
         extend Typelizer::DSL::ClassMethods
@@ -162,6 +186,28 @@ RSpec.describe Typelizer::TypeParser do
 
       it "parses :CustomType?[] as optional and multi" do
         expect(described_class.parse(:"CustomType?[]")).to eq({type: :CustomType, optional: true, multi: true})
+      end
+    end
+
+    context "with Array input" do
+      it "parses array of types into a union" do
+        expect(described_class.parse([:string, :number])).to eq({type: [:string, :number]})
+      end
+
+      it "extracts null from array to set nullable" do
+        expect(described_class.parse(["string", "null"])).to eq({type: :string, nullable: true})
+      end
+
+      it "preserves string literal types in array" do
+        expect(described_class.parse([:"'cloudpayments'", :"'tiptoppay'"])).to eq({type: [:"'cloudpayments'", :"'tiptoppay'"]})
+      end
+
+      it "unwraps single-element array after null extraction" do
+        expect(described_class.parse([:number, :null])).to eq({type: :number, nullable: true})
+      end
+
+      it "merges additional options with array input" do
+        expect(described_class.parse([:string, :number], optional: true)).to eq({type: [:string, :number], optional: true})
       end
     end
 

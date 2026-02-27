@@ -29,5 +29,8 @@ module Ams
 
     typelize kind: "'user' | null"
     attribute :kind
+
+    typelize ["string", "number"]
+    attribute :tag
   end
 end
