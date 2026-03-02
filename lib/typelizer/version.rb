@@ -1,5 +1,5 @@
 # frozen_string_literal: true
 
 module Typelizer
-  VERSION = "0.9.3"
+  VERSION = "0.10.0"
 end
