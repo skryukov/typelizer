@@ -119,10 +119,10 @@ class PostResource < ApplicationResource
   typelize categories: "string?[]"      # optional array of strings (categories?: Array<string>)
 
   # Shortcuts can be combined with explicit options
-  typelize status: ["string?", nullable: true]  # optional and nullable
+  typelize status: [:string?, nullable: true]  # optional and nullable
 
   # Also works with keyless typelize
-  typelize "string?"
+  typelize :string?
   attribute :nickname do |user|
     user.nickname
   end
@@ -167,8 +167,8 @@ class PostResource < ApplicationResource
   typelize target: "UserResource | CommentResource"
   attribute :target
 
-  # String and class constant can be mixed
-  typelize item: ["Namespace::UserResource", CommentResource]
+  # Pipe-delimited string with namespaced serializer
+  typelize item: "Namespace::UserResource | CommentResource"
   attribute :item
 end
 ```
@@ -183,8 +183,8 @@ class PostResource < ApplicationResource
   typelize content: "TextBlock | ImageBlock"
   attribute :content
 
-  # Works with arrays too
-  typelize sections: ["TextBlock", "ImageBlock"]
+  # Works with arrays of symbols too
+  typelize sections: [:TextBlock, :ImageBlock]
   attribute :sections
 end
 ```
@@ -200,10 +200,39 @@ type Post = {
 }
 ```
 
+String arrays are treated as string literal unions — useful for enums and state machines:
+
+```ruby
+class PostResource < ApplicationResource
+  attributes :id, :title
+
+  # Array of strings — generates string literal union type
+  typelize status: ["draft", "published", "archived"]
+  attribute :status
+
+  # Works with Rails enums and state machines
+  typelize review_state: ReviewStateMachine.states.keys
+  attribute :review_state
+end
+```
+
+This generates:
+
+```typescript
+type Post = {
+  id: number;
+  title: string;
+  status: 'draft' | 'published' | 'archived';
+  review_state: 'pending' | 'approved' | 'rejected';
+}
+```
+
+> **Note:** In arrays, **strings** become string literal types (`'a'`), while **symbols** and **class constants** become type references (`A`). You can mix them: `[:number, "auto"]` produces `number | 'auto'`.
+
 For more complex type definitions, use the full API:
 
 ```ruby
-typelize attribute_name: ["string", "Date", optional: true, nullable: true, multi: true, enum: %w[foo bar], comment: "Attribute description", deprecated: "Use `another_attribute` instead"]
+typelize attribute_name: [:string, :Date, optional: true, nullable: true, multi: true, enum: %w[foo bar], comment: "Attribute description", deprecated: "Use `another_attribute` instead"]
 ```
 
 ### Alba Traits

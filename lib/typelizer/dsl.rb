@@ -87,8 +87,7 @@ module Typelizer
         attributes.each do |name, attrs|
           next unless name
 
-          options = parse_type_declaration(attrs)
-          store_type(attribute_name, name, options)
+          store_type(attribute_name, name, TypeParser.parse_declaration(attrs))
         end
       end
 
@@ -111,26 +110,6 @@ module Typelizer
             end
           end
         end
-      end
-
-      def parse_type_declaration(attrs)
-        attrs = [attrs] if attrs && !attrs.is_a?(Array)
-        options = attrs.last.is_a?(Hash) ? attrs.pop : {}
-
-        if attrs.any?
-          parsed_types = attrs.map { |t| TypeParser.parse(t) }
-          all_types = parsed_types.flat_map { |p| Array(p[:type]) }
-          parsed_types.each do |parsed|
-            options[:optional] = true if parsed[:optional]
-            options[:multi] = true if parsed[:multi]
-            options[:nullable] = true if parsed[:nullable]
-          end
-          options[:nullable] = true if all_types.delete(:null)
-          # Unwrap single-element arrays: typelize field: ["string"] behaves like typelize field: "string"
-          options[:type] = (all_types.size == 1) ? all_types.first : all_types
-        end
-
-        options
       end
     end
   end

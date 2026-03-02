@@ -9,11 +9,11 @@ RSpec.describe Typelizer::TypeParser do
         typelize name: "string?"
         typelize age: "number[]"
         typelize tags: "string?[]"
-        typelize score: ["number?", nullable: true]
+        typelize score: [:number?, nullable: true]
         typelize bio: "string | null"
-        typelize role: ["string", "null"]
-        typelize status: ["string | null", optional: true]
-        typelize priority: ["number | null"]
+        typelize role: [:string, :null]
+        typelize status: [:"string | null", optional: true]
+        typelize priority: [:"number | null"]
       end
     end
 
@@ -69,6 +69,41 @@ RSpec.describe Typelizer::TypeParser do
     end
   end
 
+  describe "DSL integration with string literal arrays" do
+    let(:serializer_class) do
+      Class.new do
+        extend Typelizer::DSL::ClassMethods
+
+        typelize state: ["active", "inactive"]
+        typelize review: ["auto_checking", "auto_check_passed", "human_approved"]
+      end
+    end
+
+    it "converts string arrays to string literal unions in keyed form" do
+      attrs = serializer_class._typelizer_attributes[:state]
+      expect(attrs[:type]).to eq([:"'active'", :"'inactive'"])
+    end
+
+    it "handles multiple string values" do
+      attrs = serializer_class._typelizer_attributes[:review]
+      expect(attrs[:type]).to eq([:"'auto_checking'", :"'auto_check_passed'", :"'human_approved'"])
+    end
+  end
+
+  describe "keyless typelize with string literal arrays" do
+    it "parses string array as string literal union" do
+      serializer_class = Class.new do
+        extend Typelizer::DSL::ClassMethods
+
+        typelize ["active", "inactive"]
+      end
+
+      type, options = serializer_class.keyless_type
+      expect(type).to eq([:"'active'", :"'inactive'"])
+      expect(options).to eq({})
+    end
+  end
+
   describe "keyless typelize integration" do
     it "parses shortcuts in keyless typelize" do
       serializer_class = Class.new do
@@ -98,7 +133,7 @@ RSpec.describe Typelizer::TypeParser do
       serializer_class = Class.new do
         extend Typelizer::DSL::ClassMethods
 
-        typelize ["string", "number"]
+        typelize [:string, :number]
       end
 
       type, options = serializer_class.keyless_type
@@ -194,8 +229,8 @@ RSpec.describe Typelizer::TypeParser do
         expect(described_class.parse([:string, :number])).to eq({type: [:string, :number]})
       end
 
-      it "extracts null from array to set nullable" do
-        expect(described_class.parse(["string", "null"])).to eq({type: :string, nullable: true})
+      it "extracts null from symbol array to set nullable" do
+        expect(described_class.parse([:string, :null])).to eq({type: :string, nullable: true})
       end
 
       it "preserves string literal types in array" do
@@ -208,6 +243,36 @@ RSpec.describe Typelizer::TypeParser do
 
       it "merges additional options with array input" do
         expect(described_class.parse([:string, :number], optional: true)).to eq({type: [:string, :number], optional: true})
+      end
+
+      it "raises on empty arrays" do
+        expect { described_class.parse([]) }.to raise_error(ArgumentError, /Empty array/)
+      end
+    end
+
+    context "with String array input (string literal unions)" do
+      it "converts string arrays to string literal types" do
+        expect(described_class.parse(["active", "inactive"])).to eq({type: [:"'active'", :"'inactive'"]})
+      end
+
+      it "handles single-element string arrays" do
+        expect(described_class.parse(["active"])).to eq({type: :"'active'"})
+      end
+
+      it "treats 'null' as a literal string, not nullable" do
+        expect(described_class.parse(["active", "null"])).to eq({type: [:"'active'", :"'null'"]})
+      end
+
+      it "preserves options for string arrays" do
+        expect(described_class.parse(["active", "inactive"], optional: true)).to eq({type: [:"'active'", :"'inactive'"], optional: true})
+      end
+
+      it "handles mixed string and symbol arrays" do
+        expect(described_class.parse([:number, "auto"])).to eq({type: [:number, :"'auto'"]})
+      end
+
+      it "handles mixed string and class arrays" do
+        expect(described_class.parse([Integer, "pending"])).to eq({type: [:Integer, :"'pending'"]})
       end
     end
 

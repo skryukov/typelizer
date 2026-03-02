@@ -9,13 +9,13 @@ module Alba
     typelize_from ::User
 
     # Union type with multiple types - should be sorted alphabetically
-    typelize sections: ["ZebraSection", "AlphaSection", "BetaSection"]
+    typelize sections: [:ZebraSection, :AlphaSection, :BetaSection]
     attribute :sections do |user|
       []
     end
 
     # Union type in an array - should be sorted inside Array<>
-    typelize items: ["TypeZ", "TypeA", "TypeM", multi: true]
+    typelize items: [:TypeZ, :TypeA, :TypeM, multi: true]
     attribute :items do |user|
       []
     end

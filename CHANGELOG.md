@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** Arrays of strings in `typelize` now produce string literal unions (`'active' | 'inactive'`) instead of type reference unions. Use symbols for type references: `typelize status: [:string, :number]`. ([@skryukov])
+
 ## [0.9.3] - 2026-02-27
 
 ### Fixed

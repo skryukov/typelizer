@@ -20,11 +20,11 @@ module Ams
 
     # Test: typelize with union of two serializer classes generates anyOf in OpenAPI
     attribute :commentable
-    typelize commentable: ["Ams::UserSerializer", "Ams::CommentSerializer"]
+    typelize commentable: "Ams::UserSerializer | Ams::CommentSerializer"
 
-    # Test: typelize with mixed string and class constant in union
+    # Test: typelize with mixed class constants in union
     attribute :mixed_ref
-    typelize mixed_ref: ["Ams::UserSerializer", CommentSerializer]
+    typelize mixed_ref: [UserSerializer, CommentSerializer]
 
     # Test: nullable array of refs — nullable applies to array, not items
     attribute :contributors
