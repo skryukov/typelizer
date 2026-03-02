@@ -10,6 +10,17 @@ module Typelizer
     TYPE_PATTERN = /\A(.+?)(\?)?(\[\])?(\?)?\z/
 
     class << self
+      def parse_declaration(attrs, **options)
+        return options.merge(attrs) if attrs.is_a?(Hash)
+        return parse(attrs, **options) unless attrs.is_a?(Array)
+
+        options = attrs.last.merge(options) if attrs.last.is_a?(Hash)
+        types = attrs.reject { |t| t.is_a?(Hash) }
+        return options if types.empty?
+
+        parse((types.size == 1) ? types.first : types, **options)
+      end
+
       def parse(type_def, **options)
         return options if type_def.nil?
         return parse_array(type_def, **options) if type_def.is_a?(Array)
@@ -41,22 +52,28 @@ module Typelizer
       private
 
       def parse_array(type_defs, **options)
-        parsed = type_defs.map { |t| parse(t) }
-        types = parsed.flat_map { |p| Array(p[:type]) }
+        raise ArgumentError, "Empty array passed to typelize" if type_defs.empty?
 
-        parsed.each do |p|
-          options[:optional] = true if p[:optional]
-          options[:multi] = true if p[:multi]
-          options[:nullable] = true if p[:nullable]
+        types = []
+        type_defs.each do |t|
+          if t.is_a?(String)
+            types << :"'#{t}'"
+          else
+            parsed = parse(t)
+            types.concat(Array(parsed[:type]))
+            options[:optional] = true if parsed[:optional]
+            options[:multi] = true if parsed[:multi]
+            options[:nullable] = true if parsed[:nullable]
+          end
         end
 
         options[:nullable] = true if types.delete(:null)
+        wrap_type(types, **options)
+      end
 
-        if types.size == 1
-          {type: types.first}.merge(options)
-        else
-          {type: types}.merge(options)
-        end
+      def wrap_type(types, **options)
+        type = (types.size == 1) ? types.first : types
+        {type: type}.merge(options)
       end
 
       def parse_union(type_str, **options)

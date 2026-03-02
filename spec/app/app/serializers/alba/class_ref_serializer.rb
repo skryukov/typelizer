@@ -20,11 +20,11 @@ module Alba
 
     # Test: typelize with union of two serializer classes generates anyOf in OpenAPI
     attributes :commentable
-    typelize commentable: ["Alba::UserSerializer", "Alba::CommentSerializer"]
+    typelize commentable: "Alba::UserSerializer | Alba::CommentSerializer"
 
-    # Test: typelize with mixed string and class constant in union
+    # Test: typelize with mixed class constants in union
     attributes :mixed_ref
-    typelize mixed_ref: ["Alba::UserSerializer", CommentSerializer]
+    typelize mixed_ref: [UserSerializer, CommentSerializer]
 
     # Test: nullable array of refs — nullable applies to array, not items
     attributes :contributors

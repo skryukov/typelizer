@@ -63,7 +63,7 @@ module Alba
     end
 
     # Keyless array typelize (union from array)
-    typelize ["string", "number"]
+    typelize [:string, :number]
 
     attribute :tag do |user|
       "important"
