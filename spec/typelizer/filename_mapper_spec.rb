@@ -166,6 +166,92 @@ RSpec.describe "filename_mapper", type: :typelizer do
     end
   end
 
+  describe "per-directory barrel files" do
+    it "does not generate directory indexes when filenames are flat" do
+      generator = Typelizer::Generator.new
+      generator.call(force: true)
+
+      subdirs = Dir[File.join(default_output_dir, "*/")]
+      expect(subdirs).to be_empty
+    ensure
+      FileUtils.rm_rf(default_output_dir)
+    end
+
+    it "generates an index.ts only in directories that contain type files" do
+      configuration.writer(:nested) do |c|
+        c.output_dir = nested_output_dir
+        c.filename_mapper = namespace_mapper
+      end
+
+      generator = Typelizer::Generator.new
+      generator.call(force: true)
+
+      # Alba/Ar/ has type files (AlbaArPost, AlbaArUser) → gets an index
+      expect(nested_output_dir.join("Alba/Ar/index.ts")).to exist
+
+      # Alba/ has type files (AlbaUser, AlbaPost, etc.) → gets an index
+      expect(nested_output_dir.join("Alba/index.ts")).to exist
+
+      # Every generated index.ts sits next to at least one type file
+      Dir[File.join(nested_output_dir, "**/index.ts")].each do |index_file|
+        dir = File.dirname(index_file)
+        type_files = Dir[File.join(dir, "*.ts")] - [index_file]
+        expect(type_files).not_to be_empty,
+          "#{index_file} exists in a directory with no type files"
+      end
+    ensure
+      FileUtils.rm_rf(nested_output_dir)
+      FileUtils.rm_rf(default_output_dir)
+    end
+
+    it "directory index re-exports only its own leaf types" do
+      configuration.writer(:nested) do |c|
+        c.output_dir = nested_output_dir
+        c.filename_mapper = namespace_mapper
+      end
+
+      generator = Typelizer::Generator.new
+      generator.call(force: true)
+
+      ar_index = File.read(nested_output_dir.join("Alba/Ar/index.ts"))
+      expect(ar_index).to include("as AlbaArPost")
+      expect(ar_index).to include("'./Post'")
+      expect(ar_index).to include("as AlbaArUser")
+      expect(ar_index).to include("'./User'")
+
+      # Should not re-export types from sibling or parent directories
+      expect(ar_index).not_to include("as AlbaUser")
+      expect(ar_index).not_to include("as AlbaPost")
+    ensure
+      FileUtils.rm_rf(nested_output_dir)
+      FileUtils.rm_rf(default_output_dir)
+    end
+  end
+
+  describe "enums with filename_mapper" do
+    it "generates Enums.ts at the root and re-exports them from the root index" do
+      configuration.writer(:nested) do |c|
+        c.output_dir = nested_output_dir
+        c.filename_mapper = namespace_mapper
+      end
+
+      generator = Typelizer::Generator.new
+      generator.call(force: true)
+
+      expect(nested_output_dir.join("Enums.ts")).to exist
+
+      enums_content = File.read(nested_output_dir.join("Enums.ts"))
+      expect(enums_content).to include("PostCategory")
+
+      index_content = File.read(nested_output_dir.join("index.ts"))
+      expect(index_content).to include("from './Enums'")
+      expect(index_content).to include("PostCategory")
+    ensure
+      FileUtils.rm_rf(nested_output_dir)
+      FileUtils.rm_rf(default_output_dir)
+    end
+  end
+
   describe "per-serializer override" do
     it "allows typelizer_config to override filename_mapper for individual serializers" do
       per_serializer_mapper = ->(serializer) { "Custom/#{serializer.name.demodulize.sub(/Serializer\z/, "")}" }

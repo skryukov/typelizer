@@ -26,6 +26,7 @@ module Typelizer
         written_files << write_enums(enums) if enums.any?
 
         written_files << write_index(valid_interfaces, enums: enums)
+        written_files.concat(write_directory_indexes(valid_interfaces))
 
         cleanup_stale_files(written_files) unless force
 
@@ -81,13 +82,32 @@ module Typelizer
         }
       ].inspect
       write_file("index.ts", fingerprint) do
-        render_template("index.ts.erb", interfaces: interfaces, enums: enums, imports_sort_order: config.imports_sort_order, prefer_double_quotes: config.prefer_double_quotes)
+        render_template("index.ts.erb", interfaces: interfaces, enums: enums, base_dir: nil, imports_sort_order: config.imports_sort_order, prefer_double_quotes: config.prefer_double_quotes)
       end
     end
 
     def write_interface(interface)
       write_file("#{interface.filename}.ts", interface.fingerprint) do
         render_template("interface.ts.erb", interface: interface)
+      end
+    end
+
+    def write_directory_indexes(interfaces)
+      grouped = interfaces.group_by { |i| File.dirname(i.filename) }
+      grouped.delete(".")
+
+      return [] if grouped.empty?
+
+      grouped.map do |dir, dir_interfaces|
+        fingerprint = [
+          dir,
+          dir_interfaces.map { |i| [i.name, i.filename, i.trait_interfaces.map(&:name)] },
+          CONFIGS_AFFECTING_INDEX_OUTPUT.map { |key| config.public_send(key) }
+        ].inspect
+
+        write_file(File.join(dir, "index.ts"), fingerprint) do
+          render_template("index.ts.erb", interfaces: dir_interfaces, enums: [], base_dir: dir, imports_sort_order: config.imports_sort_order, prefer_double_quotes: config.prefer_double_quotes)
+        end
       end
     end
 
