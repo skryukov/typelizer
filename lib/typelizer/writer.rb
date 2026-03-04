@@ -50,6 +50,13 @@ module Typelizer
       stale_files = existing_files - written_files
 
       File.delete(*stale_files) unless stale_files.empty?
+
+      # Remove empty directories left behind (deepest first so parents
+      # become empty after their children are removed in the same pass)
+      Dir[File.join(config.output_dir, "**/*")]
+        .select { |d| File.directory?(d) }
+        .sort_by { |d| -d.count("/") }
+        .each { |d| Dir.rmdir(d) if Dir.empty?(d) }
     end
 
     def collect_enums(interfaces)
