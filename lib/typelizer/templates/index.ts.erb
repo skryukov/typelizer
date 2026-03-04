@@ -3,10 +3,11 @@
 export type { <%= ImportSorter.sort(enums.map(&:enum_type_name), imports_sort_order).join(", ") %> } from <%= enums_path %>
 <%- end -%>
 <%- interfaces.each do |interface| -%>
+<%- relative_path = base_dir ? interface.filename.delete_prefix("#{base_dir}/") : interface.filename -%>
 <%- sorted_traits = ImportSorter.sort(interface.trait_interfaces.map(&:name), interface.config.imports_sort_order) -%>
 <%- if interface.config.verbatim_module_syntax -%>
-export type { <%= interface.name %><%= ", " + sorted_traits.join(", ") if sorted_traits.any? %> } from <%= interface.quote('./' + interface.filename) %>
+export type { <%= interface.name %><%= ", " + sorted_traits.join(", ") if sorted_traits.any? %> } from <%= interface.quote('./' + relative_path) %>
 <%- else -%>
-export type { default as <%= interface.name %><%= ", " + sorted_traits.join(", ") if sorted_traits.any? %> } from <%= interface.quote('./' + interface.filename) %>
+export type { default as <%= interface.name %><%= ", " + sorted_traits.join(", ") if sorted_traits.any? %> } from <%= interface.quote('./' + relative_path) %>
 <%- end -%>
 <%- end -%>

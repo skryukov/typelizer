@@ -36,7 +36,11 @@ module Typelizer
     end
 
     def filename
-      name.gsub("::", "/")
+      if config.filename_mapper
+        config.filename_mapper.call(serializer)
+      else
+        name.gsub("::", "/")
+      end
     end
 
     def root_key
