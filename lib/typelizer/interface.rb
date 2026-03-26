@@ -39,6 +39,15 @@ module Typelizer
       name.gsub("::", "/")
     end
 
+    def index_path(index_dir)
+      iface_dir = config.output_dir.to_s
+      if iface_dir != index_dir
+        Pathname.new(File.join(iface_dir, filename)).relative_path_from(Pathname.new(index_dir)).to_s
+      else
+        "./#{filename}"
+      end
+    end
+
     def root_key
       serializer_plugin.root_key
     end

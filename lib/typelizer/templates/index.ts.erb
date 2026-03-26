@@ -5,8 +5,8 @@ export type { <%= ImportSorter.sort(enums.map(&:enum_type_name), imports_sort_or
 <%- interfaces.each do |interface| -%>
 <%- sorted_traits = ImportSorter.sort(interface.trait_interfaces.map(&:name), interface.config.imports_sort_order) -%>
 <%- if interface.config.verbatim_module_syntax -%>
-export type { <%= interface.name %><%= ", " + sorted_traits.join(", ") if sorted_traits.any? %> } from <%= interface.quote('./' + interface.filename) %>
+export type { <%= interface.name %><%= ", " + sorted_traits.join(", ") if sorted_traits.any? %> } from <%= interface.quote(interface.index_path(index_dir)) %>
 <%- else -%>
-export type { default as <%= interface.name %><%= ", " + sorted_traits.join(", ") if sorted_traits.any? %> } from <%= interface.quote('./' + interface.filename) %>
+export type { default as <%= interface.name %><%= ", " + sorted_traits.join(", ") if sorted_traits.any? %> } from <%= interface.quote(interface.index_path(index_dir)) %>
 <%- end -%>
 <%- end -%>

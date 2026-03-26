@@ -72,6 +72,22 @@ RSpec.describe Typelizer::Generator, type: :typelizer do
       FileUtils.rm_rf(default_output_dir.parent.join("generator_empty"))
     end
 
+    it "writes interfaces to per-serializer output_dir" do
+      custom_output_dir = Rails.root.join("app/javascript/types/custom_output")
+
+      generator.call(force: true)
+
+      # File lands in the custom output_dir, not the default
+      expect(custom_output_dir.join("AlbaCustomOutputDir.ts")).to exist
+      expect(default_output_dir.join("AlbaCustomOutputDir.ts")).not_to exist
+
+      # index.ts in the writer's default output_dir still re-exports it
+      index_content = File.read(default_output_dir.join("index.ts"))
+      expect(index_content).to include("AlbaCustomOutputDir")
+    ensure
+      FileUtils.rm_rf(custom_output_dir)
+    end
+
     it "generates files for all writers and applies writer-specific transformers" do
       expect { generator.call(force: true) }.not_to raise_error
 
