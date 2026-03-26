@@ -17,6 +17,8 @@ module Alba
       typelize_from ::Post
       attributes :id, :title, :category
 
+      has_one :author, resource: UserSerializer
+
       has_one :user do
         typelize_from ::User
         attributes :id, :username, :role

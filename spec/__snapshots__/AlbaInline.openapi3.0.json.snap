@@ -75,6 +75,9 @@
               null
             ]
           },
+          "author": {
+            "$ref": "#/components/schemas/AlbaUser"
+          },
           "user": {
             "type": "object",
             "properties": {
@@ -105,6 +108,7 @@
           "id",
           "title",
           "category",
+          "author",
           "user"
         ]
       }
