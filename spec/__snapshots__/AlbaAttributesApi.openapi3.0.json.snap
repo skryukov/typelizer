@@ -15,6 +15,10 @@
       "type": "number",
       "format": "float"
     },
+    "attr_decimal": {
+      "type": "number",
+      "format": "double"
+    },
     "attr_boolean": {
       "type": "boolean"
     },
@@ -51,6 +55,7 @@
     "attr_string",
     "attr_integer",
     "attr_float",
+    "attr_decimal",
     "attr_boolean",
     "attr_datetime",
     "attr_date",

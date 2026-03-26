@@ -20,5 +20,6 @@ class User < ApplicationRecord
   attribute :attr_time, :time
   attribute :attr_json, :json
   attribute :attr_array, :string, array: true
+  attribute :attr_decimal, :decimal
   attribute :attr_range, :integer, range: true
 end
