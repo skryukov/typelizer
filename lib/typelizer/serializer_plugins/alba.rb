@@ -61,11 +61,12 @@ module Typelizer
       def build_collected_property(name, attr)
         case attr
         when BlockAttributeCollector::BlockAssociation
+          prop_name = has_transform_key?(serializer) ? fetch_key(serializer, name) : name
           with_traits = Array(attr.with_traits) if attr.with_traits
           resource = attr.resource || infer_resource_from_name(name)
 
           Property.new(
-            name: name,
+            name: prop_name,
             type: resource ? context.interface_for(resource) : nil,
             optional: false,
             nullable: false,
