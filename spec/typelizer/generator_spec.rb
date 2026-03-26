@@ -88,6 +88,28 @@ RSpec.describe Typelizer::Generator, type: :typelizer do
       FileUtils.rm_rf(custom_output_dir)
     end
 
+    it "uses filename_mapper to generate nested file paths" do
+      nested_dir = default_output_dir.parent.join("generator_nested")
+
+      configuration.writer(:nested) do |c|
+        c.output_dir = nested_dir
+        c.filename_mapper = ->(name) { name.gsub("::", "/") }
+      end
+
+      generator.call(force: true)
+
+      # Alba::UserSerializer mapped name is "Alba::User", filename becomes "Alba/User"
+      expect(nested_dir.join("Alba/User.ts")).to exist
+      expect(nested_dir.join("AlbaUser.ts")).not_to exist
+
+      # Type name in index.ts is still flat
+      index_content = File.read(nested_dir.join("index.ts"))
+      expect(index_content).to include("AlbaUser")
+      expect(index_content).to include("'./Alba/User'")
+    ensure
+      FileUtils.rm_rf(nested_dir)
+    end
+
     it "generates files for all writers and applies writer-specific transformers" do
       expect { generator.call(force: true) }.not_to raise_error
 

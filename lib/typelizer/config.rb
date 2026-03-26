@@ -41,6 +41,7 @@ module Typelizer
   # Config keys that don't affect file content (runtime behavior, or effects captured via properties).
   CONFIGS_NOT_AFFECTING_OUTPUT = %i[
     serializer_name_mapper
+    filename_mapper
     serializer_model_mapper
     properties_transformer
     model_plugin
@@ -56,6 +57,7 @@ module Typelizer
 
   Config = Struct.new(
     :serializer_name_mapper,
+    :filename_mapper,
     :serializer_model_mapper,
     :properties_transformer,
     :properties_sort_order,
@@ -94,6 +96,8 @@ module Typelizer
           # remove only the end of the line
           name.sub(/(Serializer|Resource)\z/, "")
         end,
+
+        filename_mapper: nil,
 
         serializer_model_mapper: lambda do |serializer|
           base_class = serializer_name_mapper.call(serializer)
