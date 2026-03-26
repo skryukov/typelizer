@@ -628,12 +628,29 @@ class PostResource < ApplicationResource
 end
 ```
 
+You can also override `output_dir` per serializer to place its generated file in a different directory:
+
+```ruby
+class Admin::UserResource < ApplicationResource
+  typelizer_config do |c|
+    c.output_dir = Rails.root.join("app/javascript/types/admin")
+  end
+end
+```
+
 ### Option reference
 
 ```ruby
 Typelizer.configure do |config|
   # Name to type mapping for serializer classes
   config.serializer_name_mapper = ->(serializer) { ... }
+
+  # Custom file path mapping (decouples filename from type name)
+  # Receives the mapped name (output of serializer_name_mapper) and returns a file path.
+  # When nil (default), filename is derived from the type name.
+  # Example: ->(name) { name.gsub("::", "/") }
+  #   Alba::UserSerializer → types/Alba/User.ts (type name stays AlbaUser)
+  config.filename_mapper = nil
 
   # Maps serializers to their corresponding model classes
   config.serializer_model_mapper = ->(serializer) { ... }

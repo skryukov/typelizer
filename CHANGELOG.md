@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- Per-serializer `output_dir` override via `typelizer_config`. Interfaces are written to their configured directory while the shared `index.ts` barrel generates correct relative import paths. ([@skryukov])
+
+- `filename_mapper` configuration to decouple generated file paths from TypeScript type names. Useful for mirroring Ruby module namespaces as nested directories. ([@skryukov], [@rdavid1099])
+
+  ```ruby
+  Typelizer.configure do |config|
+    config.filename_mapper = ->(name) { name.gsub("::", "/") }
+  end
+  # Alba::UserSerializer → types/Alba/User.ts (type name stays AlbaUser)
+  ```
+
+### Fixed
+
+- Walk over inline association properties to determine imports. ([@skryukov])
+- Fix `config.type_mapping` override not applied to OpenAPI schema generation. ([@skryukov])
+- Fix key transformation for Alba traits. ([@skryukov])
+
 ## [0.10.0] - 2026-03-02
 
 ### Changed
@@ -426,16 +445,17 @@ and this project adheres to [Semantic Versioning].
 
 [@davidrunger]: https://github.com/davidrunger
 [@Envek]: https://github.com/Envek
-[@jonmarkgo]: https://github.com/jonmarkgo
 [@hkamberovic]: https://github.com/hkamberovic
+[@jonmarkgo]: https://github.com/jonmarkgo
 [@kristinemcbride]: https://github.com/kristinemcbride
 [@nkriege]: https://github.com/nkriege
 [@NOX73]: https://github.com/NOX73
 [@okuramasafumi]: https://github.com/okuramasafumi
 [@patvice]: https://github.com/patvice
 [@pgiblock]: https://github.com/pgiblock
-[@prog-supdex]: https://github.com/prog-supdex
 [@PedroAugustoRamalhoDuarte]: https://github.com/PedroAugustoRamalhoDuarte
+[@prog-supdex]: https://github.com/prog-supdex
+[@rdavid1099]: https://github.com/rdavid1099
 [@skryukov]: https://github.com/skryukov
 [@ventsislaf]: https://github.com/ventsislaf
 
