@@ -14,6 +14,7 @@ module Typelizer
   # library/global/writer settings when computing the effective config.
   class SerializerConfigLayer
     VALID_KEYS = Config.members.to_set
+    WRITER_ONLY_KEYS = %i[output_dir].to_set
 
     def initialize(target_hash)
       @target_hash = target_hash
@@ -30,6 +31,12 @@ module Typelizer
       key = name.chomp("=").to_sym
 
       raise NoMethodError, "Unknown configuration key: '#{key}'" unless VALID_KEYS.include?(key)
+
+      if name.end_with?("=") && WRITER_ONLY_KEYS.include?(key)
+        raise ArgumentError,
+          "'#{key}' cannot be set per-serializer via typelizer_config. " \
+          "Use a named writer instead: config.writer(:name) { |c| c.#{key} = ... }"
+      end
 
       return @target_hash[key] = args.first if name.end_with?("=") && args.length == 1
 
