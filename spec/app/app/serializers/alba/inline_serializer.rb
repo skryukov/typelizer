@@ -15,11 +15,11 @@ module Alba
 
     has_many :deep_posts do
       typelize_from ::Post
-      attributes :id, :title
+      attributes :id, :title, :category
 
       has_one :user do
         typelize_from ::User
-        attributes :id, :username
+        attributes :id, :username, :role
       end
     end
   end
