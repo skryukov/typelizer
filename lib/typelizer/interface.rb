@@ -166,6 +166,8 @@ module Typelizer
       props.flat_map do |prop|
         if prop.nested_properties&.any?
           [prop] + collect_all_properties(prop.nested_properties)
+        elsif prop.type.is_a?(Interface) && prop.type.inline?
+          [prop] + collect_all_properties(prop.type.properties)
         else
           [prop]
         end

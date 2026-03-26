@@ -67,6 +67,21 @@
               "null"
             ]
           },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "news",
+              "article",
+              "blog",
+              null
+            ]
+          },
+          "author": {
+            "$ref": "#/components/schemas/AlbaUser"
+          },
           "user": {
             "type": "object",
             "properties": {
@@ -75,17 +90,29 @@
               },
               "username": {
                 "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "guest",
+                  "member",
+                  "admin",
+                  "superadmin"
+                ]
               }
             },
             "required": [
               "id",
-              "username"
+              "username",
+              "role"
             ]
           }
         },
         "required": [
           "id",
           "title",
+          "category",
+          "author",
           "user"
         ]
       }
