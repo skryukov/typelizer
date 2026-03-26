@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "myCustomPosts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AlbaPost"
+      }
+    }
+  },
+  "required": [
+    "myCustomPosts"
+  ]
+}

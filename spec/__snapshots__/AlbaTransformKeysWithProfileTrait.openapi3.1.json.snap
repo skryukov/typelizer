@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "latestPost": {
+      "oneOf": [
+        {
+          "$ref": "#/components/schemas/AlbaPost"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "latestPost"
+  ]
+}
