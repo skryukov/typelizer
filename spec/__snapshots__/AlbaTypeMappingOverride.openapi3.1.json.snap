@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "properties": {
+    "attr_decimal": {
+      "type": "string"
+    },
+    "attr_float": {
+      "type": "number",
+      "format": "float"
+    },
+    "attr_integer": {
+      "type": "integer"
+    },
+    "attr_date": {
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "required": [
+    "attr_decimal",
+    "attr_float",
+    "attr_integer",
+    "attr_date"
+  ]
+}
