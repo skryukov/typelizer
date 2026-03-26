@@ -5,5 +5,7 @@ module Alba
       :attr_float, :attr_decimal, :attr_boolean, :attr_datetime,
       :attr_date, :attr_time, :attr_json,
       :attr_array, :attr_range
+
+    has_one :custom_output, serializer: CustomOutputDirSerializer
   end
 end

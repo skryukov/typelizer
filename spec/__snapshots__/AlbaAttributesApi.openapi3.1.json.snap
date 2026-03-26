@@ -48,6 +48,9 @@
       "items": {
         "type": "integer"
       }
+    },
+    "custom_output": {
+      "$ref": "#/components/schemas/AlbaCustomOutputDir"
     }
   },
   "required": [
@@ -62,6 +65,7 @@
     "attr_time",
     "attr_json",
     "attr_array",
-    "attr_range"
+    "attr_range",
+    "custom_output"
   ]
 }
