@@ -36,11 +36,14 @@ namespace :typelizer do
   def benchmark_types(&block)
     require "benchmark"
 
+    interfaces = Typelizer.interfaces
+    if interfaces.empty?
+      puts "No serializers found, skipping type generation."
+      return
+    end
+
     puts "Generating TypeScript interfaces..."
     time = Benchmark.realtime { block.call }
-
-    interfaces = Typelizer.interfaces
-    raise ArgumentError, "No serializers found. Please ensure all your serializers include Typelizer::DSL." if interfaces.empty?
 
     puts "Finished in #{time} seconds"
     puts "Found #{interfaces.size} serializers:"
@@ -50,10 +53,15 @@ namespace :typelizer do
   def benchmark_routes(&block)
     require "benchmark"
 
+    config = Typelizer.configuration.routes
+    unless config.enabled
+      puts "Route generation is disabled, skipping."
+      return
+    end
+
     puts "Generating TypeScript route helpers..."
     time = Benchmark.realtime { block.call }
 
-    config = Typelizer.configuration.routes
     puts "Finished in #{time} seconds"
     puts "Generated route helpers in #{config.output_dir}"
   end
