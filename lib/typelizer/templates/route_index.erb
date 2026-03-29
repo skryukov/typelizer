@@ -1,0 +1,14 @@
+<%- entries.each do |entry| -%>
+export { default as <%= entry[:namespace] %> } from './<%= entry[:file] %>'
+<%- end -%>
+<%- if named_routes.any? -%>
+<%- controllers = named_routes.group_by { |r| r[:controller_file] } -%>
+
+<%- controllers.each do |file, routes| -%>
+import <%= routes.first[:controller_var] %> from './<%= file %>'
+<%- end -%>
+
+<%- named_routes.each do |route| -%>
+export const <%= route[:export_name] %> = <%= route[:controller_var] %>.<%= route[:key] %>
+<%- end -%>
+<%- end -%>

@@ -11,3 +11,7 @@
 .rspec_status
 
 Gemfile.lock
+
+/node_modules/
+/docs/.vitepress/dist
+/docs/.vitepress/cache

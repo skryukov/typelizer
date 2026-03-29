@@ -21,6 +21,10 @@ module Typelizer
     attr_accessor :dirs, :listen
     attr_reader :writers, :global_settings
 
+    def routes
+      @routes ||= RouteConfig.build
+    end
+
     def initialize
       @dirs = []
       @listen = nil

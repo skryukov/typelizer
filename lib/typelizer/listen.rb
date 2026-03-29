@@ -11,7 +11,8 @@ module Typelizer
         &block
       )
         return if started
-        return unless Typelizer.enabled?
+        return if Typelizer.listen == false
+        return unless Typelizer.listen || Gem.loaded_specs["listen"]
 
         @block = block
         @generator = Typelizer::Generator.new
@@ -21,19 +22,25 @@ module Typelizer
 
         self.started = true
 
-        locales_dirs = Typelizer.dirs.filter(&:exist?).map { |path| File.expand_path(path) }
+        watched_dirs = Typelizer.dirs.filter(&:exist?).map { |path| File.expand_path(path) }
 
-        relative_paths = locales_dirs.map { |path| relative_path(path) }
-
+        relative_paths = watched_dirs.map { |path| relative_path(path) }
         debug("Watching #{relative_paths.inspect}")
 
-        listener(locales_dirs.map(&:to_s), options).start
+        listener(watched_dirs.map(&:to_s), options).start
         @generator.call if run_on_start
+
+        if Typelizer.configuration.routes.enabled
+          RouteGenerator.call if run_on_start
+          start_route_listener(options)
+        end
       end
 
+      private
+
       def relative_path(path)
-        root_path = defined?(Rails) ? Rails.root : Pathname.pwd
-        Pathname.new(path).relative_path_from(root_path).to_s
+        @root_path ||= defined?(Rails) ? Rails.root : Pathname.pwd
+        Pathname.new(path).relative_path_from(@root_path).to_s
       end
 
       def debug(message)
@@ -66,6 +73,18 @@ module Typelizer
         changes.map { |change| relative_path(change) }.select do |change|
           paths.any? { |path| change.start_with?(path) }
         end
+      end
+
+      def start_route_listener(options)
+        config_dir = @root_path.join("config")
+        return unless config_dir.exist?
+
+        debug("Watching #{relative_path(config_dir)} for route changes")
+
+        ::Listen.to(config_dir.to_s, only: /routes/, **options) do |changed, added, removed|
+          debug("Routes changed: #{(changed + added + removed).map { |f| relative_path(f) }.inspect}")
+          RouteGenerator.call
+        end.start
       end
     end
   end

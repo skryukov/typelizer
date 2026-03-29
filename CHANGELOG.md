@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- **Route generation**: Generate typed TypeScript (or JavaScript) route helpers from Rails routes. Enable with `config.routes.enabled = true`. ([@skryukov])
+
 ## [0.11.0] - 2026-03-26
 
 ### Added
