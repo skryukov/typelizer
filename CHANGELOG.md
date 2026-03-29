@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-03-29
+
 ### Added
 
 - **Route generation**: Generate typed TypeScript (or JavaScript) route helpers from Rails routes. Enable with `config.routes.enabled = true`. ([@skryukov])
@@ -465,7 +467,8 @@ and this project adheres to [Semantic Versioning].
 [@skryukov]: https://github.com/skryukov
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/skryukov/typelizer/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/skryukov/typelizer/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/skryukov/typelizer/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/skryukov/typelizer/compare/v0.9.2...v0.9.3
