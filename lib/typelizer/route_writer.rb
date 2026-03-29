@@ -55,11 +55,11 @@ module Typelizer
         )
       end
 
-      fingerprint = prepared_routes.map { |r| [r[:name], r[:verb], r[:path], r[:key]] }.inspect
       runtime_import = (ctrl_path.count("/") > 0) ? "#{"../" * ctrl_path.count("/")}runtime" : "./runtime"
+      content = render_template("route_controller.erb", ts: config.ts?, routes: prepared_routes, runtime_import: runtime_import)
 
-      write_file(filename, fingerprint) do
-        render_template("route_controller.erb", ts: config.ts?, routes: prepared_routes, runtime_import: runtime_import)
+      write_file(filename, content) do
+        content
       end
     end
 
@@ -71,10 +71,11 @@ module Typelizer
         }
       end.sort_by { |e| e[:namespace] }
 
-      fingerprint = [entries, named.map { |n| [n[:export_name], n[:key], n[:controller_file]] }].inspect
+      sorted_named = named.sort_by { |n| n[:export_name] }
+      content = render_template("route_index.erb", entries: entries, named_routes: sorted_named)
 
-      write_file("index.#{config.file_ext}", fingerprint) do
-        render_template("route_index.erb", entries: entries, named_routes: named)
+      write_file("index.#{config.file_ext}", content) do
+        content
       end
     end
 
