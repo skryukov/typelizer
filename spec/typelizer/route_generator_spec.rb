@@ -76,13 +76,14 @@ RSpec.describe Typelizer::RouteGenerator, type: :typelizer do
       expect(users).to include("FormDefinition")
     end
 
-    it "does not generate .form variant for GET and POST routes" do
+    it "does not generate .form variant or unused imports for GET and POST routes" do
       generator.call(force: true)
 
       pages = File.read(output_dir.join("PagesController.ts"))
       # GET-only controller should not have Object.assign or formAction
       expect(pages).not_to include("Object.assign")
-      expect(pages).not_to include("formAction(")
+      expect(pages).not_to include("formAction")
+      expect(pages).not_to include("FormDefinition")
     end
 
     it "generates runtime with formAction, URL defaults, and base URL helpers" do

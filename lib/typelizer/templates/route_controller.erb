@@ -1,7 +1,8 @@
+<%- has_form = routes.any? { |r| !%w[get post].include?(r[:verb]) } -%>
 <%- if ts -%>
-import type { RouteDefinition, FormDefinition, RouteOptions } from '<%= runtime_import %>'
+import type { RouteDefinition<%= ", FormDefinition" if has_form %>, RouteOptions } from '<%= runtime_import %>'
 <%- end -%>
-import { buildUrl, formAction } from '<%= runtime_import %>'
+import { buildUrl<%= ", formAction" if has_form %> } from '<%= runtime_import %>'
 
 export default {
 <%- routes.each_with_index do |route, idx| -%>
