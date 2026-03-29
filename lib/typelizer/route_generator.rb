@@ -11,7 +11,7 @@ module Typelizer
     end
 
     def call(force: false, skip_check: false)
-      return [] unless skip_check || (Typelizer.enabled? && config.enabled)
+      return [] if !skip_check && !(Typelizer.enabled? && config.enabled)
 
       routes = collect_routes
       return [] if routes.empty?

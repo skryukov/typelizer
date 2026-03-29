@@ -95,7 +95,11 @@ module Typelizer
       output_file = File.join(config.output_dir, filename)
       digest = render_template("fingerprint.erb", fingerprint: fingerprint)
 
-      existing_header = File.read(output_file, digest.bytesize) rescue nil
+      existing_header = begin
+        File.read(output_file, digest.bytesize)
+      rescue
+        nil
+      end
       return output_file if existing_header == digest
 
       content = yield
