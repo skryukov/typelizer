@@ -83,7 +83,10 @@ module Typelizer
         attributes.each do |name, attrs|
           next unless name
 
-          store_type(attribute_name, name, TypeParser.parse_declaration(attrs))
+          clean_name, optional_from_key = TypeParser.parse_key(name)
+          parsed = TypeParser.apply_optional_key(TypeParser.parse_declaration(attrs), optional_from_key)
+
+          store_type(attribute_name, clean_name, parsed)
         end
       end
 

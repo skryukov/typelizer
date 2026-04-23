@@ -125,7 +125,10 @@ module Typelizer
         # recursively including nested sub-properties
         all_properties = collect_all_properties(properties_to_print + trait_interfaces.flat_map(&:properties))
 
-        flat_types = all_properties.filter_map(&:type).flat_map { |t| Array(t) }.uniq
+        flat_types = all_properties.filter_map(&:type)
+          .flat_map { |t| Array(t) }
+          .reject { |t| t.is_a?(Shape) }
+          .uniq
         association_serializers, attribute_types = flat_types.partition { |type| type.is_a?(Interface) }
 
         serializer_types = association_serializers
@@ -176,6 +179,8 @@ module Typelizer
       props.flat_map do |prop|
         if prop.nested_properties&.any?
           [prop] + collect_all_properties(prop.nested_properties)
+        elsif prop.type.is_a?(Shape)
+          [prop] + collect_all_properties(prop.type.properties)
         elsif prop.type.is_a?(Interface) && prop.type.inline?
           [prop] + collect_all_properties(prop.type.properties)
         else
@@ -232,8 +237,17 @@ module Typelizer
         resolve_union_class_types(attrs)
       when String, Symbol
         resolve_single_class_type(attrs)
+      when Shape
+        attrs.merge(type: resolve_shape(type))
       else
         attrs
+      end
+    end
+
+    def resolve_shape(shape)
+      shape.map_properties do |p|
+        resolved = resolve_class_type(type: p.type)
+        p.with(type: resolved[:type])
       end
     end
 

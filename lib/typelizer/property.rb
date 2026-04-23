@@ -99,14 +99,12 @@ module Typelizer
       end
 
       if type.nil? && nested_properties&.any?
-        inner = nested_properties.map { |p|
-          rendered = p.render(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes) + ";"
-          rendered.gsub(/^/, "  ")
-        }.join("\n")
-        return "{\n#{inner}\n}"
+        return Shape.new(properties: nested_properties).render(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
       end
 
       case type
+      when Shape
+        type.render(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
       when Array
         type.map { |t| t.respond_to?(:name) ? t.name : t.to_s }.join(" | ")
       else

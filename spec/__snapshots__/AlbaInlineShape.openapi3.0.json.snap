@@ -1,0 +1,87 @@
+{
+  "type": "object",
+  "properties": {
+    "username": {
+      "type": "string"
+    },
+    "category": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "revisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number"
+          },
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "nullable": true
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "customer": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "totals": {
+          "type": "object",
+          "properties": {
+            "subtotal": {
+              "type": "number"
+            },
+            "grand_total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "subtotal",
+            "grand_total"
+          ]
+        }
+      },
+      "required": [
+        "customer",
+        "totals"
+      ]
+    },
+    "nickname": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "username",
+    "category",
+    "revisions",
+    "summary"
+  ]
+}

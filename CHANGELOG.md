@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- **Inline object types**: pass a positional hash to `typelize` to describe an inline TypeScript object type. Nested hashes nest, and options like `multi:`/`nullable:` compose. Useful for JSON columns and ad-hoc computed shapes that don't warrant a separate resource. ([@skryukov])
+
+  ```ruby
+  typelize({id: :number, label?: :string})
+  attribute :category
+  # → category: { id: number; label?: string }
+  ```
+
+- **`?` suffix on attribute keys** as a shorthand for `optional: true`, mirroring TypeScript's own syntax. Works both in keyed `typelize` calls and inside inline shape hashes. ([@skryukov])
+
+  ```ruby
+  typelize name?: :string
+  # → name?: string
+  ```
+
 ### Changed
 
 - [BREAKING] Dropped `DISABLE_TYPELIZER` environment variable support (deprecated since 0.12.0). Use `TYPELIZER=false` instead. ([@skryukov])
