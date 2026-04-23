@@ -2,6 +2,7 @@
 
 require_relative "typelizer/version"
 require_relative "typelizer/union_type_sorter"
+require_relative "typelizer/shape"
 require_relative "typelizer/property"
 require_relative "typelizer/model_plugins/auto"
 require_relative "typelizer/serializer_plugins/auto"

@@ -90,6 +90,127 @@ RSpec.describe Typelizer::TypeParser do
     end
   end
 
+  describe "'?' suffix on attribute keys" do
+    it "treats trailing '?' on key as optional: true" do
+      serializer_class = Class.new do
+        extend Typelizer::DSL::ClassMethods
+
+        typelize name?: :string
+      end
+
+      attrs = serializer_class._typelizer_attributes[:name]
+      expect(attrs[:type]).to eq(:string)
+      expect(attrs[:optional]).to be true
+    end
+
+    it "composes with type shortcut (stays optional)" do
+      serializer_class = Class.new do
+        extend Typelizer::DSL::ClassMethods
+
+        typelize nickname?: "string?"
+      end
+
+      attrs = serializer_class._typelizer_attributes[:nickname]
+      expect(attrs[:type]).to eq(:string)
+      expect(attrs[:optional]).to be true
+    end
+
+    it "explicit optional: false in caller wins" do
+      serializer_class = Class.new do
+        extend Typelizer::DSL::ClassMethods
+
+        typelize name?: [:string, optional: false]
+      end
+
+      attrs = serializer_class._typelizer_attributes[:name]
+      expect(attrs[:type]).to eq(:string)
+      expect(attrs[:optional]).to be false
+    end
+
+    it "applies to typelize_meta" do
+      serializer_class = Class.new do
+        extend Typelizer::DSL::ClassMethods
+
+        typelize_meta total?: :number
+      end
+
+      attrs = serializer_class._typelizer_meta_attributes[:total]
+      expect(attrs[:type]).to eq(:number)
+      expect(attrs[:optional]).to be true
+    end
+  end
+
+  describe "inline shape via positional hash" do
+    it "parses a hash into a Shape value" do
+      result = described_class.parse({id: :number, name: :string})
+      expect(result[:type]).to be_a(Typelizer::Shape)
+      expect(result[:type].properties.map(&:name)).to eq([:id, :name])
+      expect(result[:type].properties.map(&:type)).to eq([:number, :string])
+    end
+
+    it "applies '?' suffix to shape keys" do
+      result = described_class.parse({id: :number, name?: :string})
+      prop = result[:type].properties.find { |p| p.name == :name }
+      expect(prop.optional).to be true
+    end
+
+    it "recurses for nested hashes" do
+      result = described_class.parse({user: {name: :string, age?: :number}})
+      outer = result[:type]
+      inner_prop = outer.properties.first
+      expect(inner_prop.name).to eq(:user)
+      expect(inner_prop.type).to be_a(Typelizer::Shape)
+      age = inner_prop.type.properties.find { |p| p.name == :age }
+      expect(age.optional).to be true
+    end
+
+    it "honors type shortcuts inside shape values" do
+      result = described_class.parse({tags: "string[]", status: "string?"})
+      tags = result[:type].properties.find { |p| p.name == :tags }
+      status = result[:type].properties.find { |p| p.name == :status }
+      expect(tags.multi).to be true
+      expect(status.optional).to be true
+    end
+
+    it "merges outer options (multi, nullable) onto the shape" do
+      result = described_class.parse({id: :number}, multi: true, nullable: true)
+      expect(result[:type]).to be_a(Typelizer::Shape)
+      expect(result[:multi]).to be true
+      expect(result[:nullable]).to be true
+    end
+  end
+
+  describe "keyless typelize with positional hash" do
+    it "produces a Shape as the keyless type" do
+      serializer_class = Class.new do
+        extend Typelizer::DSL::ClassMethods
+
+        typelize({id: :number, name?: :string})
+      end
+
+      type, options = serializer_class.keyless_type
+      expect(type).to be_a(Typelizer::Shape)
+      expect(options).to eq({})
+      names = type.properties.map(&:name)
+      expect(names).to eq([:id, :name])
+      name_prop = type.properties.find { |p| p.name == :name }
+      expect(name_prop.optional).to be true
+    end
+
+    it "accepts options after the hash" do
+      serializer_class = Class.new do
+        extend Typelizer::DSL::ClassMethods
+
+        typelize({id: :number}, multi: true, nullable: true)
+      end
+
+      type, options = serializer_class.keyless_type
+      expect(type).to be_a(Typelizer::Shape)
+      expect(options[:multi]).to be true
+      expect(options[:nullable]).to be true
+    end
+  end
+
   describe "keyless typelize with string literal arrays" do
     it "parses string array as string literal union" do
       serializer_class = Class.new do

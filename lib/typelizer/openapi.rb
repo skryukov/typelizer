@@ -32,13 +32,7 @@ module Typelizer
         validate_version!(openapi_version)
 
         type_mapping = interface.respond_to?(:config) ? interface.config.type_mapping : Typelizer.configuration.type_mapping
-        required_props = interface.properties.reject(&:optional).map(&:name)
-        schema = {
-          type: :object,
-          properties: interface.properties.to_h { |prop| [prop.name, property_schema(prop, openapi_version: openapi_version, type_mapping: type_mapping)] }
-        }
-        schema[:required] = required_props if required_props.any?
-        schema
+        object_schema(interface.properties, openapi_version: openapi_version, type_mapping: type_mapping)
       end
 
       def property_schema(property, openapi_version: "3.0", type_mapping: Typelizer.configuration.type_mapping)
@@ -172,14 +166,17 @@ module Typelizer
       end
 
       def base_type(property, openapi_version:, type_mapping:)
-        if property.type.respond_to?(:properties)
+        # Shape check must precede respond_to?(:properties) — Shape also responds to :properties.
+        if property.type.is_a?(Shape)
+          object_schema(property.type.properties, openapi_version: openapi_version, type_mapping: type_mapping)
+        elsif property.type.respond_to?(:properties)
           if property.type.respond_to?(:inline?) && property.type.inline?
             schema_for(property.type, openapi_version: openapi_version)
           else
             {"$ref" => "#/components/schemas/#{property.type.name}"}
           end
         elsif property.type.nil? && property.respond_to?(:nested_properties) && property.nested_properties&.any?
-          nested_schema(property, openapi_version: openapi_version, type_mapping: type_mapping)
+          object_schema(property.nested_properties, openapi_version: openapi_version, type_mapping: type_mapping)
         elsif property.column_type && COLUMN_TYPE_MAP.key?(property.column_type) &&
             !type_mapping_overridden?(property, type_mapping)
           result = COLUMN_TYPE_MAP[property.column_type].dup
@@ -195,11 +192,11 @@ module Typelizer
         end
       end
 
-      def nested_schema(property, openapi_version:, type_mapping:)
-        required = property.nested_properties.reject(&:optional).map(&:name)
+      def object_schema(properties, openapi_version:, type_mapping:)
+        required = properties.reject(&:optional).map(&:name)
         schema = {
           type: :object,
-          properties: property.nested_properties.to_h { |p| [p.name, property_schema(p, openapi_version: openapi_version, type_mapping: type_mapping)] }
+          properties: properties.to_h { |p| [p.name, property_schema(p, openapi_version: openapi_version, type_mapping: type_mapping)] }
         }
         schema[:required] = required if required.any?
         schema

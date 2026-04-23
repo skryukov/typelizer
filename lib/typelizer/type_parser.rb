@@ -23,6 +23,7 @@ module Typelizer
 
       def parse(type_def, **options)
         return options if type_def.nil?
+        return parse_shape(type_def, **options) if type_def.is_a?(Hash)
         return parse_array(type_def, **options) if type_def.is_a?(Array)
 
         type_str = type_def.to_s
@@ -49,7 +50,34 @@ module Typelizer
         type_str.end_with?("?", "[]")
       end
 
+      # Strips a trailing `?` from an attribute key, returning [clean_name, optional?].
+      def parse_key(name)
+        str = name.to_s
+        str.end_with?("?") ? [str.chomp("?").to_sym, true] : [name.to_sym, false]
+      end
+
+      def apply_optional_key(parsed, optional_from_key)
+        parsed[:optional] = true if optional_from_key && !parsed.key?(:optional)
+        parsed
+      end
+
       private
+
+      def parse_shape(hash, **options)
+        properties = hash.map do |name, value|
+          clean_name, optional_from_key = parse_key(name)
+
+          # parse_declaration returns Hash args verbatim (options-bag form); nested
+          # shapes need parse to dispatch back here and build a Shape.
+          parsed = value.is_a?(Hash) ? parse(value) : parse_declaration(value)
+          apply_optional_key(parsed, optional_from_key)
+
+          property_attrs = parsed.slice(*Property.members).tap { |h| h[:name] = clean_name }
+          Property.new(optional: false, nullable: false, multi: false, **property_attrs)
+        end
+
+        {type: Shape.new(properties: properties)}.merge(options)
+      end
 
       def parse_array(type_defs, **options)
         raise ArgumentError, "Empty array passed to typelize" if type_defs.empty?
