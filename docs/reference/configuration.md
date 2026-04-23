@@ -200,5 +200,27 @@ Typelizer.configure do |config|
 
   # Add comments to generated TypeScript interfaces (default: false)
   config.comments = false
+
+  # Emit runtime constants for named enums alongside type aliases (default: false).
+  # When enabled, `Enums.ts` also exports an `as const` object per enum and
+  # `index.ts` re-exports them as values (not just types), so consumers can
+  # both type-check and compare against the values at runtime.
+  config.runtime_enums = false
 end
+```
+
+With `runtime_enums = true`, an ActiveRecord enum like `enum role: {guest: 0, member: 1, admin: 2}` generates:
+
+```ts
+// Enums.ts
+export type UserRole = 'guest' | 'member' | 'admin';
+export const UserRole = { guest: 'guest', member: 'member', admin: 'admin' } as const;
+```
+
+And in consuming code:
+
+```ts
+import { UserRole } from '@/types'
+
+if (user.role === UserRole.admin) { ... }
 ```

@@ -31,12 +31,17 @@ module Typelizer
     properties_sort_order
   ].freeze
 
-  # Subset of CONFIGS_AFFECTING_OUTPUT that specifically affect index.ts output.
-  CONFIGS_AFFECTING_INDEX_OUTPUT = %i[
+  # Config keys that affect only index.ts and Enums.ts (not per-interface .ts files).
+  CONFIGS_AFFECTING_INDEX_ONLY_OUTPUT = %i[
+    runtime_enums
+  ].freeze
+
+  # Config keys that affect index.ts output (superset: per-interface keys + index-only keys).
+  CONFIGS_AFFECTING_INDEX_OUTPUT = (%i[
     verbatim_module_syntax
     prefer_double_quotes
     imports_sort_order
-  ].freeze
+  ] + CONFIGS_AFFECTING_INDEX_ONLY_OUTPUT).freeze
 
   # Config keys that don't affect file content (runtime behavior, or effects captured via properties).
   CONFIGS_NOT_AFFECTING_OUTPUT = %i[
@@ -76,6 +81,7 @@ module Typelizer
     :reject_class,
     :comments,
     :prefer_double_quotes,
+    :runtime_enums,
     keyword_init: true
   )
 
@@ -114,6 +120,7 @@ module Typelizer
         reject_class: ->(serializer:) { false },
         comments: false,
         prefer_double_quotes: false,
+        runtime_enums: false,
 
         output_dir: -> { default_output_dir },
 

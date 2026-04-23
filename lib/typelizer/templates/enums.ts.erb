@@ -1,3 +1,6 @@
 <%- enums.each do |property| -%>
 export <%= property.enum_definition(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes) %>;
+<%- if runtime_enums -%>
+export <%= property.enum_runtime_definition(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes) %>;
+<%- end -%>
 <%- end -%>

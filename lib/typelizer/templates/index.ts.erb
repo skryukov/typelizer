@@ -1,6 +1,7 @@
 <%- if enums.any? -%>
 <%- enums_path = prefer_double_quotes ? '"./Enums"' : "'./Enums'" -%>
-export type { <%= ImportSorter.sort(enums.map(&:enum_type_name), imports_sort_order).join(", ") %> } from <%= enums_path %>
+<%- enum_keyword = runtime_enums ? "export" : "export type" -%>
+<%= enum_keyword %> { <%= ImportSorter.sort(enums.map(&:enum_type_name), imports_sort_order).join(", ") %> } from <%= enums_path %>
 <%- end -%>
 <%- interfaces.each do |interface| -%>
 <%- sorted_traits = ImportSorter.sort(interface.trait_interfaces.map(&:name), interface.config.imports_sort_order) -%>
