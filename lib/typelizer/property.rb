@@ -25,6 +25,12 @@ module Typelizer
       render(sort_order: :none)
     end
 
+    def trait_type_names
+      return [] unless with_traits&.any? && type.is_a?(Interface)
+
+      with_traits.map { |t| "#{type.name}#{t.to_s.camelize}Trait" }
+    end
+
     # Renders the property as a TypeScript property string
     # @param sort_order [Symbol, Proc, nil] Sort order for union types (:none, :alphabetical, or Proc)
     # @param prefer_double_quotes [Boolean] Whether to use double quotes for string values
@@ -32,11 +38,8 @@ module Typelizer
     def render(sort_order: :none, prefer_double_quotes: false)
       type_str = type_name(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
 
-      # Handle intersection types for traits
-      if with_traits&.any? && type.respond_to?(:name)
-        trait_types = with_traits.map { |t| "#{type.name}#{t.to_s.camelize}Trait" }
-        type_str = ([type_str] + trait_types).join(" & ")
-      end
+      trait_types = trait_type_names
+      type_str = ([type_str] + trait_types).join(" & ") if trait_types.any?
 
       type_str = "Array<#{type_str}>" if multi
 

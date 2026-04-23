@@ -136,13 +136,10 @@ module Typelizer
           .uniq
           .reject { |type| global_type?(type) }
 
-        # Collect trait types from properties with with_traits (skip self-references)
         trait_imports = all_properties.flat_map do |prop|
-          next [] unless prop.with_traits&.any? && prop.type.is_a?(Interface)
-          # Skip if the trait types are from the current interface (same file)
-          next [] if prop.type.name == name
+          next [] if prop.type.is_a?(Interface) && prop.type.name == name
 
-          prop.with_traits.map { |t| "#{prop.type.name}#{t.to_s.camelize}Trait" }
+          prop.trait_type_names
         end
 
         # Collect enum type names from properties
