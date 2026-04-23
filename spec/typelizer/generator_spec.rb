@@ -3,30 +3,17 @@
 RSpec.describe Typelizer::Generator, type: :typelizer do
   let(:configuration) { Typelizer.configuration }
   let(:default_output_dir) { configuration.writer_config(:default).output_dir }
-  let(:camel_case_output_dir) { default_output_dir.parent.join("generator_camel_case") }
-
-  # camelCase transformer for a writer
-  let(:camel_case_transformer) do
-    lambda do |properties|
-      properties.map do |prop|
-        new_name = prop.name.to_s.camelize(:lower)
-        prop.class.new(**prop.to_h.merge(name: new_name))
-      end
-    end
-  end
+  let(:camel_case_output_dir) { configuration.writer_config(:camel_case).output_dir }
 
   def restore_defaults!
     configuration.reset_writers!
+    CamelCaseWriterFixture.register!(configuration)
     configuration.types_import_path = "@/types"
     configuration.prefer_double_quotes = false
   end
 
   around do |ex|
     restore_defaults!
-    configuration.writer(:camel_case) do |c|
-      c.output_dir = camel_case_output_dir
-      c.properties_transformer = camel_case_transformer
-    end
 
     ex.call
 

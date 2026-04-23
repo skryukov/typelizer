@@ -15,6 +15,17 @@ module Typelizer
       end
     end
 
+    def transform_properties(props)
+      return props unless config.properties_transformer
+
+      props = config.properties_transformer.call(props)
+      props.map do |prop|
+        next prop unless prop.nested_properties&.any?
+
+        prop.with(nested_properties: transform_properties(prop.nested_properties))
+      end
+    end
+
     def infer_nested_property_types(prop)
       return prop unless prop.nested_properties&.any?
 

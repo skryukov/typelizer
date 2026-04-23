@@ -29,6 +29,7 @@ module Typelizer
         @properties ||= begin
           props, typelizes = plugin.trait_properties(trait_name)
           props = infer_types(props, typelizes)
+          props = transform_properties(props)
           PropertySorter.sort(props, config.properties_sort_order)
         end
       end
