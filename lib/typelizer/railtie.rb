@@ -15,21 +15,23 @@ module Typelizer
       end
     end
 
-    initializer "typelizer.generate" do |app|
+    initializer "typelizer.configure_dsl" do
+      Typelizer::DSL.disable! unless Typelizer.enabled?
+    end
+
+    server do
       next unless Typelizer.enabled?
 
       generator = Typelizer::Generator.new
 
       if Typelizer.listen == true || (Gem.loaded_specs["listen"] && Typelizer.listen != false)
         require_relative "listen"
-        app.config.after_initialize do
-          Typelizer::Listen.call do
-            Rails.application.reloader.reload!
-          end
+        Typelizer::Listen.call do
+          Rails.application.reloader.reload!
         end
       end
 
-      app.config.to_prepare do
+      Rails.application.config.to_prepare do
         generator.call
         RouteGenerator.call
       end

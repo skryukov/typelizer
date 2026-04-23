@@ -26,6 +26,6 @@ Gem::Specification.new do |spec|
   spec.files = Dir["{app,lib}/**/*", "CHANGELOG.md", "LICENSE.txt", "README.md"]
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "railties", ">= 6.0.0"
+  spec.add_dependency "railties", ">= 6.1.0"
   spec.add_dependency "benchmark"
 end

@@ -33,8 +33,6 @@ module Typelizer
 
       # save association of serializer to model
       def typelize_from(model)
-        return unless Typelizer.enabled?
-
         define_singleton_method(:_typelizer_model_name) { model }
       end
 
@@ -82,8 +80,6 @@ module Typelizer
       private
 
       def assign_type_information(attribute_name, attributes)
-        return unless Typelizer.enabled?
-
         attributes.each do |name, attrs|
           next unless name
 
@@ -111,6 +107,16 @@ module Typelizer
           end
         end
       end
+    end
+
+    module Disabled
+      %i[typelize_from typelize typelize_meta].each do |name|
+        define_method(name) { |*, **| }
+      end
+    end
+
+    def self.disable!
+      ClassMethods.prepend(Disabled)
     end
   end
 end

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Fixed
+
+- `typelize` declarations silently dropped during rake tasks, producing `unknown` for every field. ([#114](https://github.com/skryukov/typelizer/issues/114)) ([@skryukov])
+
 ## [0.12.0] - 2026-03-29
 
 ### Added

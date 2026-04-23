@@ -95,6 +95,8 @@ module Typelizer
     private
 
     def development?
+      return Rails.env.development? if defined?(Rails) && Rails.respond_to?(:env)
+
       ENV["RAILS_ENV"] == "development" || ENV["RACK_ENV"] == "development"
     end
 
