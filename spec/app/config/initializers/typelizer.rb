@@ -38,3 +38,26 @@ module CamelCaseWriterFixture
 end
 
 CamelCaseWriterFixture.register!(Typelizer.configuration)
+
+# Scoped runtime_enums writer — exercises `runtime_enums = true` output for
+# Enums.ts and index.ts across serializers that hit named enums.
+module RuntimeEnumsWriterFixture
+  SERIALIZERS = %w[
+    Alba::PostSerializer
+    Alba::UserSerializer
+  ].freeze
+
+  def self.output_dir
+    Rails.root.join("app/javascript/types/runtime_enums")
+  end
+
+  def self.register!(configuration)
+    configuration.writer(:runtime_enums) do |w|
+      w.output_dir = output_dir
+      w.runtime_enums = true
+      w.reject_class = ->(serializer:) { !SERIALIZERS.include?(serializer.name) }
+    end
+  end
+end
+
+RuntimeEnumsWriterFixture.register!(Typelizer.configuration)

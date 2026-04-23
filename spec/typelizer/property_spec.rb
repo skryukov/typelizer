@@ -470,6 +470,53 @@ RSpec.describe Typelizer::Property do
     end
   end
 
+  describe "#enum_runtime_definition" do
+    it "returns nil without enum_type_name" do
+      prop = described_class.new(name: "status", enum: %w[draft published])
+      expect(prop.enum_runtime_definition).to be_nil
+    end
+
+    it "returns nil without enum values" do
+      prop = described_class.new(name: "status", enum_type_name: "Status")
+      expect(prop.enum_runtime_definition).to be_nil
+    end
+
+    it "generates an identity-mapped as-const object" do
+      prop = described_class.new(name: "role", enum: %w[guest member admin], enum_type_name: "UserRole")
+      expect(prop.enum_runtime_definition).to eq(
+        "const UserRole = { guest: 'guest', member: 'member', admin: 'admin' } as const"
+      )
+    end
+
+    it "sorts keys alphabetically when requested" do
+      prop = described_class.new(name: "role", enum: %w[zebra apple banana], enum_type_name: "Order")
+      expect(prop.enum_runtime_definition(sort_order: :alphabetical)).to eq(
+        "const Order = { apple: 'apple', banana: 'banana', zebra: 'zebra' } as const"
+      )
+    end
+
+    it "uses double quotes when requested" do
+      prop = described_class.new(name: "role", enum: %w[guest admin], enum_type_name: "UserRole")
+      expect(prop.enum_runtime_definition(prefer_double_quotes: true)).to eq(
+        'const UserRole = { guest: "guest", admin: "admin" } as const'
+      )
+    end
+
+    it "quotes keys that aren't valid JS identifiers" do
+      prop = described_class.new(name: "status", enum: ["pending-review", "ok"], enum_type_name: "Status")
+      expect(prop.enum_runtime_definition).to eq(
+        "const Status = { 'pending-review': 'pending-review', ok: 'ok' } as const"
+      )
+    end
+
+    it "honors prefer_double_quotes for quoted keys too" do
+      prop = described_class.new(name: "status", enum: ["pending-review", "ok"], enum_type_name: "Status")
+      expect(prop.enum_runtime_definition(prefer_double_quotes: true)).to eq(
+        'const Status = { "pending-review": "pending-review", ok: "ok" } as const'
+      )
+    end
+  end
+
   describe "determinism" do
     it "produces identical output on multiple runs with sorting" do
       prop = described_class.new(

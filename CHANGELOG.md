@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning].
 
 ### Added
 
+- **Runtime enums** (`config.runtime_enums = true`, default `false`): emit an `as const` object alongside each named enum type in `Enums.ts` and re-export it as a value from `index.ts`. Lets consumers compare against enum values at runtime (`if (user.role === UserRole.admin)`) without hand-maintaining a parallel constants file. Existing type-only output is unchanged when the flag is off. ([@skryukov])
+
 - **Inline object types**: pass a positional hash to `typelize` to describe an inline TypeScript object type. Nested hashes nest, and options like `multi:`/`nullable:` compose. Useful for JSON columns and ad-hoc computed shapes that don't warrant a separate resource. ([@skryukov])
 
   ```ruby

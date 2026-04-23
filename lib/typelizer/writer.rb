@@ -60,9 +60,9 @@ module Typelizer
     end
 
     def write_enums(enums)
-      fingerprint = [enums.map(&:fingerprint), config.properties_sort_order, config.prefer_double_quotes].inspect
+      fingerprint = [enums.map(&:fingerprint), config.properties_sort_order, config.prefer_double_quotes, config.runtime_enums].inspect
       write_file("Enums.ts", fingerprint) do
-        render_template("enums.ts.erb", enums: enums, sort_order: config.properties_sort_order, prefer_double_quotes: config.prefer_double_quotes)
+        render_template("enums.ts.erb", enums: enums, sort_order: config.properties_sort_order, prefer_double_quotes: config.prefer_double_quotes, runtime_enums: config.runtime_enums)
       end
     end
 
@@ -74,7 +74,7 @@ module Typelizer
         }
       ].inspect
       write_file("index.ts", fingerprint) do
-        render_template("index.ts.erb", interfaces: interfaces, enums: enums, index_dir: config.output_dir.to_s, imports_sort_order: config.imports_sort_order, prefer_double_quotes: config.prefer_double_quotes)
+        render_template("index.ts.erb", interfaces: interfaces, enums: enums, index_dir: config.output_dir.to_s, imports_sort_order: config.imports_sort_order, prefer_double_quotes: config.prefer_double_quotes, runtime_enums: config.runtime_enums)
       end
     end
 

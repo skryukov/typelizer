@@ -72,15 +72,34 @@ module Typelizer
     def enum_definition(sort_order: :none, prefer_double_quotes: false)
       return unless enum && enum_type_name
 
-      values = enum.map { |v| quote_string(v.to_s, prefer_double_quotes) }
-      values = values.sort_by(&:downcase) if sort_order == :alphabetical
+      values = sorted_enum_keys(sort_order).map { |k| quote_string(k, prefer_double_quotes) }
       "type #{enum_type_name} = #{values.join(" | ")}"
+    end
+
+    # Generates a TypeScript runtime constant for named enums
+    # @param sort_order [Symbol, Proc, nil] Sort order for enum keys (:none, :alphabetical, or Proc)
+    # @param prefer_double_quotes [Boolean] Whether to use double quotes for string values
+    # @return [String, nil] The const like "const UserRole = { admin: 'admin', user: 'user' } as const"
+    def enum_runtime_definition(sort_order: :none, prefer_double_quotes: false)
+      return unless enum && enum_type_name
+
+      entries = sorted_enum_keys(sort_order).map { |k| "#{js_key(k, prefer_double_quotes)}: #{quote_string(k, prefer_double_quotes)}" }
+      "const #{enum_type_name} = { #{entries.join(", ")} } as const"
     end
 
     private
 
+    def sorted_enum_keys(sort_order)
+      keys = enum.map(&:to_s)
+      (sort_order == :alphabetical) ? keys.sort_by(&:downcase) : keys
+    end
+
     def quote_string(str, prefer_double_quotes)
       prefer_double_quotes ? "\"#{str}\"" : "'#{str}'"
+    end
+
+    def js_key(str, prefer_double_quotes)
+      str.match?(/\A[A-Za-z_$][\w$]*\z/) ? str : quote_string(str, prefer_double_quotes)
     end
 
     # Returns the type name, optionally sorting union members
@@ -92,10 +111,7 @@ module Typelizer
       return enum_type_name if enum_type_name
 
       if enum
-        # Sort enum values if alphabetical sorting is requested
-        enum_values = enum.map { |v| quote_string(v.to_s, prefer_double_quotes) }
-        enum_values = enum_values.sort_by(&:downcase) if sort_order == :alphabetical
-        return enum_values.join(" | ")
+        return sorted_enum_keys(sort_order).map { |k| quote_string(k, prefer_double_quotes) }.join(" | ")
       end
 
       if type.nil? && nested_properties&.any?

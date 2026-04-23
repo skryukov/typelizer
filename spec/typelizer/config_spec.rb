@@ -4,24 +4,34 @@ RSpec.describe Typelizer::Config do
   describe "fingerprint config categorization" do
     it "categorizes all config keys" do
       all_config_keys = Typelizer::Config.members
-      categorized_keys = Typelizer::CONFIGS_AFFECTING_OUTPUT + Typelizer::CONFIGS_NOT_AFFECTING_OUTPUT
+      categorized_keys = Typelizer::CONFIGS_AFFECTING_OUTPUT +
+        Typelizer::CONFIGS_AFFECTING_INDEX_ONLY_OUTPUT +
+        Typelizer::CONFIGS_NOT_AFFECTING_OUTPUT
 
       missing = all_config_keys - categorized_keys
       extra = categorized_keys - all_config_keys
 
       expect(missing).to be_empty,
         "Config keys not categorized for fingerprinting: #{missing.join(", ")}. " \
-        "Add to CONFIGS_AFFECTING_OUTPUT or CONFIGS_NOT_AFFECTING_OUTPUT in config.rb"
+        "Add to CONFIGS_AFFECTING_OUTPUT, CONFIGS_AFFECTING_INDEX_ONLY_OUTPUT, or CONFIGS_NOT_AFFECTING_OUTPUT in config.rb"
 
       expect(extra).to be_empty,
         "Categorized keys that don't exist in Config: #{extra.join(", ")}"
     end
 
-    it "has CONFIGS_AFFECTING_INDEX_OUTPUT as a subset of CONFIGS_AFFECTING_OUTPUT" do
-      extra = Typelizer::CONFIGS_AFFECTING_INDEX_OUTPUT - Typelizer::CONFIGS_AFFECTING_OUTPUT
+    it "has CONFIGS_AFFECTING_INDEX_OUTPUT as a subset of per-interface + index-only keys" do
+      superset = Typelizer::CONFIGS_AFFECTING_OUTPUT + Typelizer::CONFIGS_AFFECTING_INDEX_ONLY_OUTPUT
+      extra = Typelizer::CONFIGS_AFFECTING_INDEX_OUTPUT - superset
 
       expect(extra).to be_empty,
-        "CONFIGS_AFFECTING_INDEX_OUTPUT contains keys not in CONFIGS_AFFECTING_OUTPUT: #{extra.join(", ")}"
+        "CONFIGS_AFFECTING_INDEX_OUTPUT contains keys not in CONFIGS_AFFECTING_OUTPUT or CONFIGS_AFFECTING_INDEX_ONLY_OUTPUT: #{extra.join(", ")}"
+    end
+
+    it "keeps CONFIGS_AFFECTING_INDEX_ONLY_OUTPUT and CONFIGS_AFFECTING_OUTPUT disjoint" do
+      overlap = Typelizer::CONFIGS_AFFECTING_INDEX_ONLY_OUTPUT & Typelizer::CONFIGS_AFFECTING_OUTPUT
+
+      expect(overlap).to be_empty,
+        "Keys in both lists (double-counted): #{overlap.join(", ")}"
     end
   end
 end
