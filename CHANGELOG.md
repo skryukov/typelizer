@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning].
 ### Fixed
 
 - `typelize` declarations silently dropped during rake tasks, producing `unknown` for every field. ([#114](https://github.com/skryukov/typelizer/issues/114)) ([@skryukov])
+- `properties_transformer` now applied to nested attribute sub-properties, meta nested blocks, and Alba trait properties. Previously only top-level keys were transformed, producing inconsistent output. ([#89](https://github.com/skryukov/typelizer/issues/89)) ([@skryukov])
 
 ## [0.12.0] - 2026-03-29
 
