@@ -50,10 +50,7 @@ module Typelizer
     # Is Typelizer active?
     #
     # Precedence: TYPELIZER env var > development? detection
-    # Legacy DISABLE_TYPELIZER is mapped to TYPELIZER with a deprecation warning.
     def enabled?
-      migrate_legacy_env!
-
       val = ENV["TYPELIZER"]
       return val == "true" || val == "1" if val
 
@@ -98,22 +95,6 @@ module Typelizer
       return Rails.env.development? if defined?(Rails) && Rails.respond_to?(:env)
 
       ENV["RAILS_ENV"] == "development" || ENV["RACK_ENV"] == "development"
-    end
-
-    # Maps legacy DISABLE_TYPELIZER to TYPELIZER with a deprecation warning.
-    # Only takes effect if TYPELIZER is not already set.
-    def migrate_legacy_env!
-      return if @legacy_env_migrated
-      @legacy_env_migrated = true
-
-      val = ENV["DISABLE_TYPELIZER"]
-      return unless val
-
-      new_val = (val == "true" || val == "1") ? "false" : "true"
-      logger.warn(
-        "[Typelizer] DISABLE_TYPELIZER is deprecated, use TYPELIZER=#{new_val} instead."
-      )
-      ENV["TYPELIZER"] ||= new_val
     end
 
     def load_serializers

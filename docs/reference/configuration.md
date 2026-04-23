@@ -121,9 +121,8 @@ rails typelizer:generate:refresh
 |---|---|
 | `TYPELIZER=true` | Force-enable Typelizer (overrides environment detection) |
 | `TYPELIZER=false` | Force-disable Typelizer (does not affect manual `rake` tasks) |
-| `DISABLE_TYPELIZER=true` | **Deprecated.** Maps to `TYPELIZER=false` with a warning |
 
-When neither variable is set, Typelizer is enabled in development mode (`RAILS_ENV=development` or `RACK_ENV=development`).
+When neither variable is set, Typelizer is enabled in development mode (detected via `Rails.env.development?` when Rails is loaded, or via `RAILS_ENV=development` / `RACK_ENV=development` otherwise).
 
 ## Full Option Reference {#full-option-reference}
 

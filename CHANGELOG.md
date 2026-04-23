@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Changed
+
+- [BREAKING] Dropped `DISABLE_TYPELIZER` environment variable support (deprecated since 0.12.0). Use `TYPELIZER=false` instead. ([@skryukov])
+- [BREAKING] Bumped `railties` requirement to `>= 6.1.0` to use the `server` Railtie block for auto-generation. ([@skryukov])
+
 ### Fixed
 
 - `typelize` declarations silently dropped during rake tasks, producing `unknown` for every field. ([#114](https://github.com/skryukov/typelizer/issues/114)) ([@skryukov])
