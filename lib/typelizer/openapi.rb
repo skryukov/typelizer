@@ -120,11 +120,10 @@ module Typelizer
       end
 
       def wrap_traits(definition, property, openapi_version:)
-        return definition unless property.respond_to?(:with_traits) && property.with_traits&.any? && property.type.respond_to?(:name)
+        trait_names = property.trait_type_names
+        return definition if trait_names.empty?
 
-        trait_refs = property.with_traits.map do |t|
-          {"$ref" => "#/components/schemas/#{property.type.name}#{t.to_s.camelize}Trait"}
-        end
+        trait_refs = trait_names.map { |name| {"$ref" => "#/components/schemas/#{name}"} }
 
         base_ref = definition.delete("$ref")
         if base_ref

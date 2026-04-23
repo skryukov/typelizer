@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "properties": {
+    "activity": {
+      "$ref": "#/components/schemas/AlbaUser"
+    },
+    "comments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AlbaComment"
+      }
+    },
+    "featured_posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AlbaPost"
+      }
+    }
+  },
+  "required": [
+    "activity",
+    "comments",
+    "featured_posts"
+  ]
+}
