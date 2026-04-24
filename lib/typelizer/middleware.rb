@@ -35,8 +35,8 @@ module Typelizer
       RouteGenerator.call
       @pending = false
     rescue ActiveRecord::NoDatabaseError,
-           ActiveRecord::ConnectionNotEstablished,
-           ActiveRecord::StatementInvalid => e
+      ActiveRecord::ConnectionNotEstablished,
+      ActiveRecord::StatementInvalid => e
       raise TypeGenerationError, "Typelizer could not generate types: #{e.message}\n" \
         "Fix the database issue, then reload the page."
     end
