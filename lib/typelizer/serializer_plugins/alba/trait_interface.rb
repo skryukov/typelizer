@@ -38,7 +38,7 @@ module Typelizer
 
       def infer_types(props, typelizes)
         props.map do |prop|
-          dsl_type = typelizes[prop.column_name.to_sym] || typelizes[prop.name.to_sym]
+          dsl_type = prop.lookup_in(typelizes)
           prop
             .then { |p| dsl_type&.any? ? p.with(**dsl_type) : apply_model_inference(p) }
             .then { |p| apply_metadata(p) }

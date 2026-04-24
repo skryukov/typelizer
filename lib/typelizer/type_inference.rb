@@ -20,25 +20,22 @@ module Typelizer
 
       props = config.properties_transformer.call(props)
       props.map do |prop|
-        next prop unless prop.nested_properties&.any?
+        next prop unless prop.type.is_a?(Shape)
 
-        prop.with(nested_properties: transform_properties(prop.nested_properties))
+        prop.with(type: Shape.new(properties: transform_properties(prop.type.properties)))
       end
     end
 
     def infer_nested_property_types(prop)
-      return prop unless prop.nested_properties&.any?
+      return prop unless prop.type.is_a?(Shape)
 
-      typelizes = prop.nested_typelizes || {}
-      inferred = prop.nested_properties.map do |sub_prop|
-        dsl_type = typelizes[sub_prop.column_name.to_sym] || typelizes[sub_prop.name.to_sym]
+      inferred = prop.type.map_properties do |sub_prop|
         sub_prop
-          .then { |p| dsl_type&.any? ? p.with(**dsl_type) : apply_model_inference(p) }
+          .then { |p| p.type ? p : apply_model_inference(p) }
           .then { |p| apply_metadata(p) }
           .then { |p| infer_nested_property_types(p) }
       end
-
-      prop.with(nested_properties: inferred)
+      prop.with(type: inferred)
     end
 
     def model_class

@@ -177,15 +177,15 @@ module Typelizer
 
     def collect_all_properties(props)
       props.flat_map do |prop|
-        if prop.nested_properties&.any?
-          [prop] + collect_all_properties(prop.nested_properties)
-        elsif prop.type.is_a?(Shape)
-          [prop] + collect_all_properties(prop.type.properties)
-        elsif prop.type.is_a?(Interface) && prop.type.inline?
-          [prop] + collect_all_properties(prop.type.properties)
-        else
-          [prop]
-        end
+        children = nested_properties_of(prop.type)
+        children ? [prop] + collect_all_properties(children) : [prop]
+      end
+    end
+
+    def nested_properties_of(type)
+      case type
+      when Shape then type.properties
+      when Interface then type.properties if type.inline?
       end
     end
 
@@ -206,7 +206,7 @@ module Typelizer
       multi_attrs = serializer.respond_to?(:_typelizer_multi_attributes) ? serializer._typelizer_multi_attributes : Set.new
 
       props.map do |prop|
-        has_dsl = dsl_attrs_for(prop, dsl_attrs)&.any?
+        has_dsl = prop.lookup_in(dsl_attrs)&.any?
 
         prop
           .then { |p| apply_dsl_type(p, dsl_attrs) }
@@ -217,12 +217,8 @@ module Typelizer
       end
     end
 
-    def dsl_attrs_for(prop, dsl_attrs)
-      dsl_attrs[prop.column_name.to_sym] || dsl_attrs[prop.name.to_sym]
-    end
-
     def apply_dsl_type(prop, dsl_attrs)
-      dsl_type = dsl_attrs_for(prop, dsl_attrs)
+      dsl_type = prop.lookup_in(dsl_attrs)
       return prop unless dsl_type&.any?
 
       dsl_type = resolve_class_type(dsl_type)
