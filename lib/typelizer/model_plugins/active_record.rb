@@ -38,6 +38,7 @@ module Typelizer
       def columns_hash
         return nil unless model_class
         return nil if model_class.abstract_class?
+        return nil unless model_class.table_exists?
 
         model_class.columns_hash
       end
@@ -45,6 +46,7 @@ module Typelizer
       def attribute_types
         return nil unless model_class&.respond_to?(:attribute_types)
         return nil if model_class.abstract_class?
+        return nil unless model_class.table_exists?
 
         model_class.attribute_types
       end
@@ -126,6 +128,7 @@ module Typelizer
         return nil unless assoc
 
         target = assoc.klass
+        return nil unless target.table_exists?
         col = target.columns_hash[info[:original].to_s]
         return nil unless col
 

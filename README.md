@@ -50,6 +50,24 @@ rails typelizer:generate
 - [Configuration](https://typelizer.dev/reference/configuration)
 - [Type Mapping](https://typelizer.dev/reference/type-mapping)
 
+## Development
+
+You need PostgreSQL running locally. Then:
+
+```bash
+bundle install
+cd spec/app && RAILS_ENV=test bundle exec rails db:create db:migrate && cd ../..
+bundle exec rspec
+```
+
+The test suite uses a dummy Rails app in `spec/app/` with models, migrations, and serializers for all four supported frameworks (Alba, AMS, OjSerializers, Panko). Linting is done with StandardRB:
+
+```bash
+bundle exec standardrb
+```
+
+`bundle exec rake` runs both the tests and the linter.
+
 ## Credits
 
 Typelizer is inspired by [types_from_serializers](https://github.com/ElMassimo/types_from_serializers), [js-routes](https://github.com/railsware/js-routes), and [Wayfinder](https://github.com/nicholasvansanten/wayfinder).
