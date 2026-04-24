@@ -65,33 +65,22 @@ RSpec.describe Typelizer::RouteGenerator, type: :typelizer do
       expect(users).not_to include("method: 'put'")
     end
 
-    it "generates .form variant for PATCH and DELETE routes" do
+    it "emits all routes as plain callables (no form variant)" do
       generator.call(force: true)
 
       users = File.read(output_dir.join("UsersController.ts"))
-      # PATCH and DELETE routes get Object.assign with .form
-      expect(users).to include("Object.assign")
-      expect(users).to include("formAction(buildUrl('/users/:id', params, options), 'patch')")
-      expect(users).to include("formAction(buildUrl('/users/:id', params, options), 'delete')")
-      expect(users).to include("FormDefinition")
+      expect(users).not_to include("Object.assign")
+      expect(users).not_to include("formAction")
+      expect(users).not_to include("FormDefinition")
+      expect(users).not_to include("_method")
     end
 
-    it "does not generate .form variant or unused imports for GET and POST routes" do
-      generator.call(force: true)
-
-      pages = File.read(output_dir.join("PagesController.ts"))
-      # GET-only controller should not have Object.assign or formAction
-      expect(pages).not_to include("Object.assign")
-      expect(pages).not_to include("formAction")
-      expect(pages).not_to include("FormDefinition")
-    end
-
-    it "generates runtime with formAction, URL defaults, and base URL helpers" do
+    it "generates runtime with URL defaults and base URL helpers only" do
       generator.call(force: true)
 
       runtime = File.read(output_dir.join("runtime.ts"))
-      expect(runtime).to include("export type FormDefinition")
-      expect(runtime).to include("export function formAction")
+      expect(runtime).not_to include("FormDefinition")
+      expect(runtime).not_to include("formAction")
       expect(runtime).to include("export function setUrlDefaults")
       expect(runtime).to include("export function addUrlDefault")
       expect(runtime).to include("export function setBaseUrl")
@@ -225,8 +214,9 @@ RSpec.describe Typelizer::RouteGenerator, type: :typelizer do
         generator.call(force: true)
 
         users = File.read(output_dir.join("UsersController.js"))
-        expect(users).to include("import { buildUrl, formAction }")
+        expect(users).to include("import { buildUrl }")
         expect(users).not_to include("import type")
+        expect(users).not_to include("formAction")
         expect(users).not_to include("RouteDefinition")
         expect(users).not_to include("FormDefinition")
         expect(users).not_to include("RouteOptions")

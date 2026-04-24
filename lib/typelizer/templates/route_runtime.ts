@@ -5,11 +5,6 @@ export type RouteDefinition<M extends Method> = {
   method: M
 }
 
-export type FormDefinition = {
-  action: string
-  method: 'get' | 'post'
-}
-
 export type RouteOptions = {
   query?: Record<string, unknown>
   anchor?: string
@@ -35,14 +30,6 @@ export function addUrlDefault(key: string, value: unknown): void {
     current[key] = value
     urlDefaults = current
   }
-}
-
-export function formAction(url: string, method: Method): FormDefinition {
-  if (method === 'get' || method === 'post') {
-    return { action: url, method }
-  }
-  const sep = url.includes('?') ? '&' : '?'
-  return { action: `${url}${sep}_method=${method.toUpperCase()}`, method: 'post' }
 }
 
 export function buildUrl(

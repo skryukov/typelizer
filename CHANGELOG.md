@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning].
 
 - [BREAKING] Dropped `DISABLE_TYPELIZER` environment variable support (deprecated since 0.12.0). Use `TYPELIZER=false` instead. ([@skryukov])
 - [BREAKING] Bumped `railties` requirement to `>= 6.1.0` to use the `server` Railtie block for auto-generation. ([@skryukov])
+- [BREAKING] Removed the `.form` route variant, `FormDefinition` type, and `formAction` runtime helper. ([@skryukov])
 
 ### Fixed
 
