@@ -30,7 +30,7 @@ end
 |---|---|
 | `{Controller}Controller.ts` | Route helper methods for one Rails controller. Default export is an object keyed by action name. |
 | `index.ts` | Barrel file. Re-exports controller namespaces and named route shortcuts. |
-| `runtime.ts` | Shared types and the `buildUrl`/`formAction` utilities. Not intended for direct editing. |
+| `runtime.ts` | Shared types and the `buildUrl` utility. Not intended for direct editing. |
 
 Namespaced controllers are placed in subdirectories (e.g., `Admin/UsersController.ts`).
 
@@ -52,17 +52,6 @@ Returned by every route helper method:
 type RouteDefinition<M extends Method> = {
   url: string
   method: M
-}
-```
-
-### `FormDefinition`
-
-Returned by `.form` variants on PATCH/DELETE routes:
-
-```typescript
-type FormDefinition = {
-  action: string
-  method: 'get' | 'post'
 }
 ```
 
@@ -107,16 +96,7 @@ userPost: (
 ): RouteDefinition<'get'>
 ```
 
-**PATCH/DELETE routes** (with `.form` variant):
-
-```typescript
-update: Object.assign(
-  (params, options?): RouteDefinition<'patch'>,
-  { form: (params, options?): FormDefinition }
-)
-```
-
-The `.form` method calls `formAction()` to produce an action URL with a `_method` query parameter, suitable for HTML forms.
+**PATCH/DELETE routes** are plain callables like GET/POST — they return `{ url, method: 'patch' | 'delete' }`. For HTML forms that can only submit GET/POST, handle the method override at the submission site (Rails reads `_method` from the POST body, not the URL).
 
 **Optional parameters**:
 
@@ -156,17 +136,6 @@ function buildUrl(
 - Appends query string from `options.query`
 - Appends anchor from `options.anchor`
 - Accepts both `snake_case` and `camelCase` parameter keys
-
-### `formAction(url, method)`
-
-Converts a URL and HTTP method into an HTML-form-compatible action:
-
-```typescript
-function formAction(url: string, method: Method): FormDefinition
-```
-
-- GET and POST are returned as-is
-- Other methods append `?_method=METHOD` (or `&_method=METHOD` if query params exist) and use `method: 'post'`
 
 ### `setUrlDefaults(defaults)`
 

@@ -1,8 +1,7 @@
-<%- has_form = routes.any? { |r| !%w[get post].include?(r[:verb]) } -%>
 <%- if ts -%>
-import type { RouteDefinition<%= ", FormDefinition" if has_form %>, RouteOptions } from '<%= runtime_import %>'
+import type { RouteDefinition, RouteOptions } from '<%= runtime_import %>'
 <%- end -%>
-import { buildUrl<%= ", formAction" if has_form %> } from '<%= runtime_import %>'
+import { buildUrl } from '<%= runtime_import %>'
 
 export default {
 <%- routes.each_with_index do |route, idx| -%>
@@ -10,48 +9,8 @@ export default {
 <%- parts = route[:required_params].map { |p| "#{p}#{ts ? ": string | number" : ""}" } -%>
 <%- parts += route[:optional_params].map { |p| "#{p}#{ts ? "?: string | number" : ""}" } -%>
 <%- has_params = parts.any? -%>
-<%- needs_form = !%w[get post].include?(route[:verb]) -%>
   /** <%= route[:verb].upcase %> <%= route[:path] %> */
-<%- if needs_form -%>
 <%- if has_params -%>
-<%- if ts -%>
-  <%= route[:key] %>: Object.assign(
-    (
-      params: { <%= parts.join('; ') %> }<%= " | string | number" if route[:single_required] %>,
-      options?: RouteOptions,
-    ): RouteDefinition<<%= "'#{route[:verb]}'" %>> => ({
-      url: buildUrl('<%= route[:path] %>', params, options),
-      method: '<%= route[:verb] %>',
-    }),
-    { form: (
-      params: { <%= parts.join('; ') %> }<%= " | string | number" if route[:single_required] %>,
-      options?: RouteOptions,
-    ): FormDefinition =>
-      formAction(buildUrl('<%= route[:path] %>', params, options), '<%= route[:verb] %>') },
-  ),
-<%- else -%>
-  <%= route[:key] %>: Object.assign(
-    (params, options) => ({
-      url: buildUrl('<%= route[:path] %>', params, options),
-      method: '<%= route[:verb] %>',
-    }),
-    { form: (params, options) =>
-      formAction(buildUrl('<%= route[:path] %>', params, options), '<%= route[:verb] %>') },
-  ),
-<%- end -%>
-<%- else -%>
-<%- if ts -%>
-  <%= route[:key] %>: Object.assign(
-    (options?: RouteOptions): RouteDefinition<<%= "'#{route[:verb]}'" %>> => ({
-      url: buildUrl('<%= route[:path] %>', {}, options),
-      method: '<%= route[:verb] %>',
-    }),
-    { form: (options?: RouteOptions): FormDefinition =>
-      formAction(buildUrl('<%= route[:path] %>', {}, options), '<%= route[:verb] %>') },
-  ),
-<%- end -%>
-<%- end -%>
-<%- elsif has_params -%>
 <%- if ts -%>
   <%= route[:key] %>: (
     params: { <%= parts.join('; ') %> }<%= " | string | number" if route[:single_required] %>,

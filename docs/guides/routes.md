@@ -164,27 +164,6 @@ posts.archive({ year: 2025, month: 3 })
 // => { url: "/archive/2025/3", method: "get" }
 ```
 
-## Form Submissions {#forms}
-
-PATCH and DELETE routes include a `.form` variant that returns an HTML-form-compatible action with a `_method` query parameter:
-
-```typescript
-import { users } from '@/routes'
-
-// Standard route
-users.update(42)
-// => { url: "/users/42", method: "patch" }
-
-// Form variant
-users.update.form(42)
-// => { action: "/users/42?_method=PATCH", method: "post" }
-
-users.destroy.form(42)
-// => { action: "/users/42?_method=DELETE", method: "post" }
-```
-
-This is useful for HTML forms and libraries like Inertia.js that need a `POST` method with `_method` override.
-
 ## URL Defaults {#url-defaults}
 
 Set global URL defaults that are merged into every route:
