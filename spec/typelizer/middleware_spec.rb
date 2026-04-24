@@ -37,28 +37,36 @@ RSpec.describe Typelizer::Middleware do
       middleware.call(env)
     end
 
-    it "always serves the request even if generation fails with a DB error" do
+    it "raises TypeGenerationError on DB error" do
       expect(Typelizer::Generator).to receive(:new).and_raise(
         ActiveRecord::NoDatabaseError.new("no db")
       )
-      expect(Typelizer.logger).to receive(:warn).with(/Skipping type generation/)
 
+      expect { middleware.call(env) }.to raise_error(Typelizer::TypeGenerationError, /no db/)
+    end
+
+    it "retries generation on the next request after a DB error" do
+      call_count = 0
+      generator = instance_double(Typelizer::Generator)
+
+      allow(Typelizer::Generator).to receive(:new) do
+        call_count += 1
+        if call_count == 1
+          raise ActiveRecord::NoDatabaseError, "no db"
+        end
+        generator
+      end
+      allow(generator).to receive(:call)
+      allow(Typelizer::RouteGenerator).to receive(:call)
+
+      expect { middleware.call(env) }.to raise_error(Typelizer::TypeGenerationError)
+
+      # Second call retries and succeeds
       result = middleware.call(env)
       expect(result).to eq([200, {}, ["OK"]])
     end
 
-    it "does not retry after a DB error" do
-      expect(Typelizer::Generator).to receive(:new).once.and_raise(
-        ActiveRecord::NoDatabaseError.new("no db")
-      )
-      allow(Typelizer.logger).to receive(:warn)
-
-      middleware.call(env)
-      # Second call should not attempt generation again
-      middleware.call(env)
-    end
-
-    it "re-raises non-database errors" do
+    it "re-raises non-database errors directly" do
       expect(Typelizer::Generator).to receive(:new).and_raise(
         RuntimeError.new("bug in serializer")
       )

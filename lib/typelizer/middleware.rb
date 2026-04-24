@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 module Typelizer
+  class TypeGenerationError < StandardError; end
+
   class Middleware
     class << self
       attr_accessor :instance
@@ -32,28 +34,11 @@ module Typelizer
       Generator.new.call
       RouteGenerator.call
       @pending = false
-    rescue => e
-      @pending = false # don't retry every request
-      if database_error?(e)
-        Typelizer.logger.warn(
-          "[Typelizer] Skipping type generation: #{e.message}\n" \
-          "Run pending migrations, then: bin/rails typelizer:generate"
-        )
-      else
-        raise
-      end
-    end
-
-    def database_error?(error)
-      case error
-      when ActiveRecord::NoDatabaseError,
-           ActiveRecord::ConnectionNotEstablished
-        true
-      when ActiveRecord::StatementInvalid
-        true
-      else
-        error.class.name.start_with?("PG::")
-      end
+    rescue ActiveRecord::NoDatabaseError,
+           ActiveRecord::ConnectionNotEstablished,
+           ActiveRecord::StatementInvalid => e
+      raise TypeGenerationError, "Typelizer could not generate types: #{e.message}\n" \
+        "Fix the database issue, then reload the page."
     end
   end
 end
