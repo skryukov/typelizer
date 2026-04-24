@@ -22,18 +22,18 @@ module Typelizer
     server do
       next unless Typelizer.enabled?
 
-      generator = Typelizer::Generator.new
+      require_relative "middleware"
+      Rails.application.config.app_middleware.use(Typelizer::Middleware)
 
       if Typelizer.listen == true || (Gem.loaded_specs["listen"] && Typelizer.listen != false)
         require_relative "listen"
-        Typelizer::Listen.call do
+        Typelizer::Listen.call(run_on_start: false) do
           Rails.application.reloader.reload!
         end
       end
 
       Rails.application.config.to_prepare do
-        generator.call
-        RouteGenerator.call
+        Typelizer::Middleware.instance&.mark_pending!
       end
     end
   end
