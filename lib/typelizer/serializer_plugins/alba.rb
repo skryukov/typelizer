@@ -47,7 +47,6 @@ module Typelizer
         trait_block = traits[trait_name]
         return [], {} unless trait_block
 
-        # Create a collector to capture attributes defined in the trait block
         collector = BlockAttributeCollector.new
         collector.instance_exec(&trait_block)
 
@@ -76,16 +75,13 @@ module Typelizer
           )
         when BlockAttributeCollector::BlockNestedAttribute
           prop_name = has_transform_key?(serializer) ? fetch_key(serializer, name) : name
-          nested_props, nested_typelizes = collect_nested_block(attr.block)
           Property.new(
             name: prop_name,
-            type: nil,
+            type: Shape.new(properties: collect_nested_block(attr.block)),
             optional: false,
             nullable: false,
             multi: false,
-            column_name: name,
-            nested_properties: nested_props,
-            nested_typelizes: nested_typelizes
+            column_name: name
           )
         else
           build_property(name, attr)
@@ -179,16 +175,13 @@ module Typelizer
           )
         when ::Alba::NestedAttribute
           block = attr.instance_variable_get(:@block)
-          nested_props, nested_typelizes = collect_nested_block(block)
           Property.new(
             name: name,
-            type: nil,
+            type: Shape.new(properties: collect_nested_block(block)),
             optional: false,
             nullable: false,
             multi: false,
             column_name: column_name,
-            nested_properties: nested_props,
-            nested_typelizes: nested_typelizes,
             **options
           )
         when ::Alba::ConditionalAttribute
@@ -217,13 +210,14 @@ module Typelizer
       def collect_nested_block(block)
         collector = BlockAttributeCollector.new
         collector.instance_exec(&block)
+        typelizes = collector.collected_typelizes
 
-        props = collector.collected_attributes.map do |attr_name, attr|
+        collector.collected_attributes.map do |attr_name, attr|
           attr_name_str = attr_name.is_a?(Symbol) ? attr_name.name : attr_name
-          build_collected_property(attr_name_str, attr)
+          prop = build_collected_property(attr_name_str, attr)
+          override = prop.lookup_in(typelizes)
+          override&.any? ? prop.with(**override) : prop
         end
-
-        [props, collector.collected_typelizes]
       end
     end
   end

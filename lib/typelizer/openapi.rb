@@ -175,8 +175,6 @@ module Typelizer
           else
             {"$ref" => "#/components/schemas/#{property.type.name}"}
           end
-        elsif property.type.nil? && property.respond_to?(:nested_properties) && property.nested_properties&.any?
-          object_schema(property.nested_properties, openapi_version: openapi_version, type_mapping: type_mapping)
         elsif property.column_type && COLUMN_TYPE_MAP.key?(property.column_type) &&
             !type_mapping_overridden?(property, type_mapping)
           result = COLUMN_TYPE_MAP[property.column_type].dup
