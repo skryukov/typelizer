@@ -34,11 +34,19 @@ module Typelizer
       Generator.new.call
       RouteGenerator.call
       @pending = false
-    rescue ActiveRecord::NoDatabaseError,
-      ActiveRecord::ConnectionNotEstablished,
-      ActiveRecord::StatementInvalid => e
+    rescue *db_error_classes => e
       raise TypeGenerationError, "Typelizer could not generate types: #{e.message}\n" \
         "Fix the database issue, then reload the page."
+    end
+
+    def db_error_classes
+      return [] unless defined?(ActiveRecord)
+
+      [
+        ActiveRecord::NoDatabaseError,
+        ActiveRecord::ConnectionNotEstablished,
+        ActiveRecord::StatementInvalid
+      ]
     end
   end
 end

@@ -39,25 +39,49 @@ end
 
 CamelCaseWriterFixture.register!(Typelizer.configuration)
 
-# Scoped runtime_enums writer — exercises `runtime_enums = true` output for
+# Scoped enum_runtime writer — exercises `enum_runtime = true` output for
 # Enums.ts and index.ts across serializers that hit named enums.
-module RuntimeEnumsWriterFixture
+module EnumRuntimeWriterFixture
   SERIALIZERS = %w[
     Alba::PostSerializer
     Alba::UserSerializer
   ].freeze
 
   def self.output_dir
-    Rails.root.join("app/javascript/types/runtime_enums")
+    Rails.root.join("app/javascript/types/enum_runtime")
   end
 
   def self.register!(configuration)
-    configuration.writer(:runtime_enums) do |w|
+    configuration.writer(:enum_runtime) do |w|
       w.output_dir = output_dir
-      w.runtime_enums = true
+      w.enum_runtime = true
       w.reject_class = ->(serializer:) { !SERIALIZERS.include?(serializer.name) }
     end
   end
 end
 
-RuntimeEnumsWriterFixture.register!(Typelizer.configuration)
+EnumRuntimeWriterFixture.register!(Typelizer.configuration)
+
+# Scoped enum_runtime + verbatim_module_syntax writer — exercises the interaction
+# between value re-exports for enums and the verbatim form for interface re-exports.
+module EnumRuntimeVerbatimWriterFixture
+  SERIALIZERS = %w[
+    Alba::PostSerializer
+    Alba::UserSerializer
+  ].freeze
+
+  def self.output_dir
+    Rails.root.join("app/javascript/types/enum_runtime_verbatim")
+  end
+
+  def self.register!(configuration)
+    configuration.writer(:enum_runtime_verbatim) do |w|
+      w.output_dir = output_dir
+      w.enum_runtime = true
+      w.verbatim_module_syntax = true
+      w.reject_class = ->(serializer:) { !SERIALIZERS.include?(serializer.name) }
+    end
+  end
+end
+
+EnumRuntimeVerbatimWriterFixture.register!(Typelizer.configuration)
