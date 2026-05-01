@@ -205,11 +205,11 @@ Typelizer.configure do |config|
   # When enabled, `Enums.ts` also exports an `as const` object per enum and
   # `index.ts` re-exports them as values (not just types), so consumers can
   # both type-check and compare against the values at runtime.
-  config.runtime_enums = false
+  config.enum_runtime = false
 end
 ```
 
-With `runtime_enums = true`, an ActiveRecord enum like `enum role: {guest: 0, member: 1, admin: 2}` generates:
+With `enum_runtime = true`, an ActiveRecord enum like `enum role: {guest: 0, member: 1, admin: 2}` generates:
 
 ```ts
 // Enums.ts

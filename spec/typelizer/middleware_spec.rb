@@ -73,6 +73,13 @@ RSpec.describe Typelizer::Middleware do
 
       expect { middleware.call(env) }.to raise_error(RuntimeError, "bug in serializer")
     end
+
+    it "does not reference ActiveRecord constants when AR is undefined" do
+      hide_const("ActiveRecord")
+      expect(Typelizer::Generator).to receive(:new).and_raise(RuntimeError.new("kaboom"))
+
+      expect { middleware.call(env) }.to raise_error(RuntimeError, "kaboom")
+    end
   end
 
   describe "#mark_pending!" do

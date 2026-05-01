@@ -33,7 +33,7 @@ module Typelizer
 
   # Config keys that affect only index.ts and Enums.ts (not per-interface .ts files).
   CONFIGS_AFFECTING_INDEX_ONLY_OUTPUT = %i[
-    runtime_enums
+    enum_runtime
   ].freeze
 
   # Config keys that affect index.ts output (superset: per-interface keys + index-only keys).
@@ -81,7 +81,7 @@ module Typelizer
     :reject_class,
     :comments,
     :prefer_double_quotes,
-    :runtime_enums,
+    :enum_runtime,
     keyword_init: true
   )
 
@@ -120,7 +120,7 @@ module Typelizer
         reject_class: ->(serializer:) { false },
         comments: false,
         prefer_double_quotes: false,
-        runtime_enums: false,
+        enum_runtime: false,
 
         output_dir: -> { default_output_dir },
 
