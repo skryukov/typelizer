@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-05-01
+
 ### Added
 
 - **Runtime enums** (`config.enum_runtime = true`, default `false`): emit an `as const` object alongside each named enum type in `Enums.ts` and re-export it as a value from `index.ts`. Lets consumers compare against enum values at runtime (`if (user.role === UserRole.admin)`) without hand-maintaining a parallel constants file. Existing type-only output is unchanged when the flag is off. ([@skryukov])
@@ -28,8 +30,9 @@ and this project adheres to [Semantic Versioning].
 
 ### Changed
 
+- [BREAKING] Type generation is now deferred to the first HTTP request via a Rack middleware, instead of running during Rails boot. Boot no longer touches the database, so a missing or pending-migration database no longer crashes server startup. Generation failures raise `Typelizer::TypeGenerationError` (rendered like the standard pending-migrations page) and are retried on the next request. Rake tasks are unaffected. ([@julik])
+- [BREAKING] Bumped `railties` requirement to `>= 6.1.0` to use the `server` Railtie block. ([@julik])
 - [BREAKING] Dropped `DISABLE_TYPELIZER` environment variable support (deprecated since 0.12.0). Use `TYPELIZER=false` instead. ([@skryukov])
-- [BREAKING] Bumped `railties` requirement to `>= 6.1.0` to use the `server` Railtie block for auto-generation. ([@skryukov])
 - [BREAKING] Removed the `.form` route variant, `FormDefinition` type, and `formAction` runtime helper. ([@skryukov])
 
 ### Fixed
@@ -37,6 +40,7 @@ and this project adheres to [Semantic Versioning].
 - `typelize` declarations silently dropped during rake tasks, producing `unknown` for every field. ([#114](https://github.com/skryukov/typelizer/issues/114)) ([@skryukov])
 - `properties_transformer` now applied to nested attribute sub-properties, meta nested blocks, and Alba trait properties. Previously only top-level keys were transformed, producing inconsistent output. ([#89](https://github.com/skryukov/typelizer/issues/89)) ([@skryukov])
 - `typelize "Name[]"` paired with `with_traits:` no longer emits a phantom trait intersection with a missing import. Explicit `typelize` overrides are now trusted as-is — the generated type is exactly what you wrote. ([#113](https://github.com/skryukov/typelizer/issues/113)) ([@skryukov])
+- ActiveRecord models whose tables don't exist yet (fresh checkout, pending migration) are now skipped during type inference instead of issuing live DB queries. ([@julik])
 
 ## [0.12.0] - 2026-03-29
 
@@ -486,6 +490,7 @@ and this project adheres to [Semantic Versioning].
 [@Envek]: https://github.com/Envek
 [@hkamberovic]: https://github.com/hkamberovic
 [@jonmarkgo]: https://github.com/jonmarkgo
+[@julik]: https://github.com/julik
 [@kristinemcbride]: https://github.com/kristinemcbride
 [@nkriege]: https://github.com/nkriege
 [@NOX73]: https://github.com/NOX73
@@ -498,7 +503,8 @@ and this project adheres to [Semantic Versioning].
 [@skryukov]: https://github.com/skryukov
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/skryukov/typelizer/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/skryukov/typelizer/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/skryukov/typelizer/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/skryukov/typelizer/compare/v0.9.3...v0.10.0
