@@ -216,6 +216,29 @@ end
 
 Both accept a single `Regexp` or an array of patterns. When `include` is set, only matching routes are generated. `exclude` is applied after `include`.
 
+### Filtering with a predicate
+
+`include` and `exclude` also accept a `Proc` (or any object responding to `#call`) in addition to regexes. The predicate receives a route-info hash and must return truthy to match:
+
+```ruby
+Typelizer.configure do |config|
+  config.routes.include = ->(r) { r[:controller].to_s.start_with?("admin/") }
+end
+```
+
+The hash keys available to the predicate are: `:path`, `:name`, `:controller`, `:action`, `:verb`, `:required_parts`, `:optional_parts`.
+
+You can mix predicates and regexes in an array; routes match if any element matches:
+
+```ruby
+config.routes.include = [
+  /^\/sessions/,
+  ->(r) { r[:controller] == "admin/users" }
+]
+```
+
+Use predicates when the URL path doesn't uniquely identify the routes you want — for example, when multiple feature areas are mounted under different subdomain constraints but share URL paths (`foo.example.com/users` and `bar.example.com/users` both have path `/users` but different controllers).
+
 ## Engine Support {#engines}
 
 Mounted Rails engines are included automatically. Route paths include the mount prefix:

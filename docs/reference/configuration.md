@@ -86,8 +86,8 @@ end
 |---|---|---|---|
 | `enabled` | `Boolean` | `false` | Enable route helper generation |
 | `output_dir` | `String` | Auto-detected | Output directory. Defaults to `{js_root}/routes` |
-| `include` | `Regexp`, `Array` | `nil` | Only generate routes matching these patterns |
-| `exclude` | `Regexp`, `Array` | `nil` | Skip routes matching these patterns |
+| `include` | `Regexp`, `Proc`, `Array` | `nil` | Only generate routes matching these patterns. Procs receive the route-info hash and return truthy to match. See [Filtering Routes](/guides/routes#filtering). |
+| `exclude` | `Regexp`, `Proc`, `Array` | `nil` | Skip routes matching these patterns. Procs receive the route-info hash and return truthy to match. |
 | `camel_case` | `Boolean` | `true` | Convert route keys to camelCase |
 | `format` | `Symbol` | `:ts` | Output format: `:ts` or `:js` |
 
