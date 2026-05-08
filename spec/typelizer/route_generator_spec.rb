@@ -150,6 +150,97 @@ RSpec.describe Typelizer::RouteGenerator, type: :typelizer do
       expect(output_dir.join("UsersController.ts")).to exist
     end
 
+    context "with callable include/exclude patterns" do
+      it "accepts a single Proc filtering by controller" do
+        route_config.include = ->(r) { r[:controller] == "admin/users" }
+
+        generator.call(force: true)
+
+        expect(output_dir.join("Admin/UsersController.ts")).to exist
+        expect(output_dir.join("UsersController.ts")).not_to exist
+        expect(output_dir.join("PostsController.ts")).not_to exist
+      end
+
+      it "accepts a Lambda filtering by verb" do
+        route_config.include = lambda { |r| r[:verb] == "post" }
+
+        generator.call(force: true)
+
+        # admin/users only has GET/DELETE actions, so no file should be generated
+        expect(output_dir.join("Admin/UsersController.ts")).not_to exist
+        # users#create is POST, so the file exists but only POST routes are inside
+        users = File.read(output_dir.join("UsersController.ts"))
+        expect(users).to include("method: 'post'")
+        expect(users).not_to include("method: 'get'")
+        expect(users).not_to include("method: 'delete'")
+      end
+
+      it "accepts a Method object" do
+        admin_filter = ->(r) { r[:controller].to_s.start_with?("admin/") }
+        route_config.include = admin_filter.method(:call)
+
+        generator.call(force: true)
+
+        expect(output_dir.join("Admin/UsersController.ts")).to exist
+        expect(output_dir.join("UsersController.ts")).not_to exist
+      end
+
+      it "accepts a heterogeneous array of Regexp and Proc" do
+        route_config.include = [
+          /\A\/admin/,
+          ->(r) { r[:controller] == "pages" }
+        ]
+
+        generator.call(force: true)
+
+        expect(output_dir.join("Admin/UsersController.ts")).to exist
+        expect(output_dir.join("PagesController.ts")).to exist
+        expect(output_dir.join("UsersController.ts")).not_to exist
+        expect(output_dir.join("PostsController.ts")).not_to exist
+      end
+
+      it "disambiguates routes that differ by controller (subdomain-style)" do
+        # Both /users (controller: "users") and /admin/users (controller: "admin/users")
+        # exist; a controller-based predicate distinguishes them where a path regex
+        # like %r{/users} would match both.
+        route_config.include = ->(r) { r[:controller].to_s.start_with?("admin/") }
+
+        generator.call(force: true)
+
+        expect(output_dir.join("Admin/UsersController.ts")).to exist
+        expect(output_dir.join("UsersController.ts")).not_to exist
+      end
+
+      it "still accepts a bare Regexp (backwards compat, positive)" do
+        route_config.include = /\A\/admin/
+
+        generator.call(force: true)
+
+        expect(output_dir.join("Admin/UsersController.ts")).to exist
+        expect(output_dir.join("UsersController.ts")).not_to exist
+      end
+
+      it "still accepts an Array of Regexps (backwards compat)" do
+        route_config.include = [/\A\/admin/, /\A\/posts/]
+
+        generator.call(force: true)
+
+        expect(output_dir.join("Admin/UsersController.ts")).to exist
+        expect(output_dir.join("PostsController.ts")).to exist
+        expect(output_dir.join("UsersController.ts")).not_to exist
+      end
+
+      it "applies callable rules to exclude" do
+        route_config.exclude = ->(r) { r[:controller].to_s.start_with?("admin/") }
+
+        generator.call(force: true)
+
+        expect(output_dir.join("Admin/UsersController.ts")).not_to exist
+        expect(output_dir.join("UsersController.ts")).to exist
+        expect(output_dir.join("PostsController.ts")).to exist
+      end
+    end
+
     it "generates mounted engine routes with mount prefix" do
       generator.call(force: true)
 

@@ -51,14 +51,22 @@ module Typelizer
 
       if config.include
         patterns = Array(config.include)
-        routes = routes.select { |r| patterns.any? { |p| r[:path].match?(p) } }
+        routes = routes.select { |r| patterns.any? { |p| match_route?(r, p) } }
       end
       if config.exclude
         patterns = Array(config.exclude)
-        routes = routes.reject { |r| patterns.any? { |p| r[:path].match?(p) } }
+        routes = routes.reject { |r| patterns.any? { |p| match_route?(r, p) } }
       end
 
       routes
+    end
+
+    def match_route?(route_info, pattern)
+      if pattern.respond_to?(:call)
+        pattern.call(route_info)
+      else
+        route_info[:path].match?(pattern)
+      end
     end
 
     def build_name_lookups(named_routes, path_prefix: "", name_prefix: "")

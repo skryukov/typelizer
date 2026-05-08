@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- `routes.include` and `routes.exclude` now accept a `Proc` (or any callable responding to `#call`) in addition to `Regexp`. Predicates receive the route-info hash (`:path`, `:name`, `:controller`, `:action`, `:verb`, `:required_parts`, `:optional_parts`) and must return truthy to match. Heterogeneous arrays are supported. Useful when the URL path alone can't disambiguate routes — e.g. multiple feature areas mounted under different subdomain constraints that share paths, or filtering by HTTP verb / helper name.
+
+  ```ruby
+  config.routes.include = ->(r) { r[:controller].to_s.start_with?("admin/") }
+  ```
+
 ## [0.13.0] - 2026-05-01
 
 ### Added
