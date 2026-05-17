@@ -16,5 +16,9 @@ Rails.application.routes.draw do
   get "pages/*path", to: "pages#show", as: :page
   get "archive(/:year)(/:month)", to: "posts#archive", as: :archive
 
+  # Named + unnamed alias to same action (mirrors ActiveStorage representations)
+  get "/aliased/main/:id", to: "aliased_things#show", as: :aliased
+  get "/aliased/:id", to: "aliased_things#show"
+
   mount BlogEngine::Engine, at: "/blog"
 end

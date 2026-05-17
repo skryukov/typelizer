@@ -33,14 +33,14 @@ module Typelizer
         Rails.application.reload_routes_unless_loaded
       end
 
-      name_by_action, name_by_path = build_name_lookups(Rails.application.routes.named_routes)
+      named_paths = build_named_paths(Rails.application.routes.named_routes)
 
       routes = Rails.application.routes.routes.flat_map do |route|
         app = route.app.app
         if app.is_a?(Class) && app < Rails::Engine
           collect_engine_routes(route, app) || []
         else
-          build_route_info(route, name_by_action, name_by_path)
+          build_route_info(route, named_paths)
         end
       end.compact
 
@@ -69,40 +69,30 @@ module Typelizer
       end
     end
 
-    def build_name_lookups(named_routes, path_prefix: "", name_prefix: "")
-      name_by_action = {}
-      name_by_path = {}
-
-      named_routes.each do |name, route|
+    def build_named_paths(named_routes, path_prefix: "")
+      named_routes.each_with_object(Set.new) do |(_name, route), paths|
         controller = route.requirements[:controller]
         action = route.requirements[:action]
         next unless controller && action
 
-        path = path_prefix + strip_format(route.path.spec.to_s)
-        prefixed_name = "#{name_prefix}#{name}"
-        name_by_action[[controller, action]] = prefixed_name
-        name_by_path[[controller, path]] = prefixed_name
+        paths << [controller, path_prefix + strip_format(route.path.spec.to_s)]
       end
-
-      [name_by_action, name_by_path]
     end
 
     def strip_format(path)
       path.sub(FORMAT_SUFFIX, "")
     end
 
-    def build_route_info(route, name_by_action, name_by_path)
+    def build_route_info(route, named_paths)
       controller = route.requirements[:controller]
       action = route.requirements[:action]
 
       path = strip_format(route.path.spec.to_s)
 
       if controller.present? && action.present?
-        has_own_name = !!route.name
-        name = route.name || name_by_action[[controller, action]]
-        name ||= name_by_path[[controller, path]] ? action : nil
+        # Match by [controller, path] so unnamed aliases at distinct paths (e.g. ActiveStorage representations) don't inherit a sibling's name
+        name = route.name || (action if named_paths.include?([controller, path]))
       elsif route.name.present?
-        has_own_name = true
         name = route.name.to_s
         controller = "_routes"
         action = name
@@ -118,7 +108,7 @@ module Typelizer
 
       {
         name: name,
-        named: has_own_name || !!name_by_action[[controller, action]],
+        named: !!route.name,
         controller: controller,
         action: action,
         verb: verb,
@@ -133,14 +123,10 @@ module Typelizer
       engine_name = mount_route.name
       return unless engine_name
 
-      name_by_action, name_by_path = build_name_lookups(
-        engine.routes.named_routes,
-        path_prefix: mount_prefix,
-        name_prefix: "#{engine_name}_"
-      )
+      named_paths = build_named_paths(engine.routes.named_routes, path_prefix: mount_prefix)
 
       engine.routes.routes.filter_map do |engine_route|
-        info = build_route_info(engine_route, name_by_action, name_by_path)
+        info = build_route_info(engine_route, named_paths)
         next unless info
         info[:path] = mount_prefix + info[:path]
         info
