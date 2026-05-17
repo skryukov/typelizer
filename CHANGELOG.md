@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning].
   config.routes.include = ->(r) { r[:controller].to_s.start_with?("admin/") }
   ```
 
+### Fixed
+
+- Unnamed alias routes sharing `controller#action` with a named route (e.g. ActiveStorage representations) no longer inherit the named route's name. Name lookup now matches by `[controller, path]` instead of `[controller, action]`, so distinct paths produce distinct entries. ([@skryukov])
+
 ## [0.13.0] - 2026-05-01
 
 ### Added

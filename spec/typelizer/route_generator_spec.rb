@@ -133,6 +133,19 @@ RSpec.describe Typelizer::RouteGenerator, type: :typelizer do
       expect(pages).to include("'*path'").or include("*path")
     end
 
+    it "drops unnamed alias routes that share controller#action with a named route" do
+      generator.call(force: true)
+
+      index = File.read(output_dir.join("index.ts"))
+      controller = File.read(output_dir.join("AliasedThingsController.ts"))
+      controller_keys = controller.scan(/^\s{2}([A-Za-z_$][\w$]*):\s/).flatten
+
+      expect(index.scan(/^export const aliased = /).size).to eq(1)
+      expect(controller_keys).to eq(controller_keys.uniq)
+      expect(controller).to include("/aliased/main/:id")
+      expect(controller).not_to match(%r{'/aliased/:id'})
+    end
+
     it "skips generation when routes.enabled is false" do
       route_config.enabled = false
 
