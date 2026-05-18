@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-05-18
+
 ### Added
 
-- `routes.include` and `routes.exclude` now accept a `Proc` (or any callable responding to `#call`) in addition to `Regexp`. Predicates receive the route-info hash (`:path`, `:name`, `:controller`, `:action`, `:verb`, `:required_parts`, `:optional_parts`) and must return truthy to match. Heterogeneous arrays are supported. Useful when the URL path alone can't disambiguate routes — e.g. multiple feature areas mounted under different subdomain constraints that share paths, or filtering by HTTP verb / helper name.
+- `routes.include` and `routes.exclude` now accept a `Proc` (or any callable responding to `#call`) in addition to `Regexp`. Predicates receive the route-info hash (`:path`, `:name`, `:controller`, `:action`, `:verb`, `:required_parts`, `:optional_parts`) and must return truthy to match. Heterogeneous arrays are supported. Useful when the URL path alone can't disambiguate routes — e.g. multiple feature areas mounted under different subdomain constraints that share paths, or filtering by HTTP verb / helper name. ([@pastpatryk])
 
   ```ruby
   config.routes.include = ->(r) { r[:controller].to_s.start_with?("admin/") }
@@ -507,6 +509,7 @@ and this project adheres to [Semantic Versioning].
 [@nkriege]: https://github.com/nkriege
 [@NOX73]: https://github.com/NOX73
 [@okuramasafumi]: https://github.com/okuramasafumi
+[@pastpatryk]: https://github.com/pastpatryk
 [@patvice]: https://github.com/patvice
 [@pgiblock]: https://github.com/pgiblock
 [@PedroAugustoRamalhoDuarte]: https://github.com/PedroAugustoRamalhoDuarte
@@ -515,7 +518,8 @@ and this project adheres to [Semantic Versioning].
 [@skryukov]: https://github.com/skryukov
 [@ventsislaf]: https://github.com/ventsislaf
 
-[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/skryukov/typelizer/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/skryukov/typelizer/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/skryukov/typelizer/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/skryukov/typelizer/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/skryukov/typelizer/compare/v0.10.0...v0.11.0
