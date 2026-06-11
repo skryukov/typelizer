@@ -41,6 +41,8 @@ require "logger"
 require "forwardable"
 
 module Typelizer
+  class Error < StandardError; end
+
   class << self
     extend Forwardable
 

@@ -19,12 +19,29 @@ module Typelizer
       Typelizer::DSL.disable! unless Typelizer.enabled?
     end
 
-    # Make `typelize_as` / `typelize_from` no-op at template render time so
-    # jbuilder templates can declare them at the top of the file without
-    # crashing. The plugin reads them statically via Prism.
-    initializer "typelizer.jbuilder_template_helpers" do
+    # Render-safety patches for jbuilder templates, installed whenever the
+    # jbuilder gem is present — independently of whether the typelizer
+    # jbuilder plugin is enabled (`Typelizer::Jbuilder.enabled?` gates only
+    # discovery, template parsing, and prism activation). Templates annotated
+    # with `typelize:` / `typelize_as` / `typelize_from` must render cleanly
+    # even where Typelizer's discovery config is development-only: a type
+    # annotation must never 500 a production render.
+    #
+    # `TemplateHelpers` makes the top-of-file declarations no-ops at render
+    # time; `SetExt` strips inline `typelize:` kwargs before jbuilder's
+    # `set!` sees them. The plugin reads both statically via Prism.
+    initializer "typelizer.jbuilder_render_safety" do
       ActiveSupport.on_load(:action_view) do
+        next unless Gem.loaded_specs["jbuilder"] || defined?(::Jbuilder)
+
+        begin
+          require "jbuilder/jbuilder_template"
+        rescue LoadError
+          next
+        end
+
         include Typelizer::Jbuilder::TemplateHelpers
+        ::JbuilderTemplate.prepend(Typelizer::Jbuilder::SetExt)
       end
     end
 

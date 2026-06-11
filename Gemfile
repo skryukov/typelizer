@@ -20,6 +20,8 @@ gem "alba"
 
 gem "panko_serializer"
 
+gem "jbuilder"
+
 # Rails app
 gem "rails", "~> 7.1.3"
 gem "pg", "~> 1.1"

@@ -17,7 +17,65 @@ module Typelizer
       end
     end
 
+    # Inline `json.foo value, typelize: "string"` annotations are read by the
+    # AST walker for type generation, but at render time they're junk to
+    # jbuilder — its `set!` doesn't declare `**kwargs`, so Ruby 3 packs them as
+    # a positional Hash and `_extract_method_values` raises
+    # `{typelize: "..."} is not a symbol nor a string`.
+    #
+    # This module strips the typelizer-reserved kwargs before forwarding to
+    # upstream `set!`. Prepended onto `JbuilderTemplate` via the railtie
+    # whenever the jbuilder gem is present — independently of whether the
+    # typelizer jbuilder plugin is enabled — so annotated templates never
+    # crash a render in environments where Typelizer is dev-only.
+    #
+    # The `method_missing` override is required to defeat jbuilder's
+    # `alias_method :method_missing, :set!` quirk (the alias captures the
+    # original `set!` body, bypassing any prepended `set!`).
+    module SetExt
+      RESERVED_KWARGS = %i[typelize typelize_from].freeze
+
+      def method_missing(name, *args, **kwargs, &block)
+        set!(name, *args, **kwargs, &block)
+      end
+
+      def respond_to_missing?(name, include_private = false)
+        super
+      end
+
+      def set!(name, *args, **kwargs, &block)
+        RESERVED_KWARGS.each { |k| kwargs.delete(k) }
+
+        # When kwargs is empty, omit them entirely so we don't accidentally
+        # forward an empty Hash as a positional arg to upstream `set!` (which
+        # has no `**kwargs` in jbuilder's signature — a positional Hash there
+        # would be treated as a value). When kwargs is non-empty, splat with
+        # `**` so the next prepend in the chain (e.g. jbuilder-inertia's
+        # extension) receives them as actual kwargs.
+        if kwargs.empty?
+          super(name, *args, &block)
+        else
+          super
+        end
+      end
+    end
+
     class << self
+      # Whether the jbuilder plugin is enabled for automatic work (template
+      # discovery, parsing, prism activation). Auto-detected from discovery
+      # config being present (`config.jbuilder_views = [...]`), with
+      # `config.jbuilder_enabled = true/false` as an explicit override.
+      #
+      # This gates ONLY discovery-side behavior. The render-safety patches
+      # (`SetExt`, `TemplateHelpers`) install whenever jbuilder is present,
+      # regardless of this predicate — see the railtie.
+      def enabled?
+        override = Typelizer.configuration.jbuilder_enabled
+        return override unless override.nil?
+
+        Array(Typelizer.configuration.jbuilder_views).any?
+      end
+
       def template(path, views_root: default_views_root, model: nil, as: nil)
         full_path = File.expand_path(path, views_root)
         type_name = as || derive_type_name(full_path, views_root)
@@ -44,8 +102,9 @@ module Typelizer
       # registration time and the same parse is reused later for the
       # property walk.
       def discover(views_root = default_views_root, model_resolver: nil)
+        walker = SerializerPlugins::Jbuilder.activate_walker!
         Dir.glob(File.join(views_root, "**/*.json.jbuilder")).each do |path|
-          metadata = SerializerPlugins::Jbuilder::Walker.metadata_for(path)
+          metadata = walker.metadata_for(path)
           model = metadata[:model] || model_resolver&.call(path)
           template(path, views_root: views_root, model: model, as: metadata[:type_name])
         end
@@ -62,7 +121,9 @@ module Typelizer
       def reset!
         registry.clear
         Templates.constants.each { |c| Templates.send(:remove_const, c) }
-        SerializerPlugins::Jbuilder::Walker.reset_cache!
+        # Guarded so `reset!` never forces prism activation for users who
+        # never parsed a template in this process.
+        SerializerPlugins::Jbuilder::Walker.reset_cache! if SerializerPlugins::Jbuilder.walker_activated?
       end
 
       # Returns a `reject_class` predicate that excludes serializers matching
@@ -85,7 +146,7 @@ module Typelizer
       def auto_register_partial(absolute_path, views_root)
         return nil unless File.exist?(absolute_path) && File.basename(absolute_path).start_with?("_")
 
-        metadata = SerializerPlugins::Jbuilder::Walker.metadata_for(absolute_path)
+        metadata = SerializerPlugins::Jbuilder.activate_walker!.metadata_for(absolute_path)
         template(absolute_path, views_root: views_root, model: metadata[:model], as: metadata[:type_name])
       end
 
