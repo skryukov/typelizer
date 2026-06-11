@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "properties": {
+    "label": {
+      "type": "string"
+    },
+    "size": {
+      "type": "number"
+    },
+    "host_only": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "label",
+    "size",
+    "host_only"
+  ]
+}

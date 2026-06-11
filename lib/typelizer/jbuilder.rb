@@ -103,7 +103,9 @@ module Typelizer
       # property walk.
       def discover(views_root = default_views_root, model_resolver: nil)
         walker = SerializerPlugins::Jbuilder.activate_walker!
-        Dir.glob(File.join(views_root, "**/*.json.jbuilder")).each do |path|
+        # Sorted for deterministic registration order — stable `index.ts`
+        # output and stable collision error messages across filesystems.
+        Dir.glob(File.join(views_root, "**/*.json.jbuilder")).sort.each do |path|
           metadata = walker.metadata_for(path)
           model = metadata[:model] || model_resolver&.call(path)
           template(path, views_root: views_root, model: model, as: metadata[:type_name])

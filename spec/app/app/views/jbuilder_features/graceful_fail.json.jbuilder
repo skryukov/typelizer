@@ -1,12 +1,13 @@
-# Dynamic/unsupported forms — the walker drops them silently rather than
-# fabricate types. Use typelize: to pin the shape when you need one.
+# Dynamic/unsupported forms — the walker skips them rather than fabricate
+# types, logging a warning through Typelizer.logger for each dropped
+# construct. Use typelize: to pin the shape when you need one.
 
 json.known "value"
 
-# Skipped (dynamic hash) — no property emitted.
+# Skipped with a warning (dynamic hash) — no property emitted.
 json.merge! some_runtime_hash
 
-# Skipped (dynamic key) — no property emitted.
+# Skipped with a warning (dynamic key) — no property emitted.
 json.set! dynamic_key, some_value
 
 # Pin the shape with typelize: when you know it.

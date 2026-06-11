@@ -81,7 +81,8 @@ module Typelizer
         @walker ||= self.class.activate_walker!.new(
           path: template_path,
           partial_resolver: method(:resolve_partial_to_class),
-          context: context
+          context: context,
+          column_inference: column_inference_available?
         )
       end
 
@@ -95,9 +96,33 @@ module Typelizer
           "app/views"
       end
 
+      # Column inference only produces types when the bound model is an AR
+      # class; for PORO `typelize_from` targets (or no model at all) the
+      # walker falls back to name hints instead of emitting all-`unknown`.
+      def column_inference_available?
+        model = serializer.respond_to?(:_typelizer_model_name) ? serializer._typelizer_model_name : nil
+        !!(model.is_a?(Class) && defined?(::ActiveRecord::Base) && model < ::ActiveRecord::Base)
+      end
+
+      # Rails partial-lookup semantics: a bare name (`json.partial! "post"`)
+      # resolves against the current template's directory first; a prefixed
+      # name (`"posts/post"`) resolves against the views root.
       def resolve_partial_to_class(partial_path)
-        expected_path = File.join(views_root, File.dirname(partial_path), "_#{File.basename(partial_path)}.json.jbuilder")
-        Typelizer::Jbuilder.template_for(File.expand_path(expected_path), views_root: views_root)
+        partial_candidate_paths(partial_path).each do |path|
+          klass = Typelizer::Jbuilder.template_for(path, views_root: views_root)
+          return klass if klass
+        end
+        nil
+      end
+
+      def partial_candidate_paths(partial_path)
+        basename = "_#{File.basename(partial_path)}.json.jbuilder"
+        candidates = []
+        unless partial_path.include?("/")
+          candidates << File.expand_path(File.join(File.dirname(template_path), basename))
+        end
+        candidates << File.expand_path(File.join(views_root, File.dirname(partial_path), basename))
+        candidates.uniq
       end
     end
   end

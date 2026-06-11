@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "number"
+        },
+        "role": {
+          "type": "string"
+        },
+        "limited": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "role"
+      ]
+    }
+  },
+  "required": [
+    "profile"
+  ]
+}

@@ -207,4 +207,354 @@ RSpec.describe Typelizer::Jbuilder do
       expect(output).to include("note: string")
     end
   end
+
+  describe "walker correctness" do
+    let(:views_root) { Dir.mktmpdir("typelizer-jbuilder-walker-spec") }
+
+    after do
+      Typelizer::Jbuilder.reset!
+      Typelizer::Jbuilder.discover(Rails.root.join("app/views").to_s)
+      FileUtils.rm_rf(views_root)
+    end
+
+    def write_template(relative_path, body)
+      full = File.join(views_root, relative_path)
+      FileUtils.mkdir_p(File.dirname(full))
+      File.write(full, body)
+      full
+    end
+
+    def render_interface(klass)
+      ctx = Typelizer::WriterContext.new(writer_name: nil)
+      iface = ctx.interface_for(klass)
+      Typelizer::Renderer.call("interface.ts.erb", interface: iface)
+    end
+
+    # All walker warnings go through the configured `Typelizer.logger`
+    # (never Kernel#warn) — capture them for assertions.
+    def with_capture_logger
+      io = StringIO.new
+      original = Typelizer.logger
+      Typelizer.logger = Logger.new(io)
+      yield
+      io.string
+    ensure
+      Typelizer.logger = original
+    end
+
+    describe "unless/else branch merging" do
+      it "keeps else-branch-only props as present and optional" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          unless @minimal
+            json.theme "dark"
+          else
+            json.compact true
+            json.theme "light"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("compact?: boolean")
+      end
+
+      it "keeps props emitted in both unless branches required" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          unless @minimal
+            json.theme "dark"
+          else
+            json.theme "light"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("theme: string")
+        expect(output).not_to include("theme?:")
+      end
+
+      it "marks props optional when an unless has no else" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          unless @hidden
+            json.public_id 42
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("public_id?: number")
+      end
+    end
+
+    describe "if/elsif/else branch merging" do
+      it "requires props present in every branch and widens the rest to optional" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @active
+            json.status "active"
+            json.reason "still active"
+          elsif @blocked
+            json.status "blocked"
+          else
+            json.status "idle"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("status: string")
+        expect(output).not_to include("status?:")
+        expect(output).to include("reason?: string")
+      end
+
+      it "merges nested conditionals inside a block at their own nesting level" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.profile do
+            json.id 1
+            if @admin
+              json.role "admin"
+            else
+              json.role "user"
+              json.limited true
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("role: string")
+        expect(output).to include("limited?: boolean")
+      end
+    end
+
+    describe "inertia kwarg interplay with branch merging" do
+      it "widens to optional once when `inertia: :defer` sits inside a covered branch" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @full
+            json.stats @data, inertia: :defer, typelize: "Record<string, number>"
+          else
+            json.stats nil, typelize: "Record<string, number>"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output.scan("stats?:").size).to eq(1)
+        expect(output).to include("stats?: Record<string, number>")
+      end
+
+      it "widens to optional when only a non-first branch defers the prop" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @cheap
+            json.metrics nil, typelize: "Record<string, number>"
+          else
+            json.metrics @metrics, inertia: :defer, typelize: "Record<string, number>"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("metrics?: Record<string, number>")
+      end
+    end
+
+    describe "warnings for silently dropped constructs" do
+      it "warns through the configured logger for `json.merge!` and skips the construct" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.ok true
+          json.merge! extra_hash
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:2")
+        expect(logs).to include("json.merge!")
+        expect(logs).to include("typelize:")
+        expect(output).to include("ok: boolean")
+        expect(output).not_to include("merge")
+      end
+
+      it "warns for dynamic `json.set!`" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.set! dynamic_key, some_value
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("json.set!")
+        expect(logs).to include("typelize:")
+      end
+
+      it "warns when a `json.partial!` cannot be resolved instead of dropping silently" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.partial! "missing/thing"
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("missing/thing")
+      end
+
+      it "warns when a collection `partial!` appears inside a block (typed as object, not array)" do
+        write_template("comments/_comment.json.jbuilder", <<~RUBY)
+          json.id comment.id, typelize: "number"
+        RUBY
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.comments do
+            json.partial! partial: "comments/comment", collection: @comments
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:2")
+        expect(logs).to include("collection:")
+      end
+
+      it "warns when a root `json.array!` hides inside a conditional (typed as object)" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          if @flag
+            json.array! @items do
+              json.id 1
+            end
+          else
+            json.empty true
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder")
+        expect(logs).to include("array!")
+        expect(logs).to match(/object/)
+      end
+
+      it "routes metadata read failures through the configured logger, not Kernel#warn" do
+        path = write_template("misc/show.json.jbuilder", "json.ok true\n")
+        walker = Typelizer::SerializerPlugins::Jbuilder.activate_walker!
+        allow(walker).to receive(:parsed_tree).and_call_original
+        allow(walker).to receive(:parsed_tree).with(path).and_raise(RuntimeError, "boom")
+
+        logs = nil
+        expect {
+          logs = with_capture_logger { walker.metadata_for(path) }
+        }.not_to output.to_stderr
+
+        expect(logs).to include("failed to read metadata")
+        expect(logs).to include("boom")
+      end
+    end
+
+    describe "partial resolution" do
+      it "resolves a bare partial name against the current template's directory first" do
+        write_template("posts/_post.json.jbuilder", <<~RUBY)
+          json.id post.id, typelize: "number"
+        RUBY
+        write_template("posts/show.json.jbuilder", <<~RUBY)
+          json.partial! "post"
+          json.extra true
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::PostsShow)
+
+        expect(output).to include("id: number")
+        expect(output).to include("extra: boolean")
+      end
+
+      it "resolves kwargs-only `partial!` with a collection to a root array type" do
+        write_template("posts/_post.json.jbuilder", <<~RUBY)
+          json.id post.id, typelize: "number"
+          json.title post.title, typelize: "string"
+        RUBY
+        write_template("posts/index.json.jbuilder", <<~RUBY)
+          json.partial! partial: "posts/post", collection: @posts, as: :post
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::PostsIndex)
+
+        expect(output).to include("type PostsIndex = Array<PostsIndexData>")
+        expect(output).to include("id: number")
+        expect(output).to include("title: string")
+      end
+
+      it "warns when a kwargs-only `partial!` cannot be resolved" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.partial! partial: "missing/thing", collection: @things
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("missing/thing")
+      end
+    end
+
+    describe "PORO typelize_from targets" do
+      it "falls back to name heuristics for `extract!` without crashing" do
+        stub_const("PoroProfile", Class.new)
+        write_template("poros/show.json.jbuilder", <<~RUBY)
+          typelize_from PoroProfile
+
+          json.extract! profile, :id, :name, :created_at, :follower_count
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::PorosShow)
+
+        expect(output).to include("id: number")
+        expect(output).to include("created_at: string")
+        expect(output).to include("follower_count: number")
+        expect(output).to include("name: unknown")
+      end
+    end
+
+    describe "discovery ordering" do
+      it "registers templates in sorted path order regardless of FS glob order" do
+        write_template("bbb/index.json.jbuilder", "json.x 1\n")
+        write_template("aaa/index.json.jbuilder", "json.x 1\n")
+
+        unsorted = [
+          File.join(views_root, "bbb/index.json.jbuilder"),
+          File.join(views_root, "aaa/index.json.jbuilder")
+        ]
+        allow(Dir).to receive(:glob).and_call_original
+        allow(Dir).to receive(:glob)
+          .with(File.join(views_root, "**/*.json.jbuilder"))
+          .and_return(unsorted)
+
+        Typelizer::Jbuilder.discover(views_root)
+
+        registered = Typelizer::Jbuilder.registry.keys.select { |k| k.start_with?(views_root) }
+        expect(registered).to eq(registered.sort)
+      end
+    end
+  end
 end
