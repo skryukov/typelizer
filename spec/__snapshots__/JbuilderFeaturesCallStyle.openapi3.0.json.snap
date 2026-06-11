@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "title": {
+      "type": "string",
+      "nullable": true
+    },
+    "body": {
+      "type": "string",
+      "nullable": true
+    },
+    "computed": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "body",
+    "computed"
+  ]
+}

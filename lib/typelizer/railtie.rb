@@ -19,6 +19,15 @@ module Typelizer
       Typelizer::DSL.disable! unless Typelizer.enabled?
     end
 
+    # Make `typelize_as` / `typelize_from` no-op at template render time so
+    # jbuilder templates can declare them at the top of the file without
+    # crashing. The plugin reads them statically via Prism.
+    initializer "typelizer.jbuilder_template_helpers" do
+      ActiveSupport.on_load(:action_view) do
+        include Typelizer::Jbuilder::TemplateHelpers
+      end
+    end
+
     server do
       next unless Typelizer.enabled?
 

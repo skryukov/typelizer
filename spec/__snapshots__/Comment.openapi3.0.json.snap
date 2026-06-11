@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "number"
+    },
+    "body": {
+      "type": "string"
+    },
+    "replies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/Comment"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "body",
+    "replies"
+  ]
+}

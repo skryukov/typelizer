@@ -2,7 +2,7 @@ module Typelizer
   Property = Struct.new(
     :name, :type, :optional, :nullable,
     :multi, :column_name, :column_type, :comment, :enum, :enum_type_name, :deprecated,
-    :with_traits,
+    :with_traits, :additional_types,
     keyword_init: true
   ) do
     def with(**attrs)
@@ -45,6 +45,11 @@ module Typelizer
       trait_types = trait_type_names
       type_str = ([type_str] + trait_types).join(" & ") if trait_types.any?
 
+      if additional_types&.any?
+        extra = additional_types.map { |t| t.respond_to?(:name) ? t.name : t.to_s }
+        type_str = ([type_str] + extra).join(" & ")
+      end
+
       type_str = "Array<#{type_str}>" if multi
 
       # Apply union sorting to the final type string (handles Array<...> unions too)
@@ -60,9 +65,15 @@ module Typelizer
       # Use array format for consistent output across Ruby versions
       # (Hash#inspect format changed in Ruby 3.4).
       # column_type is excluded because it only informs inference, not output.
-      to_h.except(:column_type)
+      # additional_types is excluded from to_h to avoid changing fingerprints
+      # for properties that don't use it; when present, its rendered names are
+      # merged back in (it affects generated output).
+      hash = to_h.except(:column_type, :additional_types)
         .merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
-        .to_a.inspect
+      if additional_types&.any?
+        hash = hash.merge(additional_types: additional_types.map { |t| t.respond_to?(:name) ? t.name : t.to_s })
+      end
+      hash.to_a.inspect
     end
 
     # Generates a TypeScript type definition for named enums

@@ -22,6 +22,7 @@ export default defineConfig({
         items: [
           { text: 'Alba', link: '/guides/alba' },
           { text: 'ActiveModel::Serializer', link: '/guides/ams' },
+          { text: 'Jbuilder', link: '/guides/jbuilder' },
           { text: 'Oj::Serializer', link: '/guides/oj-serializer' },
           { text: 'Panko::Serializer', link: '/guides/panko' },
         ],

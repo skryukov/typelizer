@@ -11,6 +11,11 @@ module Typelizer
         nil
       end
 
+      # When true, the generated interface is wrapped as `Array<FooData>`.
+      def root_is_array
+        false
+      end
+
       def meta_fields
         nil
       end

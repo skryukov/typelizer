@@ -30,9 +30,18 @@ module Typelizer
     def name
       if inline?
         Renderer.call("inline_type.ts.erb", properties: properties, sort_order: config.properties_sort_order).strip
+      elsif (override = type_name_override)
+        override
       else
         config.serializer_name_mapper.call(serializer).tr_s(":", "")
       end
+    end
+
+    # Per-serializer name override declared via `typelize_as "Foo"` in the
+    # serializer file (or in a jbuilder template via the runtime helper).
+    def type_name_override
+      return nil unless serializer.respond_to?(:_typelizer_type_name)
+      serializer._typelizer_type_name
     end
 
     def filename
@@ -54,6 +63,14 @@ module Typelizer
 
     def root_key
       serializer_plugin.root_key
+    end
+
+    def root_is_array
+      serializer_plugin.root_is_array
+    end
+
+    def wrapped?
+      root_key || root_is_array
     end
 
     def empty?
@@ -125,7 +142,7 @@ module Typelizer
         # recursively including nested sub-properties
         all_properties = collect_all_properties(properties_to_print + trait_interfaces.flat_map(&:properties))
 
-        flat_types = all_properties.filter_map(&:type)
+        flat_types = (all_properties.filter_map(&:type) + all_properties.flat_map { |p| p.additional_types || [] })
           .flat_map { |t| Array(t) }
           .reject { |t| t.is_a?(Shape) }
           .uniq
@@ -163,6 +180,7 @@ module Typelizer
         properties_to_print.map(&:fingerprint),
         parent_interface&.name,
         root_key,
+        root_is_array,
         meta_fields.map(&:fingerprint),
         trait_interfaces.map { |t| [t.name, t.properties.map(&:fingerprint)] },
         CONFIGS_AFFECTING_OUTPUT.map { |key| config.public_send(key) }
@@ -190,7 +208,8 @@ module Typelizer
     end
 
     def self_type_name
-      serializer.name.match(/(\w+::)?(\w+)(Serializer|Resource)/)[2]
+      serializer.name.to_s[/\w+(?=(?:Serializer|Resource))/] ||
+        config.serializer_name_mapper.call(serializer).tr_s(":", "")
     end
 
     def extract_typescript_types(type)

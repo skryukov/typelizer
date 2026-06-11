@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "opaque": {
+      "type": "object"
+    },
+    "count": {
+      "type": "object"
+    },
+    "is_active": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "opaque",
+    "count",
+    "is_active",
+    "created_at"
+  ]
+}

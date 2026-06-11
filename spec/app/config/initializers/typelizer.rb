@@ -8,6 +8,11 @@ Typelizer.configure do |c|
   c.comments = true
 end
 
+# Auto-discover Jbuilder templates for type generation.
+Rails.application.config.after_initialize do
+  Typelizer::Jbuilder.discover(Rails.root.join("app/views").to_s)
+end
+
 # Scoped camel_case writer — exercises `properties_transformer` across
 # representative serializers for snapshot coverage.
 module CamelCaseWriterFixture
@@ -45,6 +50,7 @@ module EnumRuntimeWriterFixture
   SERIALIZERS = %w[
     Alba::PostSerializer
     Alba::UserSerializer
+    Typelizer::Jbuilder::Templates::PostsPost
   ].freeze
 
   def self.output_dir

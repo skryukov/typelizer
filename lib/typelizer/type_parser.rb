@@ -27,6 +27,15 @@ module Typelizer
         return parse_array(type_def, **options) if type_def.is_a?(Array)
 
         type_str = type_def.to_s
+
+        # Trailing `?` on a complex type (inline object, generic, nested union)
+        # is the optional shortcut. Strip it so we don't emit invalid TS like
+        # `{ id: number }?` — the renderer turns `optional: true` into the
+        # property's `name?:` prefix instead.
+        if type_str.end_with?("?") && type_str.match?(/[|{<\[]/)
+          return parse(type_str.chomp("?"), **options.merge(optional: true))
+        end
+
         return parse_union(type_str, **options) if type_str.include?("|")
 
         match = TYPE_PATTERN.match(type_str)

@@ -1,7 +1,7 @@
 # Configuration
 
 ::: info Supported serializers
-Typelizer works with Alba, ActiveModel::Serializer, Oj::Serializer, and Panko::Serializer. jbuilder, `as_json`, and JSONAPI::Serializer are not currently supported.
+Typelizer works with Alba, ActiveModel::Serializer, Jbuilder, Oj::Serializer, and Panko::Serializer. `as_json` and JSONAPI::Serializer are not currently supported.
 :::
 
 ## Global Settings

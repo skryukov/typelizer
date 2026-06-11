@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "number"
+    },
+    "name": {
+      "type": "string"
+    },
+    "parent": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/JbuilderFeaturesSelfRef"
+        }
+      ],
+      "nullable": true
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "parent"
+  ]
+}

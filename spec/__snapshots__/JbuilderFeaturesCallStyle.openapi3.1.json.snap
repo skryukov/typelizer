@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "body": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "computed": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "body",
+    "computed"
+  ]
+}
