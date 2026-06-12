@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 require_relative "typelizer/version"
+
+module Typelizer
+  class Error < StandardError; end
+end
+
+require_relative "typelizer/generation_lock"
 require_relative "typelizer/union_type_sorter"
 require_relative "typelizer/shape"
 require_relative "typelizer/property"
@@ -41,8 +47,6 @@ require "logger"
 require "forwardable"
 
 module Typelizer
-  class Error < StandardError; end
-
   class << self
     extend Forwardable
 
@@ -75,12 +79,20 @@ module Typelizer
       yield configuration
     end
 
+    # Every interface collection is a generation cycle: it runs behind the
+    # shared GenerationLock and starts by re-running jbuilder template
+    # discovery from a clean slate (`Jbuilder.refresh!` is a no-op unless
+    # `jbuilder_views` discovery roots are configured), so template changes
+    # are reflected without a process restart.
     def interfaces(writer_name: nil)
-      load_serializers
-      context = WriterContext.new(writer_name: writer_name)
-      target_serializers(context.writer_config.reject_class)
-        .map { |klass| context.interface_for(klass) }
-        .reject(&:empty?)
+      GenerationLock.synchronize do
+        Jbuilder.refresh!
+        load_serializers
+        context = WriterContext.new(writer_name: writer_name)
+        target_serializers(context.writer_config.reject_class)
+          .map { |klass| context.interface_for(klass) }
+          .reject(&:empty?)
+      end
     end
 
     def openapi_schemas(writer_name: nil, openapi_version: "3.0")

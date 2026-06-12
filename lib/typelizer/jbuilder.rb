@@ -2,6 +2,12 @@
 
 module Typelizer
   module Jbuilder
+    # Two templates claiming the same type name (via `typelize_as` or
+    # path-derived naming). Raised from `discover`/`template`, which only run
+    # inside a generation cycle — never at boot — so a collision is a
+    # generation-time error, not a production boot crash.
+    class NameCollision < Error; end
+
     module Templates; end
 
     # Runtime no-op helpers so jbuilder templates can declare
@@ -79,13 +85,25 @@ module Typelizer
       def template(path, views_root: default_views_root, model: nil, as: nil)
         full_path = File.expand_path(path, views_root)
         type_name = as || derive_type_name(full_path, views_root)
+        check_name_collision!(type_name, full_path)
 
         klass = ensure_class(type_name)
         klass.define_singleton_method(:_template_path) { full_path }
-        klass.define_singleton_method(:_template_model) { model }
         klass.define_singleton_method(:_views_root) { views_root }
-        # Routes column/enum/comment inference through the model-plugin pipeline.
-        klass.define_singleton_method(:_typelizer_model_name) { model } if model
+        # Routes column/enum/comment inference through the model-plugin
+        # pipeline. The model is stored by NAME and constantized lazily at
+        # each generation, so a Zeitwerk reload between cycles always
+        # resolves the freshly loaded class (a captured class object would
+        # go stale and keep answering with pre-reload columns).
+        model_name = model.is_a?(Class) ? model.name : model&.to_s
+        if model_name
+          klass.define_singleton_method(:_template_model_name) { model_name }
+          klass.define_singleton_method(:_typelizer_model_name) { model_name.safe_constantize }
+        elsif model
+          # Anonymous class — no name to re-resolve; keep the object.
+          klass.define_singleton_method(:_template_model_name) { nil }
+          klass.define_singleton_method(:_typelizer_model_name) { model }
+        end
 
         klass.typelizer_config do |c|
           c.serializer_plugin = SerializerPlugins::Jbuilder
@@ -120,8 +138,36 @@ module Typelizer
         @registry ||= {}
       end
 
+      # One full re-discovery from a clean slate, run at the start of every
+      # generation cycle (`Typelizer.interfaces`) under the shared
+      # GenerationLock — template adds/edits/renames/deletes are reflected
+      # on the next cycle without a process restart. No-op unless discovery
+      # roots are configured: production boots never discover (generation
+      # simply doesn't run there unless `rake typelizer:generate` explicitly
+      # asks), and explicit `discover` registrations (non-Rails flows
+      # without `jbuilder_views`) are left untouched.
+      def refresh!
+        return unless enabled?
+
+        roots = Array(Typelizer.configuration.jbuilder_views).map(&:to_s)
+        return if roots.empty?
+
+        GenerationLock.synchronize do
+          reset!
+          roots.each { |root| discover(root) }
+        end
+      end
+
+      # Clears only per-discovery state: the path→class registry, the
+      # generated `Templates::` constants, the jbuilder-registered
+      # `Typelizer.base_classes` entries, and the Walker's parse cache.
+      # Cross-cycle state — configuration, walker activation, and the
+      # extension/resolver registries (U6) — survives: adapter registrations
+      # must outlive a single generation cycle.
       def reset!
         registry.clear
+        prefix = "#{Templates.name}::"
+        Typelizer.base_classes.delete_if { |name| name.start_with?(prefix) }
         Templates.constants.each { |c| Templates.send(:remove_const, c) }
         # Guarded so `reset!` never forces prism activation for users who
         # never parsed a template in this process.
@@ -144,6 +190,17 @@ module Typelizer
       end
 
       private
+
+      def check_name_collision!(type_name, full_path)
+        return unless Templates.const_defined?(type_name, false)
+
+        existing = Templates.const_get(type_name, false)
+        existing_path = existing.respond_to?(:_template_path) ? existing._template_path : nil
+        return if existing_path.nil? || existing_path == full_path
+
+        raise NameCollision, "Typelizer::Jbuilder: type name #{type_name.inspect} is declared by " \
+          "both #{existing_path} and #{full_path} — rename one of them with `typelize_as`"
+      end
 
       def auto_register_partial(absolute_path, views_root)
         return nil unless File.exist?(absolute_path) && File.basename(absolute_path).start_with?("_")

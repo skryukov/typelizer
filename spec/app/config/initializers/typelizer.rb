@@ -3,14 +3,16 @@ Typelizer.configure do |c|
     Rails.root.join("app", "serializers")
   ]
 
+  # Jbuilder template discovery roots. No discovery happens at boot (in any
+  # environment): templates are re-discovered at the start of every
+  # generation cycle (see Typelizer::Jbuilder.refresh!).
+  c.jbuilder_views = [
+    Rails.root.join("app", "views")
+  ]
+
   c.types_global = %w[Array Date Record]
 
   c.comments = true
-end
-
-# Auto-discover Jbuilder templates for type generation.
-Rails.application.config.after_initialize do
-  Typelizer::Jbuilder.discover(Rails.root.join("app/views").to_s)
 end
 
 # Scoped camel_case writer — exercises `properties_transformer` across

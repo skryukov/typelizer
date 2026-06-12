@@ -4,13 +4,14 @@ RSpec.describe Typelizer::Jbuilder do
   describe ".derive_type_name (via public template registration)" do
     let(:views_root) { Dir.mktmpdir("typelizer-jbuilder-spec") }
 
+    # Spec type names (`Post`, `User`, …) collide with the spec app's
+    # templates, and colliding registrations now raise `NameCollision` —
+    # start every example from a clean registry. No rehydration needed
+    # afterwards: every generation cycle re-discovers from `jbuilder_views`.
+    before { Typelizer::Jbuilder.reset! }
+
     after do
-      # `template` mutates `Templates::Name` classes by name, and spec type
-      # names (`Post`, `User`, …) collide with the spec app's discovered
-      # templates. Reset the whole registry and rehydrate from the spec app
-      # so other specs still see the shared fixtures.
       Typelizer::Jbuilder.reset!
-      Typelizer::Jbuilder.discover(Rails.root.join("app/views").to_s)
       FileUtils.rm_rf(views_root)
     end
 
@@ -112,9 +113,10 @@ RSpec.describe Typelizer::Jbuilder do
   describe "intersection types from composed partials" do
     let(:views_root) { Dir.mktmpdir("typelizer-jbuilder-intersect-spec") }
 
+    before { Typelizer::Jbuilder.reset! }
+
     after do
       Typelizer::Jbuilder.reset!
-      Typelizer::Jbuilder.discover(Rails.root.join("app/views").to_s)
       FileUtils.rm_rf(views_root)
     end
 
@@ -211,9 +213,10 @@ RSpec.describe Typelizer::Jbuilder do
   describe "typelize: assertions (user_asserted)" do
     let(:views_root) { Dir.mktmpdir("typelizer-jbuilder-asserted-spec") }
 
+    before { Typelizer::Jbuilder.reset! }
+
     after do
       Typelizer::Jbuilder.reset!
-      Typelizer::Jbuilder.discover(Rails.root.join("app/views").to_s)
       FileUtils.rm_rf(views_root)
     end
 
@@ -269,8 +272,9 @@ RSpec.describe Typelizer::Jbuilder do
 
       expect(render_interface(klass)).to include("score: string")
 
+      # No cache reset needed: the parse cache is content-keyed, so the
+      # edited source re-parses on the next walk.
       File.write(path, "json.score 1\n")
-      Typelizer::SerializerPlugins::Jbuilder::Walker.reset_cache!
 
       expect(render_interface(klass)).to include("score: number")
     end
@@ -300,9 +304,10 @@ RSpec.describe Typelizer::Jbuilder do
   describe "walker correctness" do
     let(:views_root) { Dir.mktmpdir("typelizer-jbuilder-walker-spec") }
 
+    before { Typelizer::Jbuilder.reset! }
+
     after do
       Typelizer::Jbuilder.reset!
-      Typelizer::Jbuilder.discover(Rails.root.join("app/views").to_s)
       FileUtils.rm_rf(views_root)
     end
 

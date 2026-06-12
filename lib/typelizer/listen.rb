@@ -34,6 +34,8 @@ module Typelizer
           RouteGenerator.call if run_on_start
           start_route_listener(options)
         end
+
+        start_jbuilder_listener(options) if Typelizer::Jbuilder.enabled?
       end
 
       private
@@ -84,6 +86,26 @@ module Typelizer
         ::Listen.to(config_dir.to_s, only: /routes/, **options) do |changed, added, removed|
           debug("Routes changed: #{(changed + added + removed).map { |f| relative_path(f) }.inspect}")
           RouteGenerator.call
+        end.start
+      end
+
+      # Second listener for jbuilder templates (mirrors `start_route_listener`).
+      # The configured `jbuilder_views` roots get their own watcher rather
+      # than joining `Typelizer.dirs`, whose `**/*.rb` require semantics
+      # don't fit view templates. Triggers the same reload path as the
+      # serializer listener; the actual re-discovery happens inside the next
+      # generation cycle, behind GenerationLock.
+      def start_jbuilder_listener(options)
+        dirs = Array(Typelizer.configuration.jbuilder_views)
+          .map { |dir| File.expand_path(dir.to_s) }
+          .select { |dir| File.directory?(dir) }
+        return if dirs.empty?
+
+        debug("Watching #{dirs.map { |dir| relative_path(dir) }.inspect} for jbuilder template changes")
+
+        ::Listen.to(*dirs, only: /\.jbuilder\z/, **options) do |changed, added, removed|
+          debug("Jbuilder templates changed: #{(changed + added + removed).map { |f| relative_path(f) }.inspect}")
+          @block.call
         end.start
       end
     end

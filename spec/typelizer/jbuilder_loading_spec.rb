@@ -75,12 +75,11 @@ RSpec.describe "Jbuilder plugin loading" do
       expect(::JbuilderTemplate.ancestors).to include(Typelizer::Jbuilder::SetExt)
     end
 
-    it "is not enabled in the dummy app (no jbuilder discovery config, no override)" do
-      expect(Typelizer::Jbuilder.enabled?).to be(false)
+    it "is enabled in the dummy app via the jbuilder_views discovery config" do
+      expect(Typelizer::Jbuilder.enabled?).to be(true)
     end
 
-    it "renders a typelize-annotated template to clean JSON without the plugin enabled" do
-      expect(Typelizer::Jbuilder.enabled?).to be(false)
+    it "renders a typelize-annotated template to clean JSON without activating the walker" do
       expect(Typelizer::SerializerPlugins::Jbuilder).not_to receive(:activate_walker!)
 
       json = renderer.render(template: "annotated", formats: [:json])

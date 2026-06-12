@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "generation_lock"
+
 module Typelizer
   class TypeGenerationError < StandardError; end
 
@@ -10,14 +12,16 @@ module Typelizer
 
     def initialize(app)
       @app = app
-      @mutex = Mutex.new
       @pending = true
       self.class.instance = self
     end
 
     def call(env)
       if @pending
-        @mutex.synchronize do
+        # Shared (reentrant) lock instead of a per-instance mutex: jbuilder
+        # re-discovery and listen-triggered cycles synchronize on the same
+        # lock, so generation never interleaves with a destructive `reset!`.
+        GenerationLock.synchronize do
           generate! if @pending
         end
       end

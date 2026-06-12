@@ -63,9 +63,13 @@ RSpec.describe Typelizer do
     it "returns empty array when no serializers are registered" do
       original = Typelizer.base_classes.dup
       Typelizer.send(:base_classes=, Set.new)
+      # Generation cycles re-discover jbuilder templates (which would
+      # re-register serializers) — disable the plugin for this premise.
+      Typelizer.configuration.jbuilder_enabled = false
 
       expect(Typelizer.interfaces).to eq([])
     ensure
+      Typelizer.configuration.jbuilder_enabled = nil
       Typelizer.send(:base_classes=, original)
     end
 

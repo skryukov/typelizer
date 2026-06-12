@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 # Loaded lazily via `Typelizer::SerializerPlugins::Jbuilder.activate_walker!`
 # — never as part of Typelizer's eager require chain. Everything that
 # references `Prism::*` lives here so that requiring "typelizer" stays safe
@@ -15,13 +17,23 @@ module Typelizer
         class << self
           attr_reader :parse_cache
 
+          # Content-keyed (path + source digest, matching the writer's
+          # fingerprint-digest house style): the per-cycle `reset_cache!`
+          # makes within-cycle reuse safe, and the digest keeps long-lived
+          # processes honest — explicit-discover flows that never reset
+          # still re-parse an edited template automatically. Cascade
+          # invalidation for composed partials needs nothing extra: a
+          # partial's properties are re-walked through its parent's
+          # Interface every cycle, so its fresh parse flows upward.
           def parsed_tree(path)
-            parse_cache[path] ||= Prism.parse_file(path).value
+            parse_cache[[path, Digest::SHA256.file(path).hexdigest]] ||= Prism.parse_file(path).value
           end
 
           # Reads top-level `typelize_as "Name"` and `typelize_from Model`
           # declarations without doing the full property walk. Used during
           # `discover` so the type name is fixed at registration time.
+          # `:model` is the constant's NAME — resolution happens lazily at
+          # generation time (see `Typelizer::Jbuilder.template`).
           def metadata_for(path)
             result = {type_name: nil, model: nil}
             return result unless File.exist?(path)
@@ -34,7 +46,7 @@ module Typelizer
               when :typelize_as
                 result[:type_name] ||= literal_string(arg)
               when :typelize_from
-                result[:model] ||= literal_constant(arg)
+                result[:model] ||= constant_path(arg)
               end
             end
             result
@@ -56,13 +68,8 @@ module Typelizer
             end
           end
 
-          def literal_constant(node)
-            return nil unless node
-            const_path = constant_path(node)
-            const_path&.safe_constantize
-          end
-
           def constant_path(node)
+            return nil unless node
             case node
             when Prism::ConstantReadNode then node.name.to_s
             when Prism::ConstantPathNode
