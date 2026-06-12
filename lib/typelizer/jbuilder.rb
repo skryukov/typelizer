@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "error"
+
 module Typelizer
   module Jbuilder
     # Two templates claiming the same type name (via `typelize_as` or

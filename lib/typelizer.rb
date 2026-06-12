@@ -1,11 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "typelizer/version"
-
-module Typelizer
-  class Error < StandardError; end
-end
-
+require_relative "typelizer/error"
 require_relative "typelizer/generation_lock"
 require_relative "typelizer/union_type_sorter"
 require_relative "typelizer/shape"
