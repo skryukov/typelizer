@@ -21,23 +21,44 @@ module Typelizer
         # warning should fire once per template+prop per cycle, so the set
         # lives here and is cleared together with the parse cache.
         @warned_unknowns = Set.new
+        # Template paths whose property walk is currently on the stack.
+        # Guards cyclic top-level `json.partial!` merges (A merges B merges
+        # A) — see `handle_partial_bang` — which would otherwise recurse
+        # until SystemStackError.
+        @walks_in_progress = Set.new
         class << self
-          attr_reader :parse_cache, :warned_unknowns
+          attr_reader :parse_cache, :warned_unknowns, :walks_in_progress
 
-          # Content-keyed (path + source digest, matching the writer's
-          # fingerprint-digest house style): the per-cycle `reset_cache!`
-          # makes within-cycle reuse safe, and the digest keeps long-lived
-          # processes honest — explicit-discover flows that never reset
-          # still re-parse an edited template automatically (the stale
-          # entry is evicted so the cache never accretes old parses).
+          # Path-keyed map of `{digest:, tree:}` (digest matching the
+          # writer's fingerprint-digest house style): the per-cycle
+          # `reset_cache!` makes within-cycle reuse safe, and the digest
+          # keeps long-lived processes honest — explicit-discover flows that
+          # never reset still re-parse an edited template automatically (the
+          # stale entry is replaced so the cache never accretes old parses).
           # Cascade invalidation for composed partials needs nothing extra:
           # a partial's properties are re-walked through its parent's
           # Interface every cycle, so its fresh parse flows upward.
+          #
+          # The source is read ONCE and both digested and parsed from that
+          # string — no read/parse race with concurrent file edits — and an
+          # unreadable template surfaces as a named `Typelizer::Error`
+          # instead of a bare Errno (metadata extraction still swallows it
+          # via `metadata_for`'s rescue; the property-walk path raises).
           def parsed_tree(path)
-            digest = Digest::SHA256.file(path).hexdigest
-            key = [path, digest]
-            parse_cache.delete_if { |(cached_path, cached_digest), _| cached_path == path && cached_digest != digest }
-            parse_cache[key] ||= Prism.parse_file(path).value
+            content = begin
+              File.read(path)
+            rescue SystemCallError => e
+              raise Typelizer::Error,
+                "Typelizer::Jbuilder: could not read template #{path} (#{e.class}: #{e.message})"
+            end
+
+            digest = Digest::SHA256.hexdigest(content)
+            entry = parse_cache[path]
+            return entry[:tree] if entry && entry[:digest] == digest
+
+            tree = Prism.parse(content).value
+            parse_cache[path] = {digest: digest, tree: tree}
+            tree
           end
 
           # The single source of truth for "the walker couldn't type this":
@@ -77,6 +98,7 @@ module Typelizer
           def reset_cache!
             @parse_cache = {}
             @warned_unknowns = Set.new
+            @walks_in_progress = Set.new
           end
 
           private
@@ -205,11 +227,16 @@ module Typelizer
 
         def parsed
           @parsed ||= begin
-            stmts = self.class.parsed_tree(@path).statements.body
-            {
-              root_is_array: detect_root_array(stmts),
-              properties: extract(stmts, optional: false)
-            }
+            self.class.walks_in_progress.add(@path)
+            begin
+              stmts = self.class.parsed_tree(@path).statements.body
+              {
+                root_is_array: detect_root_array(stmts),
+                properties: extract(stmts, optional: false)
+              }
+            ensure
+              self.class.walks_in_progress.delete(@path)
+            end
           end
         end
 
@@ -245,12 +272,51 @@ module Typelizer
         end
 
         def extract(stmts, optional:)
-          stmts.flat_map { |n| extract_one(n, optional: optional) }.compact
+          merge_same_level(stmts.flat_map { |n| extract_one(n, optional: optional) }.compact)
         end
+
+        # Same-name properties emitted at one statement-list level — e.g. an
+        # unconditional `json.foo` plus a conditional re-emit of `foo`, or an
+        # own prop alongside a merged partial's — collapse into a single
+        # property instead of duplicate TS keys (`foo: string; foo?: number`).
+        # Mirrors `merge_branches`' widening semantics: the key stays
+        # required if ANY occurrence is unconditionally present, nullability
+        # widens across occurrences, and the type is first-wins unless an
+        # occurrence carries a `typelize:` assertion.
+        def merge_same_level(props)
+          return props if props.map { |p| p.name.to_s }.uniq.size == props.size
+
+          props.group_by { |p| p.name.to_s }.values.map do |occurrences|
+            next occurrences.first if occurrences.size == 1
+
+            base = occurrences.find(&:user_asserted) || occurrences.first
+            base.with(
+              optional: occurrences.all?(&:optional),
+              nullable: widened_nullable(base, occurrences)
+            )
+          end
+        end
+
+        # Control-flow forms the walker does not model: their bodies are
+        # never walked (documented v1 limitation), so any json.* calls inside
+        # would be dropped — warn instead of staying silent, per the
+        # warn-on-drop contract.
+        UNWALKED_CONTROL_FLOW = {
+          Prism::CaseNode => "case",
+          Prism::CaseMatchNode => "case",
+          Prism::WhileNode => "while",
+          Prism::UntilNode => "until"
+        }.freeze
+        private_constant :UNWALKED_CONTROL_FLOW
 
         def extract_one(node, optional:)
           if node.is_a?(Prism::IfNode) || node.is_a?(Prism::UnlessNode)
             return handle_conditional(node)
+          end
+
+          if (keyword = UNWALKED_CONTROL_FLOW[node.class])
+            warn_skipped(node, "a `#{keyword}` body containing json properties") if contains_json_call?(node)
+            return []
           end
 
           return unless json_call?(node)
@@ -301,14 +367,30 @@ module Typelizer
             value = resolver_value_expression(value)
           end
 
-          return property_from_override(name, kwargs[:typelize], optional: optional) if kwargs[:typelize]
+          if (override = kwargs[:typelize])
+            return property_from_override(name, override, optional: optional) if literal_override?(override)
+            # A non-literal `typelize:` (constant, variable, method call)
+            # cannot be honored statically — fall through to normal
+            # inference instead of stringifying a Prism node.
+            log_warning(node, "`typelize:` with a non-literal value cannot be honored; " \
+              "falling back to type inference — use a literal type (e.g. `typelize: \"string\"`)")
+          end
 
-          if node.block
+          if node.block.is_a?(Prism::BlockNode)
             return handle_prop_with_block(node, name: name, optional: optional)
           end
 
           if (partial = kwargs[:partial])
-            return prop_from_partial(name, args, partial, optional: optional)
+            if partial.is_a?(String)
+              return prop_from_partial(name, args, partial, optional: optional)
+            end
+            # Mirrors `handle_partial_bang`: a dynamic template reference
+            # can't be resolved statically, so the property itself survives
+            # as `unknown` (or a name hint) instead of crashing the walk.
+            log_warning(node, "`partial:` with a dynamic template reference cannot be resolved " \
+              "statically — the property falls back to name-hint/`unknown` typing; " \
+              "use `typelize:` to pin a type")
+            return build_property(name, type: guess_from_name(name), optional: optional)
           end
 
           if (collection_props = collection_attr_shortcut(args))
@@ -316,8 +398,7 @@ module Typelizer
           end
 
           if value
-            inferred = infer_type(value, name: name)
-            return build_property(name, type: inferred, optional: optional, nullable: inferred == "null")
+            return build_property(name, type: infer_type(value, name: name), optional: optional)
           end
 
           if resolver
@@ -348,9 +429,24 @@ module Typelizer
         end
 
         # The final expression of the resolver's block, if any — the value
-        # the resolver will produce at runtime.
+        # the resolver will produce at runtime. Block-argument forms
+        # (`JbuilderInertia.defer(&blk)`) carry no statically visible body.
         def resolver_value_expression(node)
-          node.block&.body&.body&.last
+          block = node.block
+          block.body&.body&.last if block.is_a?(Prism::BlockNode)
+        end
+
+        # `typelize:` is only honored for literal values — a String/Symbol
+        # type declaration, or the hash/array forms with literal leaves.
+        # Anything that survives `literal_value` as a Prism node (constants,
+        # variables, method calls) is dynamic and cannot be honored.
+        def literal_override?(value)
+          case value
+          when String, Symbol, Integer, Float, true, false, nil then true
+          when Array then value.all? { |v| literal_override?(v) }
+          when Hash then value.values.all? { |v| literal_override?(v) }
+          else false
+          end
         end
 
         # Routes `typelize:` overrides through TypeParser so shortcuts
@@ -504,6 +600,17 @@ module Typelizer
             return []
           end
 
+          # Merging a partial pulls in ITS properties, which walks ITS
+          # template — mutually-merging templates (A merges B merges A)
+          # would recurse forever. Break the cycle at the re-entrant edge.
+          partial_path = partial_class._template_path
+          if self.class.walks_in_progress.include?(partial_path)
+            log_warning(node, "cyclic `json.partial!` merge detected " \
+              "(#{partial_path} is already being walked while merging into #{@path}); " \
+              "skipping this merge to break the cycle — no properties merged")
+            return []
+          end
+
           @context.interface_for(partial_class).properties
         end
 
@@ -523,7 +630,7 @@ module Typelizer
         # (documented v1 limitation), so they warn instead of silently
         # producing an object type for an array value.
         def handle_array_bang(node, optional:)
-          if node.block
+          if node.block.is_a?(Prism::BlockNode)
             shape_body(node.block)
           elsif (args = positional_args(node)).size >= 2
             log_warning(node, "`json.array!` without a block emits its attributes as an object shape, " \
@@ -536,7 +643,7 @@ module Typelizer
         end
 
         def handle_passthrough(node, optional:)
-          return [] unless node.block
+          return [] unless node.block.is_a?(Prism::BlockNode)
           extract(node.block.body&.body || [], optional: optional)
         end
 
@@ -591,15 +698,30 @@ module Typelizer
         # beats inferred guesses (and carries `user_asserted` through the
         # merge, so model inference can't clobber the merged property).
         def merge_branches(branch_props, fully_covered:)
-          names = branch_props.flat_map { |props| props.map(&:name) }.uniq
+          indexed = branch_props.map { |props| props.to_h { |p| [p.name.to_s, p] } }
+          names = branch_props.flat_map { |props| props.map { |p| p.name.to_s } }.uniq
           names.map do |name|
-            occurrences = branch_props.map { |props| props.find { |p| p.name == name } }
+            occurrences = indexed.map { |idx| idx[name] }
             present = occurrences.compact
             base = present.find(&:user_asserted) || present.first
-            nullable = present.any?(&:nullable)
             optional = present.any?(&:optional) || !(fully_covered && occurrences.all?)
-            base.with(optional: optional, nullable: nullable)
+            base.with(optional: optional, nullable: widened_nullable(base, present))
           end
+        end
+
+        # Nullability widening across merged occurrences of one property:
+        # explicit `nullable` flags widen, and so does a branch that emits a
+        # bare `nil` literal (typed `"null"`) when the surviving base type is
+        # something else — `string` + `null` → `string | null`. When the base
+        # ITSELF is the `null` literal it already renders as `null`, so no
+        # extra `| null` is added (that would render `null | null`).
+        def widened_nullable(base, occurrences)
+          occurrences.any?(&:nullable) ||
+            (!null_type?(base) && occurrences.any? { |p| null_type?(p) })
+        end
+
+        def null_type?(prop)
+          (prop.type.is_a?(String) || prop.type.is_a?(Symbol)) && prop.type.to_s == "null"
         end
 
         # With an inferable (AR) model the type stays nil so model inference
@@ -674,6 +796,11 @@ module Typelizer
             node.receiver.receiver.nil?
         end
 
+        def contains_json_call?(node)
+          return true if json_call?(node)
+          node.compact_child_nodes.any? { |child| contains_json_call?(child) }
+        end
+
         def positional_args(node)
           (node.arguments&.arguments || []).reject { |a| a.is_a?(Prism::KeywordHashNode) }
         end
@@ -687,6 +814,9 @@ module Typelizer
           case node
           when Prism::StringNode then node.unescaped
           when Prism::SymbolNode then node.unescaped.to_sym
+          when Prism::IntegerNode, Prism::FloatNode then node.value
+          when Prism::TrueNode then true
+          when Prism::FalseNode then false
           when Prism::ArrayNode then node.elements.map { |el| literal_value(el) }
           when Prism::HashNode then assoc_pairs(node.elements)
           else node

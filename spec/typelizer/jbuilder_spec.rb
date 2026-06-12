@@ -844,6 +844,236 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "dynamic `partial:` references" do
+      it "walks without crashing, warns, and falls back to unknown typing" do
+        write_template("misc/show.json.jbuilder", <<~'RUBY')
+          json.author @user, partial: "users/#{kind}", as: :user
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("dynamic template reference")
+        expect(logs).to include("typelize:")
+        expect(output).to include("author: unknown")
+      end
+    end
+
+    describe "dynamic `typelize:` values" do
+      it "ignores non-literal overrides with a warning and falls back to inference" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.flag true, typelize: SOME_TYPE
+          json.label label_value, typelize: type_var
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("misc/show.json.jbuilder:2")
+        expect(logs).to include("`typelize:` with a non-literal value")
+        expect(output).to include("flag: boolean")
+        expect(output).to include("label: unknown")
+        expect(output).not_to include("#<Prism")
+      end
+
+      it "produces identical output across two generation cycles (no node-inspect garbage)" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.flag true, typelize: SOME_TYPE
+        RUBY
+
+        first = second = nil
+        with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          first = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+          Typelizer::Jbuilder.reset!
+          Typelizer::Jbuilder.discover(views_root)
+          second = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(first).to eq(second)
+      end
+    end
+
+    describe "same-name properties at one statement level" do
+      it "merges an unconditional and a conditional emit into a single required key (first type wins)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.foo "a"
+
+          if @extended
+            json.foo 1
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output.scan(/\bfoo\??:/).size).to eq(1)
+        expect(output).to include("foo: string")
+        expect(output).not_to include("foo?:")
+      end
+
+      it "merges duplicates inside a block shape at that level" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.stats do
+            json.count 1
+            if @extended
+              json.count 2
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output.scan(/\bcount\??:/).size).to eq(1)
+        expect(output).to include("count: number")
+      end
+    end
+
+    describe "unreadable templates" do
+      it "raises Typelizer::Error naming the template path on the property-walk path" do
+        walker = Typelizer::SerializerPlugins::Jbuilder.activate_walker!
+        missing = File.join(views_root, "nope/missing.json.jbuilder")
+
+        expect { walker.parsed_tree(missing) }
+          .to raise_error(Typelizer::Error, /nope\/missing\.json\.jbuilder/)
+      end
+    end
+
+    describe "nil literals" do
+      it "types `json.note nil` as `null` exactly once" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.note nil
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("note: null;")
+        expect(output).not_to include("null | null")
+      end
+
+      it "still widens a nil-emitting branch into `| null`" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @full
+            json.summary "text"
+          else
+            json.summary nil
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("summary: string | null")
+      end
+    end
+
+    describe "cyclic `json.partial!` merges" do
+      it "breaks the cycle with a warning instead of overflowing the stack" do
+        write_template("cycles/_a.json.jbuilder", <<~RUBY)
+          json.a_field 1
+          json.partial! "cycles/b"
+        RUBY
+        write_template("cycles/_b.json.jbuilder", <<~RUBY)
+          json.b_field 2
+          json.partial! "cycles/a"
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::CyclesA)
+        end
+
+        expect(logs).to include("cyclic `json.partial!` merge")
+        expect(logs).to include("_a.json.jbuilder")
+        expect(logs).to include("_b.json.jbuilder")
+        expect(output).to include("a_field: number")
+        expect(output).to include("b_field: number")
+      end
+    end
+
+    describe "block-argument forms" do
+      it "does not crash on `json.items @items, &renderer`" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items @items, &renderer
+        RUBY
+
+        output = nil
+        with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("items: unknown")
+      end
+    end
+
+    describe "unwalked control flow (case/while)" do
+      it "warns when a case/when body contains json properties and emits nothing for it" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.ok true
+
+          case @kind
+          when "a"
+            json.foo 1
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("things/show.json.jbuilder:3")
+        expect(logs).to include("`case` body")
+        expect(logs).to include("typelize:")
+        expect(output).to include("ok: boolean")
+        expect(output).not_to include("foo")
+      end
+
+      it "warns when a while body contains json properties" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          while @more
+            json.bar 1
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("`while` body")
+      end
+
+      it "stays silent for control flow without json calls" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          case @kind
+          when "a" then helper_call
+          end
+          json.ok true
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).not_to include("`case` body")
+      end
+    end
+
     describe "discovery ordering" do
       it "registers templates in sorted path order regardless of FS glob order" do
         write_template("bbb/index.json.jbuilder", "json.x 1\n")

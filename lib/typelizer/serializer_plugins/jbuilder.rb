@@ -85,13 +85,19 @@ module Typelizer
       private
 
       def warn_unknown_property(prop)
-        # Recurse into inline shapes first (own type and trailing
-        # intersection members) — nested props record their own lines.
-        ([prop.type] + Array(prop.additional_types)).grep(Shape).each do |shape|
-          shape.properties.each { |sub| warn_unknown_property(sub) }
+        unless final_unknown?(prop)
+          # Recurse into inline shapes (own type and trailing intersection
+          # members) — nested props record their own lines. Checked AFTER the
+          # cheap unknown test so the common typed-leaf case allocates
+          # nothing; an unknown-typed prop never carries Shape members
+          # (shapes/intersections are built with Shape/Interface types), so
+          # skipping recursion for it drops no coverage.
+          prop.type.properties.each { |sub| warn_unknown_property(sub) } if prop.type.is_a?(Shape)
+          prop.additional_types&.each do |member|
+            member.properties.each { |sub| warn_unknown_property(sub) } if member.is_a?(Shape)
+          end
+          return
         end
-
-        return unless final_unknown?(prop)
 
         # No recorded line means the property didn't originate from this
         # template's walk (e.g. merged in from a top-level `json.partial!` —
