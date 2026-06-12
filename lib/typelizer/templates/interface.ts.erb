@@ -2,6 +2,7 @@
 import type {<%= interface.imports.join(", ") %>} from <%= interface.quote(interface.config.types_import_path) %>
 <% end -%>
 
+<% unless interface.root_array_element_name && interface.properties_to_print.empty? -%>
 type <%= interface.name %><%= "Data" if interface.wrapped? %> = <%=
 render("inheritance.ts.erb", interface: interface).strip if interface.parent_interface
 -%>
@@ -12,7 +13,7 @@ render("inheritance.ts.erb", interface: interface).strip if interface.parent_int
 <%= indent(property.render(sort_order: interface.config.properties_sort_order, prefer_double_quotes: interface.config.prefer_double_quotes)) %>;
 <% end -%>
 }
-<% end %><% if interface.root_key %>
+<% end %><% end %><% if interface.root_key %>
 type <%= interface.name %> = {
 <%= indent(interface.root_key) %>: <%= interface.name %>Data;
 <% interface.meta_fields&.each do |property| -%>
@@ -20,7 +21,7 @@ type <%= interface.name %> = {
 <% end -%>
 }
 <% elsif interface.root_is_array -%>
-type <%= interface.name %> = Array<<%= interface.name %>Data>;
+type <%= interface.name %> = Array<<%= interface.root_array_element_name || "#{interface.name}Data" %>>;
 <% end -%>
 <% interface.trait_interfaces.each do |trait| -%>
 

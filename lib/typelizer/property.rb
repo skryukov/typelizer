@@ -54,7 +54,7 @@ module Typelizer
       # Add nullable at the end (null should always be last in sorted output)
       type_str = "#{type_str} | null" if nullable
 
-      "#{name}#{"?" if optional}: #{type_str}"
+      "#{js_key(name.to_s, prefer_double_quotes)}#{"?" if optional}: #{type_str}"
     end
 
     def fingerprint
@@ -120,6 +120,10 @@ module Typelizer
       prefer_double_quotes ? "\"#{str}\"" : "'#{str}'"
     end
 
+    # A name that isn't a valid JS identifier (e.g. "kebab-key") must be
+    # quoted wherever it appears as an object key — both in rendered TS
+    # property positions (`render`) and in enum runtime constants. Normal
+    # identifier names pass through byte-identical.
     def js_key(str, prefer_double_quotes)
       str.match?(/\A[A-Za-z_$][\w$]*\z/) ? str : quote_string(str, prefer_double_quotes)
     end

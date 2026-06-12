@@ -63,6 +63,8 @@ Path segments that wouldn't form a valid type name are sanitized deterministical
 
 Two templates claiming the same type name raise a `Typelizer::Jbuilder::NameCollision` error at generation time, naming both template paths. Rename one of them with `typelize_as`.
 
+Property names need no sanitizing — TypeScript allows any string as a quoted key. A name that isn't a valid JS identifier (only possible via a literal `json.set!` key, e.g. `json.set! "kebab-key", value`) renders quoted (`'kebab-key': string;`, or double-quoted with `prefer_double_quotes`); normal names stay bare and byte-identical.
+
 ### Render safety vs. plugin enablement
 
 The plugin has two independent halves:
@@ -171,6 +173,8 @@ The `typelize:` kwarg always wins — it's scoped to that exact property at that
 ## Partials
 
 Partials referenced via `json.partial!` or the `partial:` kwarg are resolved to their own generated interfaces. Resolution follows Rails partial-lookup semantics: a bare name (`json.partial! "widget"`) resolves against the current template's directory first; a prefixed name (`"posts/post"`) resolves against the views root. Both the positional form and the kwargs-only form (`json.partial! partial: "posts/post", collection: @posts, as: :post`) are supported.
+
+With multiple discovery roots (several `jbuilder_views` entries or `discover` calls — e.g. a core root plus an overlay root that reference each other's partials), resolution mirrors Rails' view-path stack: after the template's own root misses, every other registered root is tried in registration order, and the first root containing the partial wins. A cross-root partial registers under the root it was found in, so its type name derives from *that* root's layout. Single-root apps are unaffected.
 
 Merging a partial at the template root (properties flow into the current type):
 
@@ -285,6 +289,56 @@ Generates:
 }
 ```
 
+### Literal arrays with `json.child!`
+
+A block whose body builds elements with `json.child!` is jbuilder's literal-array form — the property becomes an **array**. The element type merges every child's shape with the same widening rules as conditional branches: keys present in every child stay required, the rest become optional (and nullability widens across children):
+
+```ruby
+# A PWA manifest's icon list
+json.icons do
+  json.child! do
+    json.src image_path("icon-192.png")
+    json.type "image/png"
+    json.sizes "192x192"
+  end
+  json.child! do
+    json.src image_path("icon-512.png")
+    json.type "image/png"
+    json.sizes "512x512"
+    json.purpose "maskable"
+  end
+end
+```
+
+Generates:
+
+```typescript
+{
+  icons: Array<{
+    src: unknown;
+    type: string;
+    sizes: string;
+    purpose?: string;
+  }>;
+}
+```
+
+Two caveats:
+
+- **Mixed content**: putting `json.child!` calls and named properties in one block renders both into the same value at runtime — a shape TypeScript can't express on one key. The walker types the array elements only, drops the named properties from the type, and warns; use `typelize:` to pin the full type.
+- **No enclosing property**: `json.child!` outside a `json.<name>` block (e.g. at the template root) cannot be statically typed and is skipped with a warning.
+
+### Literal `json.set!` keys
+
+`json.set!` with a literal String or Symbol key is statically known and flows through normal property typing — value, block, `partial:`, and attribute-shortcut forms all work, exactly as if the key were a method call. String keys exist precisely for names that aren't valid Ruby method names; such names render quoted (see [Type names](#type-names)):
+
+```ruby
+json.set! "kebab-key", "value"   # → 'kebab-key': string;
+json.set! :score, 42             # → score: number;
+```
+
+Only a *dynamic* key (`json.set! some_variable, value`) is skipped with a warning.
+
 ## Composed partials: named intersections {#composed-partials-named-intersections}
 
 A block whose body composes partials emits a **named intersection** instead of an inline shape. Every top-level `json.partial!` in the block with a string-literal reference (no `collection:` kwarg, resolvable template) becomes a named imported interface; whatever else the block contains — own props, conditionals, dynamic or collection partials — trails the intersection as an inline shape:
@@ -379,7 +433,7 @@ type JbuilderFeaturesRootArrayData = {
 type JbuilderFeaturesRootArray = Array<JbuilderFeaturesRootArrayData>;
 ```
 
-A kwargs-only collection partial at the template root also becomes a root array:
+A kwargs-only collection partial at the template root also becomes a root array (the partial's properties are inlined into the `...Data` alias):
 
 ```ruby
 # posts/index.json.jbuilder
@@ -387,7 +441,18 @@ json.partial! partial: "posts/post", collection: @posts, as: :post
 # → type PostsIndex = Array<PostsIndexData>
 ```
 
-Two forms can't participate in root-array detection and log a warning instead of silently mistyping: a blockless `json.array!` (its attributes are emitted as an object shape — use the block form or `typelize:`), and a root array nested inside a conditional (only top-level statements are inspected; the root stays an object).
+A root `json.array!` with a `partial:` option instead references the partial's interface **by name** — the whole type becomes an array of the imported partial type, with no inline Data alias:
+
+```ruby
+# portals/index.json.jbuilder
+json.array! @portals, partial: "portals/portal", as: :portal
+# → import type {Portal} from '@/types'
+#   type PortalsIndex = Array<Portal>;
+```
+
+A dynamic `partial:` value keeps the dynamic-reference warning (the root stays an object); an unresolvable or empty partial warns and degrades to `Array<unknown>`.
+
+Two forms can't participate in root-array detection and log a warning instead of silently mistyping: a blockless `json.array!` without a `partial:` option (its attributes are emitted as an object shape — use the block form, the `partial:` option, or `typelize:`), and a root array nested inside a conditional (only top-level statements are inspected; the root stays an object).
 
 ## Conditional fields
 
@@ -496,11 +561,14 @@ The walker is static — it parses templates without running them. Constructs it
 | Form | Behavior | Workaround |
 |---|---|---|
 | `json.merge! some_hash` | Skipped + warning (runtime-only shape) | `typelize:` on the surrounding call |
-| `json.set! dynamic_key, value` | Skipped + warning (dynamic key) | `json.foo typelize: "Record<string, T>"` |
+| `json.set! dynamic_key, value` | Skipped + warning (dynamic key) | Literal key (fully typed) or `json.foo typelize: "Record<string, T>"` |
+| `json.child!` outside a `json.<name>` block (template root) | Skipped + warning | Wrap in a named block, or `typelize:` |
+| `json.child!` mixed with named props in one block | Array elements typed + warning (named props dropped from the type) | `typelize:` to pin the full type |
 | `json.partial! some_variable` | Skipped + warning (dynamic reference) | String-literal reference or `typelize:` |
 | `json.partial! "missing/thing"` | Skipped + warning (unresolvable template) | Fix the path |
 | Collection `partial!` inside a block | Typed as merged object + warning | `json.<name> @collection, partial: "...", as: ...` |
-| Blockless `json.array!` | Object shape + warning | Block form or `typelize:` |
+| Blockless `json.array!` (no `partial:`) | Object shape + warning | Block form, `partial:` option, or `typelize:` |
+| `json.array! @xs, partial: some_variable` | Skipped + warning (dynamic reference; root stays an object) | String-literal `partial:` or `typelize:` |
 | Root array inside a conditional | Object type + warning | `typelize:` |
 | `@items.each { json.set!(...) { ... } }` (iteration/expression wrapping json calls) | Skipped + warning (body never walked) | `json.array!` block form or `typelize:` |
 | `json.cache_collection! @items` (bare or with `partial:`) | Skipped + warning (runtime collection caching) | Collection `json.partial!` or `json.<name> @items, partial: "...", as: ...` |

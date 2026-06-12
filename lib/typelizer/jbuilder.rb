@@ -207,6 +207,7 @@ module Typelizer
         # a relative or Pathname root would otherwise double-prefix glob
         # results on re-expansion and crash the type-name derivation.
         views_root = File.expand_path(views_root.to_s)
+        track_views_root(views_root)
         full_path = File.expand_path(path, views_root)
         type_name = as ? validate_type_name!(as.to_s, full_path) : derive_type_name(full_path, views_root)
         check_name_collision!(type_name, full_path)
@@ -244,7 +245,11 @@ module Typelizer
       def discover(views_root = default_views_root, model_resolver: nil)
         # Same entry normalization as `template`: accept relative paths and
         # Pathnames without double-prefixing the glob results downstream.
+        # The root is tracked even when it currently holds no templates, so
+        # a partial added there mid-cycle is still reachable via fallback
+        # resolution.
         views_root = File.expand_path(views_root.to_s)
+        track_views_root(views_root)
         walker = SerializerPlugins::Jbuilder.activate_walker!
         # Sorted for deterministic registration order — stable `index.ts`
         # output and stable collision error messages across filesystems.
@@ -261,6 +266,16 @@ module Typelizer
 
       def registry
         @registry ||= {}
+      end
+
+      # Every views root seen by `template`/`discover` in the current
+      # discovery cycle, absolute, in registration order. Multi-root apps
+      # (e.g. a core/enterprise split registered as separate `discover`
+      # calls or `jbuilder_views` entries) reference partials across roots
+      # exactly like Rails' view-path stack — the partial resolver falls
+      # back to these siblings after the template's own root misses.
+      def views_roots
+        @views_roots ||= []
       end
 
       # One full re-discovery from a clean slate, run at the start of every
@@ -308,6 +323,7 @@ module Typelizer
       # must outlive a single generation cycle.
       def reset!
         registry.clear
+        views_roots.clear
         prefix = "#{Templates.name}::"
         Typelizer.base_classes.delete_if { |name| name.start_with?(prefix) }
         Templates.constants.each { |c| Templates.send(:remove_const, c) }
@@ -332,6 +348,12 @@ module Typelizer
       end
 
       private
+
+      # `views_root` must already be absolute (both call sites normalize at
+      # entry). Order-preserving dedup: first registration wins the slot.
+      def track_views_root(views_root)
+        views_roots << views_root unless views_roots.include?(views_root)
+      end
 
       def check_name_collision!(type_name, full_path)
         return unless Templates.const_defined?(type_name, false)

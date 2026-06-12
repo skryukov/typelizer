@@ -224,6 +224,13 @@ module Typelizer
           parsed.fetch(:root_is_array)
         end
 
+        # See `detect_root_array_element`: the partial's Interface, the
+        # string "unknown", or nil when the root array (if any) inlines its
+        # element shape.
+        def root_array_element
+          parsed.fetch(:root_array_element)
+        end
+
         # prop name → source line for properties whose walker-side type is
         # nil or "unknown". These are CANDIDATE unknowns: model inference
         # runs after the walk (`Interface#infer_types`) and can still rescue
@@ -242,8 +249,10 @@ module Typelizer
             self.class.walks_in_progress.add(@path)
             begin
               stmts = self.class.parsed_tree(@path).statements.body
+              root_is_array = detect_root_array(stmts)
               {
-                root_is_array: detect_root_array(stmts),
+                root_is_array: root_is_array,
+                root_array_element: root_is_array ? detect_root_array_element(stmts) : nil,
                 properties: extract(stmts, optional: false)
               }
             ensure
@@ -266,8 +275,40 @@ module Typelizer
         def root_array_call?(node)
           return false unless json_call?(node)
 
-          (node.name == :array! && node.block) ||
+          (node.name == :array! && (node.block || keyword_args(node)[:partial].is_a?(String))) ||
             (node.name == :partial! && keyword_args(node).key?(:collection))
+        end
+
+        # Blockless `json.array! @xs, partial: "xs/x", as: :x` at the
+        # template root: the array's element type is the partial's named
+        # interface, so the template renders `type X = Array<Element>;`
+        # (imported, no inline Data alias). Degradation mirrors
+        # `prop_from_partial`: an unresolvable partial warns and falls back
+        # to `Array<unknown>`; a resolvable-but-EMPTY partial would be
+        # dropped from generation (naming it would emit a dangling import —
+        # TS2305), so it also warns and falls back to `Array<unknown>`.
+        def detect_root_array_element(stmts)
+          node = stmts.find { |n| root_array_partial_call?(n) }
+          return nil unless node
+
+          partial_name = keyword_args(node)[:partial]
+          partial_class = @partial_resolver.call(partial_name)
+          unless partial_class
+            warn_skipped(node, "`json.array!` with partial \"#{partial_name}\" (template could not be resolved)")
+            return "unknown"
+          end
+
+          iface = @context.interface_for(partial_class)
+          if empty_partial_interface?(partial_class, iface)
+            warn_empty_partial(node, partial_name, "the root array element falls back to `unknown`")
+            return "unknown"
+          end
+          iface
+        end
+
+        def root_array_partial_call?(node)
+          json_call?(node) && node.name == :array! && node.block.nil? &&
+            keyword_args(node)[:partial].is_a?(String)
         end
 
         def warn_on_conditional_root_array(stmts)
@@ -349,8 +390,13 @@ module Typelizer
           when :merge!
             warn_skipped(node, "`json.merge!` (dynamic merge)")
             []
-          when :set!
-            warn_skipped(node, "`json.set!` (dynamic key)")
+          when :set! then handle_set_bang(node, optional: optional)
+          when :child!
+            # `json.child!` is only typeable as an element of an enclosing
+            # `json.<name> do ... end` array (handled by
+            # `handle_prop_with_block` before this walk reaches the call) —
+            # reaching it here means there is no property to attach it to.
+            warn_skipped(node, "`json.child!` at the template root (no enclosing `json.<name>` block)")
             []
           when :cache_collection!
             # Both forms (bare and `partial:`) render each collection member
@@ -384,9 +430,12 @@ module Typelizer
           prop
         end
 
-        def handle_prop(node, optional:)
-          name = node.name.to_s
-          args = positional_args(node)
+        # `name:`/`args:` overrides exist for `json.set!` with a literal key,
+        # which is `json.<key> ...` spelled differently: the property name
+        # comes from the first argument instead of the call name, and the
+        # remaining arguments behave exactly like a normal prop's (value,
+        # `partial:`, attribute shortcut, block).
+        def handle_prop(node, optional:, name: node.name.to_s, args: positional_args(node))
           kwargs = keyword_args(node)
           optional ||= kwargs.any? { |key, value| OPTIONAL_KWARG_RESOLVERS[key]&.call(value) }
 
@@ -442,6 +491,22 @@ module Typelizer
           end
 
           build_property(name, type: "unknown", optional: optional)
+        end
+
+        # `json.set!` with a literal String/Symbol key is statically known —
+        # it routes through the normal property flow under that key. String
+        # keys exist precisely for names that aren't valid Ruby method names
+        # (`json.set! "kebab-key", value`); `Property#render` quotes such
+        # names in the generated TS. Dynamic keys keep the warning.
+        def handle_set_bang(node, optional:)
+          args = positional_args(node)
+          key = args.first
+          unless key.is_a?(Prism::StringNode) || key.is_a?(Prism::SymbolNode)
+            warn_skipped(node, "`json.set!` (dynamic key)")
+            return []
+          end
+
+          note_unknown_candidate(node, handle_prop(node, optional: optional, name: key.unescaped, args: args.drop(1)))
         end
 
         def value_node_resolver(node)
@@ -521,6 +586,11 @@ module Typelizer
         # inference (column types, enums) keeps working inside nested blocks
         # via `infer_nested_property_types`.
         def handle_prop_with_block(node, name:, optional:)
+          children, non_children = partition_child_bangs(node.block)
+          if children.any?
+            return handle_child_array(node, name: name, optional: optional, children: children, rest: non_children)
+          end
+
           multi = !node.block.parameters.nil?
           interfaces, rest = partition_composed_partials(node.block, prop_name: name)
           if interfaces.any?
@@ -530,6 +600,34 @@ module Typelizer
             return build_property(name, type: interfaces.first, additional_types: additional, optional: optional, multi: multi)
           end
           build_property(name, type: Shape.new(properties: shape_body(node.block)), optional: optional, multi: multi)
+        end
+
+        # Splits a block body into [`json.child!` calls, other stmts].
+        def partition_child_bangs(block_node)
+          (block_node.body&.body || []).partition { |stmt| json_call?(stmt) && stmt.name == :child! }
+        end
+
+        # `json.<name> do ... end` whose body builds elements with
+        # `json.child!` is jbuilder's literal-array form — the property
+        # becomes an ARRAY whose element type merges every child's shape with
+        # the same widening semantics as conditional branches
+        # (`merge_branches` with full coverage): keys present in every child
+        # stay required, the rest go optional, and nullability widens across
+        # children. Named props mixed into the same block render into the
+        # array's parent object at runtime alongside the children — a shape
+        # TS cannot express on one key — so they are dropped from the type
+        # with a warning and only the array elements are typed.
+        def handle_child_array(node, name:, optional:, children:, rest:)
+          if rest.any?
+            log_warning(node, "mixing `json.child!` with named properties is not statically typeable; " \
+              "typing the array elements only — use `typelize:` to pin the full type")
+          end
+
+          branch_props = children.map do |child|
+            child.block.is_a?(Prism::BlockNode) ? shape_body(child.block) : []
+          end
+          merged = merge_branches(branch_props, fully_covered: true)
+          build_property(name, type: Shape.new(properties: merged), optional: optional, multi: true)
         end
 
         # Splits a block body into [named partial interfaces, other stmts].
@@ -731,12 +829,15 @@ module Typelizer
 
         # `json.array! @items do |item| ... end` — emit the element shape;
         # the root-array wrapping itself is handled via `root_is_array`.
-        # Blockless forms can't participate in the root-array detection
-        # (documented v1 limitation), so they warn instead of silently
-        # producing an object type for an array value.
+        # Blockless forms other than the root-level `partial:` one can't
+        # participate in the root-array detection (documented v1
+        # limitation), so they warn instead of silently producing an object
+        # type for an array value.
         def handle_array_bang(node, optional:)
           if node.block.is_a?(Prism::BlockNode)
             shape_body(node.block)
+          elsif keyword_args(node).key?(:partial)
+            handle_array_partial(node, keyword_args(node)[:partial])
           elsif (args = positional_args(node)).size >= 2
             log_warning(node, "`json.array!` without a block emits its attributes as an object shape, " \
               "not an array — use the block form or `typelize:` to pin an array type")
@@ -745,6 +846,23 @@ module Typelizer
             warn_skipped(node, "`json.array!` without a block or attribute list")
             []
           end
+        end
+
+        # Blockless `json.array!` with a `partial:` option renders the
+        # partial once per element. At the template root the element type is
+        # resolved by `detect_root_array_element` (the property walk itself
+        # emits nothing); anywhere else the construct can't be expressed in
+        # the generated type, and a dynamic reference can't be resolved at
+        # all — both warn instead of staying silent.
+        def handle_array_partial(node, partial)
+          unless partial.is_a?(String)
+            log_warning(node, "`partial:` with a dynamic template reference cannot be resolved " \
+              "statically — the array stays untyped; use `typelize:` to pin a type")
+            return []
+          end
+
+          warn_skipped(node, "`json.array!` with `partial:` inside a block") if @nested
+          []
         end
 
         def handle_passthrough(node, optional:)

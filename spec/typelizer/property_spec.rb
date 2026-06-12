@@ -82,6 +82,40 @@ RSpec.describe Typelizer::Property do
         expect(result).to eq("items?: Array<TypeA | TypeZ> | null")
       end
     end
+
+    describe "property name quoting" do
+      it "keeps valid JS identifier names byte-identical (bare)" do
+        %w[name _private $ref snake_case camelCase x1].each do |name|
+          prop = described_class.new(name: name, type: "string")
+          expect(prop.to_s).to eq("#{name}: string")
+        end
+      end
+
+      it "quotes names that are not valid JS identifiers" do
+        prop = described_class.new(name: "kebab-key", type: "string")
+        expect(prop.to_s).to eq("'kebab-key': string")
+      end
+
+      it "quotes digit-leading and spaced names" do
+        expect(described_class.new(name: "1st", type: "number").to_s).to eq("'1st': number")
+        expect(described_class.new(name: "two words", type: "string").to_s).to eq("'two words': string")
+      end
+
+      it "uses double quotes for the name when prefer_double_quotes is true" do
+        prop = described_class.new(name: "kebab-key", type: "string")
+        expect(prop.render(prefer_double_quotes: true)).to eq('"kebab-key": string')
+      end
+
+      it "places the optional marker outside the quotes" do
+        prop = described_class.new(name: "data-id", type: "string", optional: true)
+        expect(prop.to_s).to eq("'data-id'?: string")
+      end
+
+      it "renders a TS-parseable property for quoted names (quoted-name, optional marker, colon, type)" do
+        prop = described_class.new(name: "kebab-key", type: "string", optional: true, nullable: true)
+        expect(prop.to_s).to match(/\A(['"])kebab-key\1\?: string \| null\z/)
+      end
+    end
   end
 
   describe "Typelizer::OpenAPI.property_schema" do

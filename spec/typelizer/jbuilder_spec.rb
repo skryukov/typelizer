@@ -555,6 +555,160 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "`json.set!` with literal keys" do
+      it "types a literal string key and quotes the abnormal name in the output" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.set! "kebab-key", "value"
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(output).to include("'kebab-key': string;")
+        expect(logs).not_to include("json.set!")
+
+        # TS-validity: the rendered property line must be a parseable
+        # quoted-key member — <quote>name<same quote>(?)?: type;
+        prop_line = output.lines.find { |l| l.include?("kebab-key") }.strip
+        expect(prop_line).to match(/\A(['"])kebab-key\1\??: [^;]+;\z/)
+      end
+
+      it "treats a literal symbol key as a normal property" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.set! :score, 42
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(output).to include("score: number;")
+        expect(logs).not_to include("json.set!")
+      end
+
+      it "supports the block form under a literal string key" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.set! "meta-data" do
+            json.ok true
+          end
+        RUBY
+
+        output = nil
+        with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(output).to include("'meta-data': {")
+        expect(output).to include("ok: boolean;")
+      end
+    end
+
+    describe "`json.child!` array elements" do
+      it "types a block of child! calls as an array, widening keys missing from some children (manifest shape)" do
+        write_template("manifests/show.json.jbuilder", <<~RUBY)
+          json.icons do
+            json.child! do
+              json.src image_path("icon-192.png")
+              json.type "image/png"
+              json.sizes "192x192"
+            end
+            json.child! do
+              json.src image_path("icon-512.png")
+              json.type "image/png"
+              json.sizes "512x512"
+            end
+            json.child! do
+              json.src image_path("icon-512-maskable.png")
+              json.type "image/png"
+              json.sizes "512x512"
+              json.purpose "maskable"
+            end
+          end
+        RUBY
+
+        output = nil
+        with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ManifestsShow)
+        end
+
+        expect(output).to include("icons: Array<{")
+        expect(output).to include("src: unknown;")
+        expect(output).to include("type: string;")
+        expect(output).to include("sizes: string;")
+        expect(output).to include("purpose?: string;")
+      end
+
+      it "types a single child! block as an array of that shape with required keys" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.items do
+            json.child! do
+              json.id 1
+              json.label "x"
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+
+        expect(output).to include("items: Array<{")
+        expect(output).to include("id: number;")
+        expect(output).to include("label: string;")
+        expect(output).not_to include("id?:")
+        expect(output).not_to include("label?:")
+      end
+
+      it "warns on mixed content (child! + named props) and types only the array elements" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.things do
+            json.child! do
+              json.id 1
+            end
+            json.total 5
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("mixing `json.child!` with named properties")
+        expect(output).to include("things: Array<{")
+        expect(output).to include("id: number;")
+        expect(output).not_to include("total")
+      end
+
+      it "warns and skips child! at the template root" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.child! do
+            json.id 1
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("json.child!")
+        expect(logs).to include("template root")
+        expect(output).not_to include("id:")
+        expect(output).not_to include("child")
+      end
+    end
+
     describe "warnings for silently dropped constructs" do
       it "warns through the configured logger for `json.merge!` and skips the construct" do
         write_template("misc/show.json.jbuilder", <<~RUBY)
@@ -816,6 +970,99 @@ RSpec.describe Typelizer::Jbuilder do
         end
 
         expect(logs).to include("missing/thing")
+      end
+    end
+
+    describe "root `json.array!` with `partial:`" do
+      it "types the root as an array of the partial's named interface, with an import" do
+        write_template("portals/_portal.json.jbuilder", <<~RUBY)
+          json.id portal.id, typelize: "number"
+          json.slug portal.slug, typelize: "string"
+        RUBY
+        write_template("portals/index.json.jbuilder", <<~RUBY)
+          json.array! @portals, partial: "portals/portal", as: :portal
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::PortalsIndex)
+
+        expect(output).to include("type PortalsIndex = Array<Portal>;")
+        expect(output).to include("import type {Portal}")
+        # The element is referenced by name — no inline Data alias.
+        expect(output).not_to include("PortalsIndexData")
+      end
+
+      it "is written (not dropped as empty) and exported despite having no own properties" do
+        write_template("portals/_portal.json.jbuilder", <<~RUBY)
+          json.id portal.id, typelize: "number"
+        RUBY
+        write_template("portals/index.json.jbuilder", <<~RUBY)
+          json.array! @portals, partial: "portals/portal", as: :portal
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        ctx = Typelizer::WriterContext.new(writer_name: nil)
+        iface = ctx.interface_for(Typelizer::Jbuilder::Templates::PortalsIndex)
+
+        expect(iface.empty?).to be(false)
+        expect(iface.imports).to include("Portal")
+      end
+
+      it "keeps the dynamic-partial warning for a non-literal `partial:` value (root stays an object)" do
+        write_template("portals/index.json.jbuilder", <<~RUBY)
+          json.array! @portals, partial: some_partial, as: :portal
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::PortalsIndex)
+        end
+
+        expect(logs).to include("portals/index.json.jbuilder:1")
+        expect(logs).to include("dynamic template reference")
+        expect(logs).to include("typelize:")
+        expect(output).not_to include("Array<")
+      end
+
+      it "falls back to `Array<unknown>` with the unresolved-partial warning when the partial is missing" do
+        write_template("portals/index.json.jbuilder", <<~RUBY)
+          json.array! @portals, partial: "missing/portal", as: :portal
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::PortalsIndex)
+        end
+
+        expect(logs).to include("missing/portal")
+        expect(logs).to include("could not be resolved")
+        expect(output).to include("type PortalsIndex = Array<unknown>;")
+        expect(output).not_to include("import type")
+      end
+
+      it "falls back to `Array<unknown>` with one warning when the partial resolves to an empty interface" do
+        # The partial's only statement is fully dynamic — its walked
+        # interface ends up with zero properties (dropped from generation),
+        # so naming it would emit a dangling import.
+        write_template("portals/_portal.json.jbuilder", <<~'RUBY')
+          json.partial! "#{kind.pluralize}/attributes", kind: kind
+        RUBY
+        write_template("portals/index.json.jbuilder", <<~RUBY)
+          json.array! @portals, partial: "portals/portal", as: :portal
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::PortalsIndex)
+        end
+
+        expect(logs).to include('partial "portals/portal" produced no statically-typed properties')
+        expect(logs).to include("the root array element falls back to `unknown`")
+        expect(output).to include("type PortalsIndex = Array<unknown>;")
+        expect(output).not_to include("Array<Portal>")
       end
     end
 
@@ -1437,6 +1684,135 @@ RSpec.describe Typelizer::Jbuilder do
         registered = Typelizer::Jbuilder.registry.keys.select { |k| k.start_with?(views_root) }
         expect(registered).to eq(registered.sort)
       end
+    end
+  end
+
+  # Multi-root apps (a core root plus an overlay root, registered as
+  # separate `discover` calls or `jbuilder_views` entries) reference
+  # partials across roots exactly like Rails' view-path stack: the
+  # template's own root is tried first, then every other registered root in
+  # registration order.
+  describe "multi-root partial resolution" do
+    let(:core_root) { Dir.mktmpdir("typelizer-jbuilder-core-root") }
+    let(:overlay_root) { Dir.mktmpdir("typelizer-jbuilder-overlay-root") }
+
+    before { Typelizer::Jbuilder.reset! }
+
+    after do
+      Typelizer::Jbuilder.reset!
+      FileUtils.rm_rf(core_root)
+      FileUtils.rm_rf(overlay_root)
+    end
+
+    def write_template(root, relative_path, body)
+      full = File.join(root, relative_path)
+      FileUtils.mkdir_p(File.dirname(full))
+      File.write(full, body)
+      full
+    end
+
+    def render_interface(klass)
+      ctx = Typelizer::WriterContext.new(writer_name: nil)
+      Typelizer::Renderer.call("interface.ts.erb", interface: ctx.interface_for(klass))
+    end
+
+    def with_capture_logger
+      io = StringIO.new
+      original = Typelizer.logger
+      Typelizer.logger = Logger.new(io)
+      yield
+      io.string
+    ensure
+      Typelizer.logger = original
+    end
+
+    it "resolves a partial that only exists under a sibling registered root, as a named import" do
+      write_template(overlay_root, "widgets/_widget.json.jbuilder", <<~RUBY)
+        json.id widget.id, typelize: "number"
+      RUBY
+      write_template(core_root, "dashboard/show.json.jbuilder", <<~RUBY)
+        json.widget @widget, partial: "widgets/widget", as: :widget
+      RUBY
+
+      Typelizer::Jbuilder.discover(core_root)
+      Typelizer::Jbuilder.discover(overlay_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::DashboardShow)
+
+      expect(output).to include("widget: Widget;")
+      expect(output).to include("import type {Widget}")
+    end
+
+    it "auto-registers a late-added cross-root partial under ITS root (root-relative name derivation)" do
+      write_template(core_root, "dashboard/show.json.jbuilder", <<~RUBY)
+        json.widget @widget, partial: "widgets/widget", as: :widget
+      RUBY
+      Typelizer::Jbuilder.discover(core_root)
+      Typelizer::Jbuilder.discover(overlay_root) # empty at discovery time, root still tracked
+
+      write_template(overlay_root, "widgets/_widget.json.jbuilder", <<~RUBY)
+        json.id widget.id, typelize: "number"
+      RUBY
+      output = render_interface(Typelizer::Jbuilder::Templates::DashboardShow)
+
+      # `Widget`, not a core-root-relative (or garbage) derivation — the
+      # partial registered relative to the root it was found in.
+      expect(output).to include("widget: Widget;")
+      expect(Typelizer::Jbuilder::Templates::Widget._views_root).to eq(File.expand_path(overlay_root))
+    end
+
+    it "prefers the template's own root when the partial exists under both" do
+      write_template(core_root, "widgets/_widget.json.jbuilder", <<~RUBY)
+        typelize_as "CoreWidget"
+
+        json.core true
+      RUBY
+      write_template(overlay_root, "widgets/_widget.json.jbuilder", <<~RUBY)
+        typelize_as "OverlayWidget"
+
+        json.overlay true
+      RUBY
+      write_template(core_root, "dashboard/show.json.jbuilder", <<~RUBY)
+        json.widget @widget, partial: "widgets/widget", as: :widget
+      RUBY
+
+      Typelizer::Jbuilder.discover(core_root)
+      Typelizer::Jbuilder.discover(overlay_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::DashboardShow)
+
+      expect(output).to include("widget: CoreWidget;")
+      expect(output).not_to include("OverlayWidget")
+    end
+
+    it "projects bare partial names onto the same relative directory under sibling roots" do
+      write_template(overlay_root, "posts/_extra.json.jbuilder", <<~RUBY)
+        json.bonus true
+      RUBY
+      write_template(core_root, "posts/show.json.jbuilder", <<~RUBY)
+        json.partial! "extra"
+        json.own true
+      RUBY
+
+      Typelizer::Jbuilder.discover(core_root)
+      Typelizer::Jbuilder.discover(overlay_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::PostsShow)
+
+      expect(output).to include("bonus: boolean")
+      expect(output).to include("own: boolean")
+    end
+
+    it "still warns when the partial is under no registered root" do
+      write_template(core_root, "dashboard/show.json.jbuilder", <<~RUBY)
+        json.partial! "missing/widget"
+      RUBY
+
+      logs = with_capture_logger do
+        Typelizer::Jbuilder.discover(core_root)
+        Typelizer::Jbuilder.discover(overlay_root)
+        render_interface(Typelizer::Jbuilder::Templates::DashboardShow)
+      end
+
+      expect(logs).to include("missing/widget")
+      expect(logs).to include("could not be resolved")
     end
   end
 end

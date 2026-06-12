@@ -84,12 +84,33 @@ module Typelizer
       serializer_plugin.respond_to?(:root_is_array) && serializer_plugin.root_is_array
     end
 
+    # A root-array template whose element type resolved to a NAMED interface
+    # (jbuilder `json.array! @xs, partial: "xs/x"`): rendering references —
+    # and imports — that name (`type X = Array<Element>;`) instead of
+    # inlining a `...Data` alias. May also be a plain type string (e.g.
+    # "unknown" for an unresolvable element). Feature-detected like
+    # `root_is_array` so duck-typed plugins keep working.
+    def root_array_element
+      return nil unless serializer_plugin.respond_to?(:root_array_element)
+
+      serializer_plugin.root_array_element
+    end
+
+    def root_array_element_name
+      case (element = root_array_element)
+      when Interface then element.name
+      when String then element
+      end
+    end
+
     def wrapped?
       root_key || root_is_array
     end
 
     def empty?
-      meta_fields.empty? && properties.empty?
+      # A named-element root array carries no own properties, but its
+      # `type X = Array<Element>;` alias is real output — never drop it.
+      meta_fields.empty? && properties.empty? && root_array_element_name.nil?
     end
 
     def meta_fields
@@ -185,7 +206,8 @@ module Typelizer
         # Collect enum type names from properties
         enum_imports = all_properties.filter_map(&:enum_type_name)
 
-        result = (custom_type_imports + serializer_types + trait_imports + enum_imports + Array(parent_interface&.name)).uniq - [self_type_name, name]
+        result = (custom_type_imports + serializer_types + trait_imports + enum_imports +
+          Array(parent_interface&.name) + Array(root_array_element_import)).uniq - [self_type_name, name]
         ImportSorter.sort(result, config.imports_sort_order)
       end
     end
@@ -200,7 +222,9 @@ module Typelizer
         properties_to_print.map(&:fingerprint),
         parent_interface&.name,
         root_key,
-        root_is_array,
+        # Folded into the boolean's slot (a name implies a root array) so
+        # existing interfaces keep their digests — no fingerprint churn.
+        root_array_element_name || root_is_array,
         meta_fields.map(&:fingerprint),
         trait_interfaces.map { |t| [t.name, t.properties.map(&:fingerprint)] },
         CONFIGS_AFFECTING_OUTPUT.map { |key| config.public_send(key) }
@@ -231,6 +255,14 @@ module Typelizer
     def self_type_name
       serializer.name.to_s[/\w+(?=(?:Serializer|Resource))/] ||
         config.serializer_name_mapper.call(serializer).tr_s(":", "")
+    end
+
+    # Only a named interface element needs an import; plain type strings
+    # ("unknown") are global, and a self-referential element is excluded by
+    # the `- [self_type_name, name]` subtraction downstream.
+    def root_array_element_import
+      element = root_array_element
+      element.name if element.is_a?(Interface) && !element.inline?
     end
 
     def extract_typescript_types(type)

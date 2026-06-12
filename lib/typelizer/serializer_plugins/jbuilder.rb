@@ -72,6 +72,16 @@ module Typelizer
         walker.root_is_array
       end
 
+      # The element type of a root `json.array! @xs, partial: "xs/x"`
+      # template: the partial's Interface (referenced and imported by name —
+      # `type X = Array<Element>;` with no inline Data alias), the string
+      # "unknown" when the partial is unresolvable or conclusively empty
+      # (`Array<unknown>`), or nil for block-form root arrays, which keep
+      # inlining their element shape into the `...Data` alias.
+      def root_array_element
+        walker.root_array_element
+      end
+
       # Post-inference hook called by `Interface#properties` once final types
       # are known. The walker's nil/"unknown" emissions can still be rescued
       # by model inference (a bound AR column overwrites the walker's guess —
@@ -151,23 +161,64 @@ module Typelizer
 
       # Rails partial-lookup semantics: a bare name (`json.partial! "post"`)
       # resolves against the current template's directory first; a prefixed
-      # name (`"posts/post"`) resolves against the views root.
+      # name (`"posts/post"`) resolves against the views root. After the
+      # template's own root misses, every other registered views root is
+      # tried in registration order — multi-root apps (a core root plus an
+      # overlay root) reference partials across roots exactly like Rails'
+      # view-path stack. Each candidate carries the root it belongs to, so a
+      # cross-root partial auto-registers under ITS root and derives its
+      # type name relative to that root, not the referencing template's.
       def resolve_partial_to_class(partial_path)
-        partial_candidate_paths(partial_path).each do |path|
-          klass = Typelizer::Jbuilder.template_for(path, views_root: views_root)
+        partial_candidate_paths(partial_path).each do |path, root|
+          klass = Typelizer::Jbuilder.template_for(path, views_root: root)
           return klass if klass
         end
         nil
       end
 
+      # Ordered [absolute candidate path, owning views root] pairs. Bare
+      # names are projected onto sibling roots at the template's directory
+      # relative to its own root (mirroring how Rails resolves a bare
+      # `render "x"` against the same controller prefix in every view path).
       def partial_candidate_paths(partial_path)
         basename = "_#{File.basename(partial_path)}.json.jbuilder"
+        own_root = File.expand_path(views_root)
         candidates = []
-        unless partial_path.include?("/")
-          candidates << File.expand_path(File.join(File.dirname(template_path), basename))
+
+        if partial_path.include?("/")
+          dir = File.dirname(partial_path)
+          ([own_root] + sibling_roots(own_root)).each do |root|
+            candidates << [File.expand_path(File.join(root, dir, basename)), root]
+          end
+        else
+          template_dir = File.dirname(File.expand_path(template_path))
+          candidates << [File.expand_path(File.join(template_dir, basename)), own_root]
+          candidates << [File.expand_path(File.join(own_root, basename)), own_root]
+          if (rel_dir = template_dir_below(own_root, template_dir))
+            sibling_roots(own_root).each do |root|
+              candidates << [File.expand_path(File.join(root, rel_dir, basename)), root]
+            end
+          end
         end
-        candidates << File.expand_path(File.join(views_root, File.dirname(partial_path), basename))
+
         candidates.uniq
+      end
+
+      # Other registered discovery roots, own root excluded, registration
+      # order preserved. Empty for single-root apps — fallback resolution
+      # then changes nothing.
+      def sibling_roots(own_root)
+        Typelizer::Jbuilder.views_roots - [own_root]
+      end
+
+      # The template's directory relative to its own views root ("posts";
+      # "." at the root itself), or nil when the template lives outside the
+      # root — bare partial names then can't be projected onto sibling roots.
+      def template_dir_below(own_root, template_dir)
+        return "." if template_dir == own_root
+        return nil unless template_dir.start_with?("#{own_root}/")
+
+        template_dir.delete_prefix("#{own_root}/")
       end
     end
   end
