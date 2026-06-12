@@ -78,7 +78,7 @@ module Typelizer
       # see `Interface#infer_types`), so the walker itself cannot honestly
       # warn; only a property whose FINAL type is still unknown earns the
       # development warning, with the file:line the walker recorded.
-      def warn_unresolved_unknowns(props)
+      def after_type_inference(props)
         props.each { |prop| warn_unknown_property(prop) }
       end
 
@@ -100,7 +100,7 @@ module Typelizer
         return unless line
 
         key = [template_path, prop.name.to_s, line]
-        warned = self.class.activate_walker!.warned_unknowns
+        warned = walker.class.warned_unknowns
         return if warned.include?(key)
 
         warned << key
@@ -113,8 +113,7 @@ module Typelizer
       def final_unknown?(prop)
         return false if prop.user_asserted || prop.enum
 
-        type = prop.type
-        type.nil? || ((type.is_a?(String) || type.is_a?(Symbol)) && type.to_s == "unknown")
+        walker.class.unknown_type?(prop.type)
       end
 
       def walker

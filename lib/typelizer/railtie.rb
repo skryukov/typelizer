@@ -34,8 +34,7 @@ module Typelizer
     # statically via Prism.
     initializer "typelizer.jbuilder_render_safety" do
       ActiveSupport.on_load(:action_view) do
-        next unless Gem.loaded_specs["jbuilder"] || defined?(::Jbuilder)
-
+        # The require itself answers "is jbuilder available?" definitively.
         begin
           require "jbuilder/jbuilder_template"
         rescue LoadError

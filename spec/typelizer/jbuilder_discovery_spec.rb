@@ -105,6 +105,21 @@ RSpec.describe "Jbuilder discovery lifecycle" do
       expect(output_dir.join("WidgetAlpha.ts")).not_to exist
     end
 
+    it "runs template re-discovery once across a multi-writer Generator.call" do
+      configuration.jbuilder_views = [views_root]
+      write_template("single/show.json.jbuilder", "json.ok true\n")
+
+      # The pass must span multiple writers for the probe to be meaningful
+      # (default writer + the fixture writers + :jb_discovery).
+      expect(configuration.writers.size).to be > 1
+      allow(Typelizer::Jbuilder).to receive(:discover).and_call_original
+
+      Typelizer::Generator.call
+
+      expect(Typelizer::Jbuilder).to have_received(:discover).once
+      expect(output_dir.join("SingleShow.ts")).to exist
+    end
+
     it "regenerates composing parents when a partial gains a field" do
       configuration.jbuilder_views = [views_root]
       partial = write_template("items/_item.json.jbuilder", %(json.id 1\n))

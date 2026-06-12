@@ -20,29 +20,27 @@ module Typelizer
 
       props = config.properties_transformer.call(props)
       props.map do |prop|
-        if prop.additional_types&.any?(Shape)
-          prop = prop.with(additional_types: prop.additional_types.map { |t|
-            t.is_a?(Shape) ? Shape.new(properties: transform_properties(t.properties)) : t
-          })
-        end
-        next prop unless prop.type.is_a?(Shape)
-
-        prop.with(type: Shape.new(properties: transform_properties(prop.type.properties)))
+        map_property_shapes(prop) { |shape| Shape.new(properties: transform_properties(shape.properties)) }
       end
+    end
+
+    def infer_nested_property_types(prop)
+      map_property_shapes(prop) { |shape| infer_shape_types(shape) }
     end
 
     # Inline `Shape`s appear both as a property's own type and as trailing
     # intersection members (`additional_types`, e.g. a jbuilder mixed
-    # composed-partial block) — both run through the same inference.
-    def infer_nested_property_types(prop)
+    # composed-partial block) — applies the block to every Shape in both
+    # positions so transformation and inference run through the same walk.
+    def map_property_shapes(prop)
       if prop.additional_types&.any?(Shape)
         prop = prop.with(additional_types: prop.additional_types.map { |t|
-          t.is_a?(Shape) ? infer_shape_types(t) : t
+          t.is_a?(Shape) ? yield(t) : t
         })
       end
       return prop unless prop.type.is_a?(Shape)
 
-      prop.with(type: infer_shape_types(prop.type))
+      prop.with(type: yield(prop.type))
     end
 
     def infer_shape_types(shape)

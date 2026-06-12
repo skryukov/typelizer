@@ -65,6 +65,17 @@ module Typelizer
       serializer_plugin.root_key
     end
 
+    # Human-readable origin of this interface for warnings: the template
+    # path for jbuilder-template-backed serializers, the class name
+    # otherwise.
+    def source_description
+      if serializer.respond_to?(:_template_path)
+        serializer._template_path.to_s
+      else
+        serializer.name.to_s
+      end
+    end
+
     def root_is_array
       serializer_plugin.root_is_array
     end
@@ -108,7 +119,7 @@ module Typelizer
         # Post-inference hook: plugins whose property sources carry no class
         # body (e.g. jbuilder templates) can only judge an `unknown` fallback
         # honestly AFTER model inference had its chance to fill types in.
-        serializer_plugin.warn_unresolved_unknowns(props) if serializer_plugin.respond_to?(:warn_unresolved_unknowns)
+        serializer_plugin.after_type_inference(props)
         props = transform_properties(props)
         PropertySorter.sort(props, config.properties_sort_order)
       end

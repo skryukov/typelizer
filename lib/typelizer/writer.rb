@@ -6,9 +6,15 @@ module Typelizer
   class Writer
     class WriterError < StandardError; end
 
-    def initialize(config)
+    # `protected_output_dirs` is the full set of writer output dirs to shield
+    # from this writer's stale-file cleanup (the Generator passes every
+    # configured writer's dir). Defaults to reading them from the global
+    # configuration so direct `Writer.new(config)` construction keeps the
+    # current behavior.
+    def initialize(config, protected_output_dirs: nil)
       @template_cache = {}
       @config = config
+      @protected_output_dirs = protected_output_dirs
     end
 
     def call(interfaces, force:)
@@ -65,8 +71,9 @@ module Typelizer
     # ancestor prefix would otherwise swallow them.
     def foreign_output_dirs(own_dirs)
       own = own_dirs.map { |dir| File.expand_path(dir.to_s) }
-      Typelizer.configuration.writers.values
-        .map { |writer_config| File.expand_path(writer_config.output_dir.to_s) }
+      protected_dirs = @protected_output_dirs || Typelizer.configuration.writers.values.map(&:output_dir)
+      protected_dirs
+        .map { |dir| File.expand_path(dir.to_s) }
         .uniq
         .reject { |dir| own.include?(dir) || own.any? { |own_dir| own_dir.start_with?(dir + File::SEPARATOR) } }
         .map { |dir| dir + File::SEPARATOR }
@@ -83,20 +90,11 @@ module Typelizer
       interfaces.group_by(&:name).each do |name, group|
         next if group.size < 2
 
-        sources = group.map { |interface| describe_interface_source(interface) }.sort
+        sources = group.map(&:source_description).sort
         Typelizer.logger.warn(
           "Typelizer: duplicate exported type #{name.inspect} in #{File.join(config.output_dir.to_s, "index.ts")} — " \
           "declared by #{sources.join(" and ")}; scope the writers' `reject_class` or rename one with `typelize_as`"
         )
-      end
-    end
-
-    def describe_interface_source(interface)
-      serializer = interface.serializer
-      if serializer.respond_to?(:_template_path)
-        serializer._template_path.to_s
-      else
-        serializer.name.to_s
       end
     end
 

@@ -42,19 +42,9 @@ module Typelizer
     def render(sort_order: :none, prefer_double_quotes: false)
       type_str = type_name(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
 
-      trait_types = trait_type_names
-      type_str = ([type_str] + trait_types).join(" & ") if trait_types.any?
-
-      if additional_types&.any?
-        extra = additional_types.map do |t|
-          if t.is_a?(Shape)
-            t.render(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
-          else
-            t.respond_to?(:name) ? t.name : t.to_s
-          end
-        end
-        type_str = ([type_str] + extra).join(" & ")
-      end
+      # Intersection members: own type & trait types & additional types.
+      extra = Array(additional_types).map { |t| render_member(t, sort_order: sort_order, prefer_double_quotes: prefer_double_quotes) }
+      type_str = ([type_str] + trait_type_names + extra).join(" & ")
 
       type_str = "Array<#{type_str}>" if multi
 
@@ -78,7 +68,7 @@ module Typelizer
       hash = to_h.except(:column_type, :additional_types, :user_asserted)
         .merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
       if additional_types&.any?
-        hash = hash.merge(additional_types: additional_types.map { |t| t.respond_to?(:name) ? t.name : t.to_s })
+        hash = hash.merge(additional_types: additional_types.map { |t| render_member(t) })
       end
       hash.to_a.inspect
     end
@@ -106,6 +96,20 @@ module Typelizer
     end
 
     private
+
+    # Renders one type member (an intersection/union participant): inline
+    # `Shape`s render structurally, named references (Interfaces, classes)
+    # render by name, everything else by `to_s`. With the default arguments
+    # this matches `Shape#to_s`, so fingerprints stay byte-identical.
+    def render_member(type, sort_order: :none, prefer_double_quotes: false)
+      if type.is_a?(Shape)
+        type.render(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
+      elsif type.respond_to?(:name)
+        type.name
+      else
+        type.to_s
+      end
+    end
 
     def sorted_enum_keys(sort_order)
       keys = enum.map(&:to_s)
@@ -136,7 +140,7 @@ module Typelizer
       when Shape
         type.render(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
       when Array
-        type.map { |t| t.respond_to?(:name) ? t.name : t.to_s }.join(" | ")
+        type.map { |t| render_member(t) }.join(" | ")
       else
         type.respond_to?(:name) ? type.name : type&.to_s || "unknown"
       end

@@ -28,12 +28,24 @@ module Typelizer
           # fingerprint-digest house style): the per-cycle `reset_cache!`
           # makes within-cycle reuse safe, and the digest keeps long-lived
           # processes honest — explicit-discover flows that never reset
-          # still re-parse an edited template automatically. Cascade
-          # invalidation for composed partials needs nothing extra: a
-          # partial's properties are re-walked through its parent's
+          # still re-parse an edited template automatically (the stale
+          # entry is evicted so the cache never accretes old parses).
+          # Cascade invalidation for composed partials needs nothing extra:
+          # a partial's properties are re-walked through its parent's
           # Interface every cycle, so its fresh parse flows upward.
           def parsed_tree(path)
-            parse_cache[[path, Digest::SHA256.file(path).hexdigest]] ||= Prism.parse_file(path).value
+            digest = Digest::SHA256.file(path).hexdigest
+            key = [path, digest]
+            parse_cache.delete_if { |(cached_path, cached_digest), _| cached_path == path && cached_digest != digest }
+            parse_cache[key] ||= Prism.parse_file(path).value
+          end
+
+          # The single source of truth for "the walker couldn't type this":
+          # nil (delegated to model inference) or a hard "unknown". Shared by
+          # the walk-time candidate recording here and the plugin's
+          # post-inference warning decision.
+          def unknown_type?(type)
+            type.nil? || ((type.is_a?(String) || type.is_a?(Symbol)) && type.to_s == "unknown")
           end
 
           # Reads top-level `typelize_as "Name"` and `typelize_from Model`
@@ -182,7 +194,7 @@ module Typelizer
         # nil or "unknown". These are CANDIDATE unknowns: model inference
         # runs after the walk (`Interface#infer_types`) and can still rescue
         # them, so the actual warning decision is made post-inference by
-        # `Plugin#warn_unresolved_unknowns` — this map only supplies the
+        # `Plugin#after_type_inference` — this map only supplies the
         # file:line the walker alone knows.
         def unknown_candidates
           parsed
@@ -266,14 +278,10 @@ module Typelizer
         def note_unknown_candidate(node, prop)
           return prop unless prop.is_a?(Property)
 
-          if !prop.user_asserted && unknown_walker_type?(prop.type)
+          if !prop.user_asserted && self.class.unknown_type?(prop.type)
             @unknown_lines[prop.name.to_s] ||= node.location.start_line
           end
           prop
-        end
-
-        def unknown_walker_type?(type)
-          type.nil? || ((type.is_a?(String) || type.is_a?(Symbol)) && type.to_s == "unknown")
         end
 
         def handle_prop(node, optional:)

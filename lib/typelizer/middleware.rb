@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
+require_relative "error"
 require_relative "generation_lock"
 
 module Typelizer
-  class TypeGenerationError < StandardError; end
+  class TypeGenerationError < Error; end
 
   class Middleware
     class << self

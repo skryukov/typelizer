@@ -140,14 +140,14 @@ RSpec.describe "Jbuilder / jbuilder-inertia contract" do
     # isolate each example from suite state and restore afterwards.
     around do |example|
       set_ext = Typelizer::Jbuilder::SetExt
-      saved_present = set_ext.instance_variable_get(:@inertia_runtime_present)
-      saved_warned = set_ext.instance_variable_get(:@inertia_strip_warned)
-      set_ext.instance_variable_set(:@inertia_runtime_present, nil)
-      set_ext.instance_variable_set(:@inertia_strip_warned, nil)
+      saved_present = set_ext.instance_variable_get(:@foreign_runtime_present)
+      saved_warned = set_ext.instance_variable_get(:@foreign_strip_warned)
+      set_ext.instance_variable_set(:@foreign_runtime_present, nil)
+      set_ext.instance_variable_set(:@foreign_strip_warned, nil)
       example.run
     ensure
-      set_ext.instance_variable_set(:@inertia_runtime_present, saved_present)
-      set_ext.instance_variable_set(:@inertia_strip_warned, saved_warned)
+      set_ext.instance_variable_set(:@foreign_runtime_present, saved_present)
+      set_ext.instance_variable_set(:@foreign_strip_warned, saved_warned)
     end
 
     def with_capture_logger
@@ -232,7 +232,7 @@ RSpec.describe "Jbuilder / jbuilder-inertia contract" do
         end
         expect(logs).to include("option ignored")
         # The false answer is NOT memoized — it must be recomputed next time.
-        expect(set_ext.instance_variable_get(:@inertia_runtime_present)).to be_nil
+        expect(set_ext.instance_variable_get(:@foreign_runtime_present)[:inertia]).to be_nil
 
         captured = []
         fake_ext = build_fake_inertia_ext(captured)
@@ -246,7 +246,7 @@ RSpec.describe "Jbuilder / jbuilder-inertia contract" do
         expect(captured).to include(hash_including(inertia: :defer))
         expect(after_patch.attributes!).to eq("stats" => 2)
         # ...and once seen, the answer memoizes permanently (one-way).
-        expect(set_ext.instance_variable_get(:@inertia_runtime_present)).to be(true)
+        expect(set_ext.instance_variable_get(:@foreign_runtime_present)[:inertia]).to be(true)
       end
     end
   end

@@ -49,35 +49,48 @@ module Typelizer
     module SetExt
       RESERVED_KWARGS = %i[typelize].freeze
 
-      # jbuilder-inertia's prepended template patch, matched by NAME so
-      # typelizer never has to load (or even know about) that gem.
-      INERTIA_EXT_NAME = "JbuilderInertia::JbuilderExt"
+      # Render-ACTIVE kwargs owned by other gems' prepended template patches,
+      # mapped to their owner: the patch constant is matched by NAME so
+      # typelizer never has to load (or even know about) those gems. A
+      # foreign kwarg is stripped only when its owner patch is absent from
+      # the template class's ancestry.
+      FOREIGN_KWARGS = {
+        inertia: {owner: "JbuilderInertia::JbuilderExt", gem: "jbuilder-inertia"}.freeze
+      }.freeze
 
       class << self
         # Lazy (at strip time, never at patch-install time — `on_load`
-        # ordering between the two gems follows require order that neither
-        # controls) and one-way memoized: once the patch is seen the answer
-        # is permanent (a prepended module can never be removed), but while
-        # absent we re-check on every strip so a late prepend is picked up
-        # by the very next render.
+        # ordering between the gems follows require order that neither
+        # controls) and one-way memoized per owner: once the patch is seen
+        # the answer is permanent (a prepended module can never be removed),
+        # but while absent we re-check on every strip so a late prepend is
+        # picked up by the very next render. The constant-presence check
+        # short-circuits the common negative (owner gem not loaded at all)
+        # without scanning ancestors.
         #
         # `Jbuilder < BasicObject`, so `template.class` would dispatch into
         # `set!` and emit a "class" key — bind `Object#class` explicitly.
-        def inertia_runtime_present?(template)
-          return true if @inertia_runtime_present
+        def foreign_runtime_present?(kwarg, template)
+          memo = (@foreign_runtime_present ||= {})
+          return true if memo[kwarg]
+
+          owner_name = FOREIGN_KWARGS.fetch(kwarg)[:owner]
+          return false unless ::Object.const_defined?(owner_name)
 
           klass = ::Object.instance_method(:class).bind_call(template)
-          present = klass.ancestors.any? { |mod| mod.name == INERTIA_EXT_NAME }
-          @inertia_runtime_present = true if present
+          present = klass.ancestors.any? { |mod| mod.name == owner_name }
+          memo[kwarg] = true if present
           present
         end
 
-        def warn_inertia_stripped!
-          return if @inertia_strip_warned
+        def warn_foreign_stripped!(kwarg)
+          warned = (@foreign_strip_warned ||= {})
+          return if warned[kwarg]
 
-          @inertia_strip_warned = true
+          warned[kwarg] = true
           Typelizer.logger.warn(
-            "Typelizer: `inertia:` option found but jbuilder-inertia is not installed; option ignored"
+            "Typelizer: `#{kwarg}:` option found but #{FOREIGN_KWARGS.fetch(kwarg)[:gem]} " \
+            "is not installed; option ignored"
           )
         end
       end
@@ -91,13 +104,19 @@ module Typelizer
       end
 
       def set!(name, *args, **kwargs, &block)
-        # Stripping happens at the very top, before any other logic
-        # (structural R7 rule): foreign-inert kwargs must be gone before any
-        # intercept or early return so behavior is identical under either
-        # gem's prepend order.
-        if kwargs.key?(:inertia) && !SetExt.inertia_runtime_present?(self)
-          kwargs.delete(:inertia)
-          SetExt.warn_inertia_stripped!
+        # Hot path: a bare `json.foo value` carries no kwargs at all — skip
+        # straight to upstream `set!` (this runs once per json.* call).
+        return super(name, *args, &block) if kwargs.empty?
+
+        # Stripping happens before any other logic (structural R7 rule):
+        # foreign-inert kwargs must be gone before any intercept or early
+        # return so behavior is identical under either gem's prepend order.
+        FOREIGN_KWARGS.each_key do |kwarg|
+          next unless kwargs.key?(kwarg)
+          next if SetExt.foreign_runtime_present?(kwarg, self)
+
+          kwargs.delete(kwarg)
+          SetExt.warn_foreign_stripped!(kwarg)
         end
         RESERVED_KWARGS.each { |k| kwargs.delete(k) }
 
@@ -146,17 +165,15 @@ module Typelizer
         # go stale and keep answering with pre-reload columns).
         model_name = model.is_a?(Class) ? model.name : model&.to_s
         if model_name
-          klass.define_singleton_method(:_template_model_name) { model_name }
           klass.define_singleton_method(:_typelizer_model_name) { model_name.safe_constantize }
         elsif model
           # Anonymous class — no name to re-resolve; keep the object.
-          klass.define_singleton_method(:_template_model_name) { nil }
           klass.define_singleton_method(:_typelizer_model_name) { model }
         end
 
         klass.typelizer_config do |c|
           c.serializer_plugin = SerializerPlugins::Jbuilder
-          c.serializer_name_mapper = ->(s) { s.name.split("::").last }
+          c.serializer_name_mapper = ->(s) { s.name.demodulize }
         end
 
         registry[full_path] = klass
@@ -196,6 +213,7 @@ module Typelizer
       # asks), and explicit `discover` registrations (non-Rails flows
       # without `jbuilder_views`) are left untouched.
       def refresh!
+        return if @refresh_suppressed
         return unless enabled?
 
         roots = Array(Typelizer.configuration.jbuilder_views).map(&:to_s)
@@ -205,6 +223,22 @@ module Typelizer
           reset!
           roots.each { |root| discover(root) }
         end
+      end
+
+      # One discovery refresh shared by a whole multi-writer generation pass:
+      # runs `refresh!` once up front, then suppresses the per-writer
+      # `Typelizer.interfaces` refresh for the duration of the block, so
+      # `Generator#call` does a single reset!+glob+reparse instead of one per
+      # writer. Direct `Typelizer.interfaces` callers (rake openapi, specs)
+      # still refresh. The plain module flag is race-free because callers
+      # hold the reentrant GenerationLock for the whole block, so no other
+      # thread can enter `refresh!` until the flag is cleared.
+      def refresh_once
+        refresh!
+        @refresh_suppressed = true
+        yield
+      ensure
+        @refresh_suppressed = false
       end
 
       # Clears only per-discovery state: the path→class registry, the
