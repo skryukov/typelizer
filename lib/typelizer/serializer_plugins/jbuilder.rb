@@ -72,7 +72,50 @@ module Typelizer
         walker.root_is_array
       end
 
+      # Post-inference hook called by `Interface#properties` once final types
+      # are known. The walker's nil/"unknown" emissions can still be rescued
+      # by model inference (a bound AR column overwrites the walker's guess —
+      # see `Interface#infer_types`), so the walker itself cannot honestly
+      # warn; only a property whose FINAL type is still unknown earns the
+      # development warning, with the file:line the walker recorded.
+      def warn_unresolved_unknowns(props)
+        props.each { |prop| warn_unknown_property(prop) }
+      end
+
       private
+
+      def warn_unknown_property(prop)
+        # Recurse into inline shapes first (own type and trailing
+        # intersection members) — nested props record their own lines.
+        ([prop.type] + Array(prop.additional_types)).grep(Shape).each do |shape|
+          shape.properties.each { |sub| warn_unknown_property(sub) }
+        end
+
+        return unless final_unknown?(prop)
+
+        # No recorded line means the property didn't originate from this
+        # template's walk (e.g. merged in from a top-level `json.partial!` —
+        # the partial's own interface warns with the partial's path:line).
+        line = walker.unknown_candidates[prop.name.to_s]
+        return unless line
+
+        key = [template_path, prop.name.to_s, line]
+        warned = self.class.activate_walker!.warned_unknowns
+        return if warned.include?(key)
+
+        warned << key
+        Typelizer.logger.warn(
+          "Typelizer::Jbuilder: #{template_path}:#{line}: could not infer a type for `#{prop.name}` — " \
+          "emitted `unknown`; pin it with `typelize:` (e.g. `json.#{prop.name} ..., typelize: \"string\"`)"
+        )
+      end
+
+      def final_unknown?(prop)
+        return false if prop.user_asserted || prop.enum
+
+        type = prop.type
+        type.nil? || ((type.is_a?(String) || type.is_a?(Symbol)) && type.to_s == "unknown")
+      end
 
       def walker
         @walker ||= self.class.activate_walker!.new(

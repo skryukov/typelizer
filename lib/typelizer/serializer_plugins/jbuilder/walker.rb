@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "set"
 
 # Loaded lazily via `Typelizer::SerializerPlugins::Jbuilder.activate_walker!`
 # — never as part of Typelizer's eager require chain. Everything that
@@ -14,8 +15,14 @@ module Typelizer
         # and the full property walk (lazy, in `Plugin#properties`) share
         # one Prism parse per template.
         @parse_cache = {}
+        # Per-cycle dedup for the post-inference "unknown" warnings (keys:
+        # [template path, prop name, line]). Multiple writers build their own
+        # Interface for the same template within one generation cycle; the
+        # warning should fire once per template+prop per cycle, so the set
+        # lives here and is cleared together with the parse cache.
+        @warned_unknowns = Set.new
         class << self
-          attr_reader :parse_cache
+          attr_reader :parse_cache, :warned_unknowns
 
           # Content-keyed (path + source digest, matching the writer's
           # fingerprint-digest house style): the per-cycle `reset_cache!`
@@ -57,6 +64,7 @@ module Typelizer
 
           def reset_cache!
             @parse_cache = {}
+            @warned_unknowns = Set.new
           end
 
           private
@@ -159,6 +167,7 @@ module Typelizer
           @partial_resolver = partial_resolver
           @context = context
           @column_inference = column_inference
+          @unknown_lines = {}
         end
 
         def properties
@@ -167,6 +176,17 @@ module Typelizer
 
         def root_is_array
           parsed.fetch(:root_is_array)
+        end
+
+        # prop name → source line for properties whose walker-side type is
+        # nil or "unknown". These are CANDIDATE unknowns: model inference
+        # runs after the walk (`Interface#infer_types`) and can still rescue
+        # them, so the actual warning decision is made post-inference by
+        # `Plugin#warn_unresolved_unknowns` — this map only supplies the
+        # file:line the walker alone knows.
+        def unknown_candidates
+          parsed
+          @unknown_lines
         end
 
         private
@@ -235,8 +255,25 @@ module Typelizer
             warn_skipped(node, "`json.set!` (dynamic key)")
             []
           when *SKIP_CALLS then []
-          else handle_prop(node, optional: optional)
+          else note_unknown_candidate(node, handle_prop(node, optional: optional))
           end
+        end
+
+        # Records the source line of a property the walker could not type
+        # (type nil — delegated to model inference — or a hard "unknown").
+        # No warning is logged here: a bound model's columns can still fill
+        # the type in post-walk, so warning at this point would cry wolf.
+        def note_unknown_candidate(node, prop)
+          return prop unless prop.is_a?(Property)
+
+          if !prop.user_asserted && unknown_walker_type?(prop.type)
+            @unknown_lines[prop.name.to_s] ||= node.location.start_line
+          end
+          prop
+        end
+
+        def unknown_walker_type?(type)
+          type.nil? || ((type.is_a?(String) || type.is_a?(Symbol)) && type.to_s == "unknown")
         end
 
         def handle_prop(node, optional:)
@@ -469,7 +506,7 @@ module Typelizer
         def symbol_args_to_properties(args, optional: false)
           args.drop(1)
             .select { |a| a.is_a?(Prism::SymbolNode) }
-            .map { |sym| property_from_column(sym.unescaped, optional: optional) }
+            .map { |sym| note_unknown_candidate(sym, property_from_column(sym.unescaped, optional: optional)) }
         end
 
         # `json.array! @items do |item| ... end` — emit the element shape;

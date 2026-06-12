@@ -2,7 +2,7 @@
 
 Typelizer is for Rails apps that use a serializer library (or Jbuilder) and a TypeScript-capable frontend (React, Vue, Svelte via Inertia, or a separate SPA). It generates TypeScript interfaces from your serializers and type-safe route helpers from your Rails routes.
 
-If you use `render json: model.as_json`, you'll need to adopt a serializer library or Jbuilder first. If you use server-rendered views (ERB/Haml) without TypeScript, Typelizer's [route helpers](/guides/routes) and [OpenAPI schemas](/guides/openapi) may still be useful, but type generation won't apply.
+If you use `render json: model.as_json`, you'll need to adopt a serializer library first. Already rendering with Jbuilder templates? No serializer library is needed — Typelizer reads `.json.jbuilder` files directly; see the [Jbuilder guide](/guides/jbuilder). If you use server-rendered views (ERB/Haml) without TypeScript, Typelizer's [route helpers](/guides/routes) and [OpenAPI schemas](/guides/openapi) may still be useful, but type generation won't apply.
 
 ## Prerequisites
 
@@ -38,8 +38,8 @@ end
 ```
 ```ruby [Jbuilder]
 # config/initializers/typelizer.rb
-Rails.application.config.after_initialize do
-  Typelizer::Jbuilder.discover
+Typelizer.configure do |config|
+  config.jbuilder_views = [Rails.root.join("app", "views")]
 end
 ```
 ```ruby [Oj::Serializer]

@@ -52,7 +52,7 @@ module EnumRuntimeWriterFixture
   SERIALIZERS = %w[
     Alba::PostSerializer
     Alba::UserSerializer
-    Typelizer::Jbuilder::Templates::PostsPost
+    Typelizer::Jbuilder::Templates::Post
   ].freeze
 
   def self.output_dir

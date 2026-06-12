@@ -105,6 +105,10 @@ module Typelizer
       @properties ||= begin
         props = serializer_plugin.properties
         props = infer_types(props)
+        # Post-inference hook: plugins whose property sources carry no class
+        # body (e.g. jbuilder templates) can only judge an `unknown` fallback
+        # honestly AFTER model inference had its chance to fill types in.
+        serializer_plugin.warn_unresolved_unknowns(props) if serializer_plugin.respond_to?(:warn_unresolved_unknowns)
         props = transform_properties(props)
         PropertySorter.sort(props, config.properties_sort_order)
       end

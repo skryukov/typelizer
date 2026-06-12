@@ -2,25 +2,49 @@
 
 This guide covers using Typelizer with [Jbuilder](https://github.com/rails/jbuilder). Unlike other serializer libraries, Jbuilder is template-based: each `.json.jbuilder` file becomes its own TypeScript interface. Typelizer reads templates by walking their Prism AST, so no runtime evaluation is required.
 
+## Requirements
+
+Template parsing uses [Prism](https://github.com/ruby/prism) and requires prism >= 1.0. Prism is not a dependency of the typelizer gem — add it to your Gemfile:
+
+```ruby
+gem "prism", ">= 1.0"
+```
+
+Prism activates lazily, the first time a template is parsed (generation time). It is never loaded at boot or render time, so apps that don't use the Jbuilder plugin pay nothing. If prism is missing or too old when the plugin first needs it, generation fails with an actionable error:
+
+```
+Typelizer's Jbuilder plugin requires prism >= 1.0 to parse templates —
+add prism (>= 1.0) to your Gemfile (prism 0.19.0 is active; the Jbuilder plugin needs >= 1.0)
+```
+
+::: warning Ruby's bundled prism may be too old
+Ruby 3.3 ships prism 0.19 as a bundled gem. The version check runs against the prism actually active in the process, so an explicit `gem "prism", ">= 1.0"` in your Gemfile is required even on Rubies that bundle prism.
+:::
+
 ## Setup
 
-Jbuilder templates are registered as virtual serializer classes. For Rails apps, auto-discover every template under `app/views` from an initializer:
+Point Typelizer at your views directories and templates are discovered automatically:
 
 ```ruby
 # config/initializers/typelizer.rb
-Rails.application.config.after_initialize do
-  Typelizer::Jbuilder.discover
+Typelizer.configure do |config|
+  config.jbuilder_views = [Rails.root.join("app", "views")]
 end
 ```
 
-`discover` scans the given views root (default: `Rails.root.join("app/views")`), registers a class per `.json.jbuilder` file, and statically reads top-of-file `typelize_from Model` / `typelize_as "Name"` declarations.
+Setting `jbuilder_views` enables the plugin. Discovery runs at the start of every generation cycle — never at boot — so adding, editing, renaming, or deleting a template (or a partial it composes) is reflected on the next generation without a server restart. In production, generation doesn't run, so templates are never parsed there.
 
-For non-Rails setups or more control, register templates explicitly:
+For non-Rails setups or more control, register templates explicitly (leave `jbuilder_views` unset — per-cycle discovery would wipe explicit registrations otherwise):
 
 ```ruby
+Typelizer::Jbuilder.discover(Rails.root.join("app/views").to_s)
 Typelizer::Jbuilder.template("posts/index.json.jbuilder")
 Typelizer::Jbuilder.template("posts/_post.json.jbuilder", model: Post)
 ```
+
+Partials referenced from a registered template are auto-registered on first use — no separate registration needed.
+
+### Type names
 
 The generated type name is derived from the template path. When a partial follows Rails convention — `<resource>/_<resource>.json.jbuilder`, where the parent directory singularizes to the partial name — the redundant directory is stripped. Any other layout keeps its full path so names stay unique and locations stay honest.
 
@@ -35,6 +59,19 @@ The generated type name is derived from the template path. When a partial follow
 | `users/_avatar.json.jbuilder` | `UsersAvatar` |
 | `_post.json.jbuilder` (root) | `Post` — collides with `posts/_post.json.jbuilder`; keep partials under a resource directory |
 
+Two templates claiming the same type name raise a `Typelizer::Jbuilder::NameCollision` error at generation time, naming both template paths. Rename one of them with `typelize_as`.
+
+### Render safety vs. plugin enablement
+
+The plugin has two independent halves:
+
+- **Render safety** installs whenever the jbuilder gem is present — independent of `jbuilder_views`. Template annotations (`typelize_as`, `typelize_from`, the `typelize:` kwarg) are no-ops at render time: a type annotation never changes JSON output and never crashes a render, in any environment.
+- **Discovery and parsing** (template registration, prism activation) run only when the plugin is enabled — auto-detected from `jbuilder_views` being set, with `config.jbuilder_enabled = true/false` as an explicit override.
+
+::: warning Keep typelizer in the production bundle
+The render-safety patches come from the typelizer gem. If typelizer is confined to the `:development` group, annotated templates **will** crash production renders — jbuilder itself doesn't understand `typelize:`. Keep `gem "typelizer"` available in all environments (the production footprint is just the no-op patches).
+:::
+
 ## Template-side declarations
 
 Two top-of-file DSL calls let a template own its own metadata:
@@ -47,7 +84,7 @@ typelize_from Post           # bind to an AR model for column inference
 json.extract! post, :id, :title, :body, :published_at
 ```
 
-Both calls are no-ops at template render time (provided by an ActionView helper auto-included by Typelizer's railtie). The plugin reads them statically via Prism during `discover`.
+Both calls are no-ops at template render time (provided by an ActionView helper auto-included by Typelizer's railtie). The plugin reads them statically via Prism during discovery.
 
 Generates:
 
@@ -62,19 +99,36 @@ type Post = {
 
 `typelize_as` is the same DSL method used in class-based serializers (Alba/AMS/Oj/Panko) — same semantics, just made available inside templates that don't have a class body.
 
-::: tip
-Without a model binding, Typelizer falls back to literal inference (`json.count 0` → `number`) and name heuristics (`_at` → `string`, `_id` → `number`, `is_/has_/can_` → `boolean`). Unresolvable cases emit `unknown`.
+::: warning Declaration order matters
+`typelize_as` and `typelize_from` are read from the leading statements of the template, and reading stops at the first statement that isn't a bare DSL call. Place them **before the first `json.*` line** (comments are fine anywhere). Declarations placed after content are silently ignored.
 :::
+
+The model binding is stored by name and resolved lazily at each generation, so code reloads in development always see the freshly loaded class.
 
 ### When to use `typelize_as`
 
 The auto-derived type-name rule covers ~95% of templates. Reach for `typelize_as` when:
 
 - The path doesn't fit the `<resource>/_<resource>` convention and would generate a stuttered name (e.g., `shared_props/_shared_props.json.jbuilder` would produce `SharedPropsSharedProps`).
-- Two templates would derive the same name (collision; one needs an explicit override).
+- Two templates would derive the same name (`NameCollision` at generation; one needs an explicit override).
 - Migration compat — the frontend already imports the old name and you don't want a rename to ripple.
 
-## Extracting Attributes
+## How types are inferred
+
+For each `json.xxx` call, the effective resolution order is:
+
+1. **`typelize:` kwarg** — always wins. The property is marked user-asserted; model inference never overrides it.
+2. **Block** — produces a nested inline shape (or a named intersection for composed partials, see below).
+3. **`partial:` kwarg** — imports the partial's interface as a named type.
+4. **Walker guess** — literal values (`json.count 0` → `number`), `Time.*` calls (→ `string`), then name heuristics: `_id`/`id` → `number`, `_at`/`_on` → `string`, `_count`/`_total`/`total`/`page` → `number`, `is_`/`has_`/`can_`/`should_`/`was_` prefixes → `boolean`. Anything else → `unknown`.
+5. **Model inference** — when the template is bound to an ActiveRecord model (`typelize_from`), columns, associations, delegates, and attribute types are resolved through the same pipeline class-based serializers use. **Model inference overwrites the walker's guess**, including literal-derived types (see below).
+6. Still `unknown` after all of the above → emitted as `unknown` with a development warning (see [Unknown fallback](#unknown-fallback)).
+
+::: warning Model beats literal
+With a model binding, a matching column wins over the literal you wrote. `json.deleted true` against a *nullable string* `deleted` column generates `deleted: string | null`, not `boolean`. This keeps generated types honest about what the database can actually contain — use `typelize:` to assert otherwise.
+:::
+
+## Extracting attributes
 
 `json.extract!` and its call-style alias `json.(record, ...)` emit one property per symbol, using the bound model for type inference:
 
@@ -85,7 +139,9 @@ json.extract! post, :id, :title, :body
 json.(post, :category_id)  # equivalent
 ```
 
-## Manual Typing with `typelize:`
+Without a model binding (PORO `typelize_from` targets, or no binding at all), extracted attributes fall back to the name heuristics instead of emitting all-`unknown`.
+
+## Manual typing with `typelize:`
 
 Use the `typelize:` kwarg to override or add an explicit type on any `json.xxx` call. It accepts the same type strings as Typelizer's [`typelize` DSL](/guides/manual-typing), including shortcuts and unions:
 
@@ -106,13 +162,13 @@ json.pair typelize: "[string | null, number]"
 json.result typelize: "{ ok: boolean } | { error: string }"
 ```
 
-The `typelize:` kwarg always wins — use it when you need to pin a shape that the walker can't infer.
+The `typelize:` kwarg always wins — it's scoped to that exact property at that exact nesting level, so a nested `json.stats { json.total @t, typelize: "number" }` never affects a top-level `total`. Use it when you need to pin a shape that the walker can't infer.
 
 ## Partials
 
-Partials referenced via `json.partial!` or the `partial:` kwarg are resolved to their own generated interfaces. No separate registration is needed — Typelizer auto-registers referenced partials on first use.
+Partials referenced via `json.partial!` or the `partial:` kwarg are resolved to their own generated interfaces. Resolution follows Rails partial-lookup semantics: a bare name (`json.partial! "widget"`) resolves against the current template's directory first; a prefixed name (`"posts/post"`) resolves against the views root. Both the positional form and the kwargs-only form (`json.partial! partial: "posts/post", collection: @posts, as: :post`) are supported.
 
-Merging a partial inline (properties flow into the current scope):
+Merging a partial at the template root (properties flow into the current type):
 
 ```ruby
 # posts/show.json.jbuilder
@@ -126,23 +182,20 @@ json.summary @post.body, typelize: "string"
 Generates:
 
 ```typescript
-import type {PostCategory} from '@/types'
+import type {User, PostCategory} from '@/types'
 
 type PostsShow = {
   id: number;
   title: string | null;
   body: string | null;
   published_at: string | null;
-  category: PostCategory | null;
-  author: {
-    id: number;
-    name: string;
-    username: string;
-    active: boolean;
-  };
+  category: PostCategory;
+  author: User;
   summary: string;
 }
 ```
+
+Note the two different mechanics: the top-level `json.partial!` merges the partial's properties into `PostsShow` itself, while `json.author do json.partial! ... end` references the partial as a **named imported type** (`User`) — see [Composed partials](#composed-partials-named-intersections).
 
 The `partial:` kwarg imports the partial as a named type. The plugin infers whether the result is a single object or an array from the property name — plural names become arrays, singular names stay as one:
 
@@ -167,11 +220,13 @@ type PostsIndex = {
 }
 ```
 
-If the name doesn't match the plurality of the value (e.g. a collection named `data`), pin it with `typelize:` or rename the property. Known collection methods on the argument (`all`, `where`, `order`, `includes`, `limit`, `recent`, `active`) also force array inference.
+If the name doesn't match the plurality of the value (e.g. a collection named `data`), pin it with `typelize:` or rename the property. Known ActiveRecord collection methods on the argument (`all`, `where`, `includes`, `order`, `limit`, `offset`, `group`, `distinct`, `none`) also force array inference — custom scopes like `recent` or `active` are **not** recognized statically; use a plural property name or `typelize:`.
 
-Recursive partials work too — Typelizer's `WriterContext` memoizes interfaces per class, so a `_comment.json.jbuilder` that references itself via `partial: "comments/comment"` produces a stable self-referential type.
+Words that look plural but are conceptually singular (`news`, `settings`, `earnings`, `analytics`, `statistics`, `series`) are treated as singular. Apps with additional domain-specific cases can extend Rails' inflector (`ActiveSupport::Inflector.inflections { |i| i.uncountable %w[...] }`) — the heuristic consults it.
 
-## Blocks and Nested Shapes
+Recursive partials work too — Typelizer memoizes interfaces per class, so a `_comment.json.jbuilder` that references itself via `partial: "comments/comment"` produces a stable self-referential type.
+
+## Blocks and nested shapes
 
 `json.xxx do ... end` produces a nested inline shape. Block parameters (collection iteration) produce an array of that shape:
 
@@ -204,7 +259,7 @@ Generates:
 }
 ```
 
-### Collection + Attribute Shortcut
+### Collection + attribute shortcut
 
 `json.posts @posts, :id, :title` — a collection followed by symbols — expands to an inline shape over those attributes (using the bound model for inference):
 
@@ -226,7 +281,80 @@ Generates:
 }
 ```
 
-## Root Arrays
+## Composed partials: named intersections {#composed-partials-named-intersections}
+
+A block whose body composes partials emits a **named intersection** instead of an inline shape. Every top-level `json.partial!` in the block with a string-literal reference (no `collection:` kwarg, resolvable template) becomes a named imported interface; whatever else the block contains — own props, conditionals, dynamic or collection partials — trails the intersection as an inline shape:
+
+```ruby
+json.course do
+  json.partial! "courses/course", course: @course
+  json.partial! "courses/course_details", course: @course
+end
+
+json.course_with_progress do
+  json.partial! "courses/course", course: @course
+  json.progress 0.5, typelize: "number"
+end
+```
+
+Generates:
+
+```typescript
+import type {Course, CourseDetails} from '@/types'
+
+{
+  course: Course & CourseDetails;
+  course_with_progress: Course & {
+    progress: number;
+  };
+}
+```
+
+This is structurally identical to inlining the partials' fields — TypeScript is structurally typed — but keeps the names, so frontend code can keep importing `Course` directly.
+
+### Faking traits with composed partials
+
+[Alba traits](/guides/alba#traits) generate named intersection types (`Course & CourseDetailsTrait`). Jbuilder doesn't have a direct equivalent, but composed partials produce the same shape. Define one partial per "trait":
+
+```ruby
+# courses/_course.json.jbuilder — base
+json.id course.id, typelize: "number"
+json.title course.title, typelize: "string"
+
+# courses/_course_details.json.jbuilder — additive
+json.description course.description, typelize: "string"
+json.lessons course.lessons, partial: "lessons/lesson", as: :lesson
+
+# courses/_course_classmates.json.jbuilder — additive
+json.classmates course.enrolled_students, partial: "users/user", as: :user
+```
+
+Compose them in the page template:
+
+```ruby
+# dashboard/courses/show.json.jbuilder
+json.course do
+  json.partial! "courses/course", course: @course
+  json.partial! "courses/course_details", course: @course
+  json.partial! "courses/course_classmates", course: @course
+end
+```
+
+Generates:
+
+```typescript
+import type {Course, CourseDetails, CourseClassmates} from '@/types'
+
+type DashboardCoursesShow = {
+  course: Course & CourseDetails & CourseClassmates;
+}
+```
+
+`course.description`, `course.lessons.map(...)`, etc. all type-check, and each partial keeps its own named type for downstream components — the same ergonomics as Alba's `with_traits: [...]`, decided in the template instead of at serializer-call time.
+
+Named members require a string-literal, non-collection, resolvable `json.partial!` call. A collection partial (`collection:` kwarg) or a dynamic reference never becomes a named member — it stays on the regular extraction path (with its warning if it can't be typed).
+
+## Root arrays
 
 `json.array! @items do |item| ... end` at the template root wraps the entire interface as an array:
 
@@ -247,7 +375,17 @@ type JbuilderFeaturesRootArrayData = {
 type JbuilderFeaturesRootArray = Array<JbuilderFeaturesRootArrayData>;
 ```
 
-## Conditional Fields
+A kwargs-only collection partial at the template root also becomes a root array:
+
+```ruby
+# posts/index.json.jbuilder
+json.partial! partial: "posts/post", collection: @posts, as: :post
+# → type PostsIndex = Array<PostsIndexData>
+```
+
+Two forms can't participate in root-array detection and log a warning instead of silently mistyping: a blockless `json.array!` (its attributes are emitted as an object shape — use the block form or `typelize:`), and a root array nested inside a conditional (only top-level statements are inspected; the root stays an object).
+
+## Conditional fields
 
 Properties emitted inside `if` or `unless` blocks become **optional** keys — they may or may not be present depending on the condition:
 
@@ -275,15 +413,18 @@ Generates:
 }
 ```
 
-### If/Else Branches
+### If/else branches
 
-When the same property appears in every branch of an `if/elsif/else` chain that terminates in `else`, it stays **required** — one branch always fires, so the key is always set:
+When the same property appears in every branch of an `if/elsif/else` (or `unless/else`) chain that terminates in `else`, it stays **required** — one branch always fires, so the key is always set:
 
 ```ruby
-if @post.category
-  json.category @post.category, partial: "categories/category", as: :category
+if @active
+  json.status "active"
+  json.reason "still active"
+elsif @blocked
+  json.status "blocked"
 else
-  json.category nil, typelize: "Category | null"
+  json.status "idle"
 end
 ```
 
@@ -291,17 +432,20 @@ Generates:
 
 ```typescript
 {
-  category: Category;  // required — every branch emits it
+  status: string;   // required — every branch emits it
+  reason?: string;  // optional — missing from two branches
 }
 ```
 
-::: warning
-When branches disagree on nullability (one emits `Category`, another emits `Category | null`), the plugin currently picks the first branch's type — nullability from other branches is lost. Pin the combined type with `typelize:` if the distinction matters.
-:::
+Chains without a final `else` fall back to optional, since one condition combination can skip every branch.
 
-If/elsif chains without a final `else` fall back to optional, since one condition combination can skip every branch.
+When branches disagree, same-name properties are merged with these rules:
 
-## Caching Blocks
+- **Nullability widens.** A branch emitting `null` (or a nullable type) makes the merged property nullable: `json.category @c, partial: "categories/category"` in one branch plus `json.category nil` in the other generates `category: Category | null`.
+- **Optionality widens.** A property marked optional in *any* branch (e.g. via `inertia: :defer`) stays optional after the merge — and it's widened exactly once, not doubled.
+- **Base types don't union.** When branches disagree on the base type (`string` vs `number`), the first branch's type wins — except that an explicit `typelize:` assertion in any branch beats inferred guesses. Pin the combined type with `typelize:` if the distinction matters.
+
+## Caching blocks
 
 `json.cache!`, `json.cache_if!`, and `json.cache_root!` are treated as transparent pass-throughs — the walker descends into their blocks as if the cache wrapper weren't there:
 
@@ -314,97 +458,112 @@ end
 
 Generates the same properties as if `cache!` were not present.
 
-## Inertia Compatibility
+## Inertia props
 
-When used alongside `jbuilder-inertia` (sibling to [alba-inertia](https://github.com/skryukov/alba-inertia)), the `inertia:` kwarg is read symbolically to widen properties to optional:
+When used alongside [jbuilder-inertia](https://github.com/skryukov/jbuilder-inertia) (sibling to [alba-inertia](https://github.com/skryukov/alba-inertia)), Typelizer reads the Inertia prop directives statically and widens deferred/optional props to optional TypeScript keys (`prop?: T`) — those keys are absent from the initial Inertia page load, so the generated types must say so.
+
+Both annotation forms are recognized:
 
 ```ruby
-json.stats @stats, inertia: :defer          # → stats?: ...
-json.filters @filters, inertia: :optional   # → filters?: ...
+# Kwarg form — symbol, array, and hash spellings
+json.stats @stats, inertia: :defer                 # → stats?: ...
+json.filters @filters, inertia: :optional          # → filters?: ...
+json.activity @items, inertia: [:defer, :merge]    # → activity?: ...
+json.heavy @data, inertia: {defer: {group: "x"}}   # → heavy?: ...
+
+# Resolver-object form — the block's value feeds type inference
+json.stats JbuilderInertia.defer { compute_stats }
+json.notifications JbuilderInertia.optional { current_user.notifications.count }
 ```
 
-Typelizer doesn't evaluate the kwarg at runtime — it just widens the TypeScript type so partial reloads and deferred props type-check correctly on the frontend.
+Only `defer` and `optional` widen — they're the directives that may omit the key from the initial page load. `merge`, `deep_merge`, `once`, `always`, and `scroll` affect delivery, not presence, so those props stay required. `typelize:` combines with widening: the asserted type is used *and* the property is optional.
 
-## Limitations
+For the resolver-object form, the type is inferred from the block's final expression (literals, `Time.*` calls), then name heuristics, then the bound model's columns — same order as everywhere else.
 
-The walker is static — it parses templates without running them. A few dynamic forms can't be resolved and are silently dropped; use `typelize:` to pin a shape when you need one:
+Typelizer never evaluates any of this at runtime. Rendering is jbuilder-inertia's job:
+
+- With jbuilder-inertia installed, `inertia:` kwargs pass through to it untouched, in either gem-load order.
+- Without it, Typelizer strips `inertia:` at render time and logs a one-time warning (`` `inertia:` option found but jbuilder-inertia is not installed; option ignored ``) — the template still renders clean JSON. The resolver-object form is different: `JbuilderInertia.defer` is a constant from that gem, so templates using it require the gem to render.
+
+## Warnings and the unknown fallback
+
+The walker is static — it parses templates without running them. Constructs it can't type are skipped with a warning through `Typelizer.logger` (template path and line included) rather than silently dropped:
 
 | Form | Behavior | Workaround |
 |---|---|---|
-| `json.merge! some_hash` | Skipped (runtime-only shape) | Wrap the merge in a `typelize:` kwarg on the surrounding call |
-| `json.set! dynamic_key, value` | Skipped (dynamic key) | `json.foo typelize: "Record<string, T>"` |
-| `json.null!`, `json.key_format!`, etc. | No property emitted | No workaround needed |
+| `json.merge! some_hash` | Skipped + warning (runtime-only shape) | `typelize:` on the surrounding call |
+| `json.set! dynamic_key, value` | Skipped + warning (dynamic key) | `json.foo typelize: "Record<string, T>"` |
+| `json.partial! some_variable` | Skipped + warning (dynamic reference) | String-literal reference or `typelize:` |
+| `json.partial! "missing/thing"` | Skipped + warning (unresolvable template) | Fix the path |
+| Collection `partial!` inside a block | Typed as merged object + warning | `json.<name> @collection, partial: "...", as: ...` |
+| Blockless `json.array!` | Object shape + warning | Block form or `typelize:` |
+| Root array inside a conditional | Object type + warning | `typelize:` |
+| `json.null!`, `json.key_format!`, etc. | No property emitted (no type effect) | Not needed |
 | `.jb` / Rabl templates | Not supported | Use `.json.jbuilder` |
 
-For attributes the walker can't type at all (no model binding, no literal, no name hint), Typelizer emits `unknown` and logs a development warning — add `typelize:` to silence it.
+### Unknown fallback {#unknown-fallback}
 
-### Faking traits with composed partials
+When every inference step fails — no `typelize:`, no literal, no name hint, no model match — the property is emitted as `unknown`, and Typelizer logs a warning with the template path, line, and a `typelize:` suggestion:
 
-[Alba traits](/guides/alba#traits) generate named intersection types (`Course & CourseDetailsTrait`). Jbuilder doesn't have a direct equivalent, but the same effect falls out of `json.partial!` composition because TypeScript is structurally typed.
-
-Define one partial per "trait":
-
-```ruby
-# courses/_course.json.jbuilder — base
-json.id course.id, typelize: "number"
-json.title course.title, typelize: "string"
-
-# courses/_course_details.json.jbuilder — additive
-json.description course.description, typelize: "string"
-json.lessons course.lessons, partial: "lessons/lesson", as: :lesson
-
-# courses/_course_classmates.json.jbuilder — additive
-json.classmates course.enrolled_students, partial: "users/user", as: :user
+```
+Typelizer::Jbuilder: app/views/posts/show.json.jbuilder:4: could not infer a type
+for `mystery` — emitted `unknown`; pin it with `typelize:`
+(e.g. `json.mystery ..., typelize: "string"`)
 ```
 
-Compose them in the page template:
+The warning is decided *after* model inference, so a `json.deleted record.deleted` that a model column rescues never warns. It fires once per template+property per generation cycle. Add `typelize:` to silence it.
+
+## Staged migration from another serializer
+
+Migrating an app from Alba (or another class-based library) to jbuilder templates resource by resource is a supported configuration. Emit jbuilder types through a dedicated writer so the two worlds can't collide in one `index.ts`:
 
 ```ruby
-# dashboard/courses/show.json.jbuilder
-json.course do
-  json.partial! "courses/course", course: @course
-  json.partial! "courses/course_details", course: @course
-  json.partial! "courses/course_classmates", course: @course
+Typelizer.configure do |config|
+  config.jbuilder_views = [Rails.root.join("app", "views")]
+
+  # Default writer: legacy serializers only
+  config.reject_class = ->(serializer:) {
+    serializer.name.to_s.start_with?("Typelizer::Jbuilder::Templates::")
+  }
+
+  # Jbuilder templates get their own output dir and barrel:
+  config.writer(:jbuilder) do |w|
+    w.output_dir = Rails.root.join("app/javascript/types/jbuilder")
+    w.reject_class = ->(serializer:) {
+      !serializer.name.to_s.start_with?("Typelizer::Jbuilder::Templates::")
+    }
+  end
 end
 ```
 
-Generates an inline shape with all the merged fields:
-
-```typescript
-type DashboardCoursesShow = {
-  course: {
-    id: number;
-    title: string;
-    description: string;       // from _course_details
-    lessons: Array<Lesson>;    // from _course_details
-    classmates: Array<User>;   // from _course_classmates
-  };
-}
-```
-
-The shape is structurally equivalent to `Course & CourseDetails & CourseClassmates` for any property access — `course.description`, `course.lessons.map(...)`, etc. all type-check. Each partial also generates its own named type (`Course`, `CourseDetails`, `CourseClassmates`) that downstream components can use as explicit prop types.
-
-::: tip
-The key trade-off vs Alba traits: in Alba, `with_traits: [...]` is decided at serializer-call time and types stay named. In jbuilder, composition happens in the template and the resulting type is anonymous unless consumers reach back through `MyPage["course"]`. The behavior is the same; the naming ergonomics differ.
-:::
-
-### `partial!` inside a block inlines, doesn't import
-
-`json.foo do ... json.partial! "..." ... end` merges the partial's properties into the nested shape — the partial becomes part of the inline type, not a separate named import. To get a named import, use the `partial:` kwarg directly on the call:
+If you'd rather keep a single writer and index, retire legacy serializers from it as their templates land — `Typelizer::Jbuilder.exclude(*patterns)` builds a `reject_class` predicate that rejects serializers matching the patterns while always keeping template-derived classes, so the Ruby files can stay until the migration completes:
 
 ```ruby
-# Inlines — instructor becomes a massive anonymous object
-json.instructor do
-  json.partial! "author_profiles/author_profile", profile: @course.author_profile
-end
-
-# Imports — instructor: AuthorProfile
-json.instructor @course.author_profile, partial: "author_profiles/author_profile", as: :profile
+config.reject_class = Typelizer::Jbuilder.exclude(/Resource\z/)
 ```
 
-## Plugin Configuration
+Notes that make this safe:
 
-Override the views root via `plugin_configs`:
+- **Cleanup never crosses writers.** Each writer's stale-file cleanup is scoped to its own output dir, even when one writer's dir is nested inside another's (`types/jbuilder` inside `types`).
+- **Duplicate exports warn.** If two sources resolve to the same exported type name in *one* index (Alba `PostResource` → `Post` alongside `posts/_post.json.jbuilder` → `Post`), generation logs a warning naming both sources. Scope the writers' `reject_class` or rename one side with `typelize_as`. The same name across *separate* writers is fine — that's the migration setup.
+
+## Plugin configuration
+
+Discovery is configured at the top level (these are global, not per-writer, settings):
+
+```ruby
+Typelizer.configure do |config|
+  # Discovery roots; setting this enables the plugin
+  config.jbuilder_views = [Rails.root.join("app", "views")]
+
+  # Explicit enablement override (default nil = auto-detect from jbuilder_views)
+  config.jbuilder_enabled = nil
+end
+```
+
+With the [Listen](https://github.com/guard/listen) gem installed, the `jbuilder_views` roots are also watched for `.jbuilder` changes in development, alongside the regular serializer watching.
+
+A fallback views root for partial resolution can be set via `plugin_configs` (registered templates normally carry their own root, so this rarely needs to be set):
 
 ```ruby
 Typelizer.configure do |config|

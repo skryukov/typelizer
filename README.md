@@ -45,6 +45,7 @@ rails typelizer:generate
 **Full documentation: https://typelizer.dev**
 
 - [Getting Started](https://typelizer.dev/getting-started)
+- [Jbuilder](https://typelizer.dev/guides/jbuilder)
 - [Manual Typing](https://typelizer.dev/guides/manual-typing)
 - [Route Helpers](https://typelizer.dev/guides/routes)
 - [Configuration](https://typelizer.dev/reference/configuration)

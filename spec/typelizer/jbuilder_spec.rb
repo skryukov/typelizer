@@ -660,6 +660,117 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "post-inference unknown warnings" do
+      it "warns with file:line and a typelize: suggestion when the final type is unknown" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.ok true
+          json.mystery some_helper_value
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:2")
+        expect(logs).to include("could not infer a type for `mystery`")
+        expect(logs).to include('typelize: "string"')
+        expect(logs).not_to include("`ok`")
+      end
+
+      it "warns for unknowns nested inside block shapes, at their own line" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.stats do
+            json.total 1
+            json.opaque some_helper_value
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:3")
+        expect(logs).to include("could not infer a type for `opaque`")
+        expect(logs).not_to include("`total`")
+        expect(logs).not_to include("`stats`")
+      end
+
+      it "does not warn when model inference rescues a walker-unknown property" do
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          json.name user.name
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+        end
+
+        expect(output).to include("name: string")
+        expect(logs).not_to include("could not infer a type")
+      end
+
+      it "does not warn when a name hint resolves the type" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.created_at some_helper_value
+          json.posts_count some_helper_value
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).not_to include("could not infer a type")
+      end
+
+      it "does not warn for a user-asserted `typelize: \"unknown\"`" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.payload some_helper_value, typelize: "unknown"
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).not_to include("could not infer a type")
+      end
+
+      it "warns once per template+property per generation cycle (multi-writer dedup)" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.mystery some_helper_value
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          2.times { render_interface(Typelizer::Jbuilder::Templates::MiscShow) }
+        end
+
+        expect(logs.scan("could not infer a type for `mystery`").size).to eq(1)
+      end
+
+      it "warns again on the next cycle after reset! (per-cycle dedup, not forever)" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.mystery some_helper_value
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+          Typelizer::Jbuilder.reset!
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs.scan("could not infer a type for `mystery`").size).to eq(2)
+      end
+    end
+
     describe "partial resolution" do
       it "resolves a bare partial name against the current template's directory first" do
         write_template("posts/_post.json.jbuilder", <<~RUBY)
@@ -717,13 +828,19 @@ RSpec.describe Typelizer::Jbuilder do
           json.extract! profile, :id, :name, :created_at, :follower_count
         RUBY
 
-        Typelizer::Jbuilder.discover(views_root)
-        output = render_interface(Typelizer::Jbuilder::Templates::PorosShow)
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::PorosShow)
+        end
 
         expect(output).to include("id: number")
         expect(output).to include("created_at: string")
         expect(output).to include("follower_count: number")
         expect(output).to include("name: unknown")
+        # The post-inference unknown warning fires for the one prop that
+        # neither name hints nor (absent) column inference could type.
+        expect(logs).to include("could not infer a type for `name`")
       end
     end
 
