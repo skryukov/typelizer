@@ -1663,6 +1663,68 @@ RSpec.describe Typelizer::Jbuilder do
         expect(output).to include("ok: boolean")
         expect(output).not_to include("ignore_nil")
       end
+
+      it "warns for `json.deep_format_keys!` and emits no property" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.deep_format_keys!
+          json.deep_format_keys! false
+          json.ok true
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("misc/show.json.jbuilder:2")
+        expect(logs).to include("key casing of nested")
+        expect(output).to include("ok: boolean")
+        expect(output).not_to include("deep_format_keys")
+      end
+
+      it "warns for `json.nil!`/`json.null!` and emits no property" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.nil!
+          json.null!
+          json.ok true
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("misc/show.json.jbuilder:2")
+        expect(logs).to include("renders `null` at runtime")
+        expect(output).to include("ok: boolean")
+        expect(output).not_to include("nil!")
+        expect(output).not_to include("null!")
+      end
+
+      it "warns for `json.attributes!`/`json.target!` and emits no property" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.attributes!
+          json.target!
+          json.ok true
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("misc/show.json.jbuilder:2")
+        expect(logs).to include("jbuilder internal accessor")
+        expect(output).to include("ok: boolean")
+        expect(output).not_to include("attributes!")
+        expect(output).not_to include("target!")
+      end
     end
 
     describe "discovery ordering" do

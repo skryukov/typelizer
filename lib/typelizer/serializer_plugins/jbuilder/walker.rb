@@ -188,11 +188,11 @@ module Typelizer
         }.freeze
         private_constant :VALUE_NODE_RESOLVERS
 
-        # Runtime mutations with no static type effect — skipped silently.
-        # (`merge!`, `set!`, `cache_collection!`, `key_format!` and
-        # `ignore_nil!` are NOT here: they drop or distort type information,
-        # so they warn through the configured logger instead.)
-        SKIP_CALLS = %i[null! nil! deep_format_keys!].freeze
+        # Every jbuilder API method that drops or distorts type information
+        # warns through the configured logger (`merge!`, dynamic `set!`,
+        # `cache_collection!`, `key_format!`/`deep_format_keys!`,
+        # `ignore_nil!`, `nil!`/`null!`, `attributes!`/`target!`) — nothing
+        # is skipped silently.
 
         PASSTHROUGH_CALLS = %i[cache! cache_if! cache_root!].freeze
 
@@ -411,7 +411,19 @@ module Typelizer
             log_warning(node, "`json.ignore_nil!` omits nil-valued keys at runtime; " \
               "consider marking affected properties optional via `typelize:`")
             []
-          when *SKIP_CALLS then []
+          when :deep_format_keys!
+            log_warning(node, "`json.deep_format_keys!` changes runtime key casing of nested " \
+              "structures; generated types use source names — align casing via Typelizer's " \
+              "`properties_transformer` config")
+            []
+          when :nil!, :null!
+            log_warning(node, "`json.#{node.name}` renders `null` at runtime; the generated " \
+              "type does not reflect this — pin the shape with `typelize:` if it matters")
+            []
+          when :attributes!, :target!
+            log_warning(node, "`json.#{node.name}` is a jbuilder internal accessor, not a " \
+              "JSON key; no property emitted")
+            []
           else note_unknown_candidate(node, handle_prop(node, optional: optional))
           end
         end
