@@ -29,7 +29,9 @@ module Typelizer
     #
     # `TemplateHelpers` makes the top-of-file declarations no-ops at render
     # time; `SetExt` strips inline `typelize:` kwargs before jbuilder's
-    # `set!` sees them. The plugin reads both statically via Prism.
+    # `set!` sees them (and `inertia:` kwargs too, but only while
+    # jbuilder-inertia's own patch is absent). The plugin reads both
+    # statically via Prism.
     initializer "typelizer.jbuilder_render_safety" do
       ActiveSupport.on_load(:action_view) do
         next unless Gem.loaded_specs["jbuilder"] || defined?(::Jbuilder)

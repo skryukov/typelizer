@@ -96,6 +96,50 @@ module Typelizer
           /\Ais_|\A(has|can|should|was)_/ => "boolean"
         }.freeze
 
+        # --- Internal widening registries ------------------------------------
+        # Table-driven on purpose (a future inertia-builder / props_template
+        # adapter is one entry away), but deliberately module-private: no
+        # registration API is exposed until a real second adapter exists.
+        # These are frozen constants — code, not per-discovery state — so
+        # `Typelizer::Jbuilder.reset!` cycles never touch them.
+        #
+        # The directive vocabulary mirrors jbuilder-inertia's
+        # `JbuilderInertia::PropBuilder::KNOWN_DIRECTIVES` (defer, optional,
+        # merge, once, always, scroll). Only `defer` and `optional` may omit
+        # the key from the initial Inertia page load, so only they widen the
+        # generated property to optional.
+        INERTIA_WIDENING_DIRECTIVES = %i[defer optional].freeze
+        private_constant :INERTIA_WIDENING_DIRECTIVES
+
+        # kwarg name → resolver lambda deciding optionality from the kwarg's
+        # literal value. Handles the symbol (`inertia: :defer`), array
+        # (`inertia: [:defer, :merge]`), and hash
+        # (`inertia: {defer: {group: "x"}}`) forms. Non-widening directives
+        # (merge/always/once/scroll) and unrecognized shapes never widen.
+        OPTIONAL_KWARG_RESOLVERS = {
+          inertia: lambda do |value|
+            case value
+            when Symbol then INERTIA_WIDENING_DIRECTIVES.include?(value)
+            when Array then value.any? { |v| v.is_a?(Symbol) && INERTIA_WIDENING_DIRECTIVES.include?(v) }
+            when Hash then INERTIA_WIDENING_DIRECTIVES.any? { |directive| value.key?(directive) }
+            else false
+            end
+          end
+        }.freeze
+        private_constant :OPTIONAL_KWARG_RESOLVERS
+
+        # Resolver-object form: `json.stats JbuilderInertia.defer { ... }`.
+        # Namespace constant name → known constructor methods plus the subset
+        # that widens. Matched purely syntactically — typelizer never loads
+        # the jbuilder-inertia gem.
+        VALUE_NODE_RESOLVERS = {
+          "JbuilderInertia" => {
+            methods: %i[defer optional merge deep_merge once always scroll].freeze,
+            widening: INERTIA_WIDENING_DIRECTIVES
+          }.freeze
+        }.freeze
+        private_constant :VALUE_NODE_RESOLVERS
+
         # Runtime mutations with no static type effect — skipped silently.
         # (`merge!` and `set!` are NOT here: they drop type information, so
         # they warn through the configured logger instead.)
@@ -199,7 +243,18 @@ module Typelizer
           name = node.name.to_s
           args = positional_args(node)
           kwargs = keyword_args(node)
-          optional ||= inertia_marks_optional?(kwargs[:inertia])
+          optional ||= kwargs.any? { |key, value| OPTIONAL_KWARG_RESOLVERS[key]&.call(value) }
+
+          value = args.first
+          if (resolver = value_node_resolver(value))
+            optional ||= resolver[:widening].include?(value.name)
+            # Resolver blocks contain arbitrary Ruby returning a plain value —
+            # never jbuilder DSL — so the block is NOT walked as a shape. Its
+            # final expression feeds the regular expression-inference path
+            # below (literals, Time calls); anything else falls through to
+            # name hints and, when a model is bound, column inference.
+            value = resolver_value_expression(value)
+          end
 
           return property_from_override(name, kwargs[:typelize], optional: optional) if kwargs[:typelize]
 
@@ -215,12 +270,42 @@ module Typelizer
             return build_property(name, type: Shape.new(properties: collection_props), optional: optional, multi: true)
           end
 
-          if (first = args.first)
-            inferred = infer_type(first, name: name)
+          if value
+            inferred = infer_type(value, name: name)
             return build_property(name, type: inferred, optional: optional, nullable: inferred == "null")
           end
 
+          if resolver
+            # Resolver with no inferable block expression: keep the name-hint
+            # signal instead of a hard "unknown".
+            return build_property(name, type: guess_from_name(name), optional: optional)
+          end
+
           build_property(name, type: "unknown", optional: optional)
+        end
+
+        def value_node_resolver(node)
+          return nil unless node.is_a?(Prism::CallNode)
+
+          namespace = resolver_namespace(node.receiver)
+          entry = namespace && VALUE_NODE_RESOLVERS[namespace]
+          (entry && entry[:methods].include?(node.name)) ? entry : nil
+        end
+
+        # Matches the top-level namespace constant in both spellings:
+        # `JbuilderInertia.defer` (ConstantReadNode) and
+        # `::JbuilderInertia.defer` (ConstantPathNode with no parent).
+        def resolver_namespace(receiver)
+          case receiver
+          when Prism::ConstantReadNode then receiver.name.to_s
+          when Prism::ConstantPathNode then receiver.parent.nil? ? receiver.name.to_s : nil
+          end
+        end
+
+        # The final expression of the resolver's block, if any — the value
+        # the resolver will produce at runtime.
+        def resolver_value_expression(node)
+          node.block&.body&.body&.last
         end
 
         # Routes `typelize:` overrides through TypeParser so shortcuts
@@ -491,14 +576,6 @@ module Typelizer
           Typelizer.logger.warn("Typelizer::Jbuilder: #{@path}:#{node.location.start_line}: #{message}")
         end
 
-        def inertia_marks_optional?(inertia)
-          case inertia
-          when :defer, :optional then true
-          when Hash then inertia.key?(:defer) || inertia.key?(:optional)
-          else false
-          end
-        end
-
         def infer_type(node, name:)
           return "null" if node.is_a?(Prism::NilNode)
           return TYPE_BY_LITERAL[node.class] if TYPE_BY_LITERAL.key?(node.class)
@@ -541,6 +618,7 @@ module Typelizer
           case node
           when Prism::StringNode then node.unescaped
           when Prism::SymbolNode then node.unescaped.to_sym
+          when Prism::ArrayNode then node.elements.map { |el| literal_value(el) }
           when Prism::HashNode then assoc_pairs(node.elements)
           else node
           end

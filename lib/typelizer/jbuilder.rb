@@ -35,11 +35,50 @@ module Typelizer
     # typelizer jbuilder plugin is enabled — so annotated templates never
     # crash a render in environments where Typelizer is dev-only.
     #
+    # Each gem strips its own render-inert vocabulary unconditionally
+    # (`typelize:`), but the foreign `inertia:` kwarg is render-ACTIVE and
+    # owned by jbuilder-inertia: it is stripped only when that gem's patch is
+    # absent from the template class's ancestry (otherwise the directive must
+    # pass through untouched, regardless of which gem's patch is outermost).
+    #
     # The `method_missing` override is required to defeat jbuilder's
     # `alias_method :method_missing, :set!` quirk (the alias captures the
     # original `set!` body, bypassing any prepended `set!`).
     module SetExt
-      RESERVED_KWARGS = %i[typelize typelize_from].freeze
+      RESERVED_KWARGS = %i[typelize].freeze
+
+      # jbuilder-inertia's prepended template patch, matched by NAME so
+      # typelizer never has to load (or even know about) that gem.
+      INERTIA_EXT_NAME = "JbuilderInertia::JbuilderExt"
+
+      class << self
+        # Lazy (at strip time, never at patch-install time — `on_load`
+        # ordering between the two gems follows require order that neither
+        # controls) and one-way memoized: once the patch is seen the answer
+        # is permanent (a prepended module can never be removed), but while
+        # absent we re-check on every strip so a late prepend is picked up
+        # by the very next render.
+        #
+        # `Jbuilder < BasicObject`, so `template.class` would dispatch into
+        # `set!` and emit a "class" key — bind `Object#class` explicitly.
+        def inertia_runtime_present?(template)
+          return true if @inertia_runtime_present
+
+          klass = ::Object.instance_method(:class).bind_call(template)
+          present = klass.ancestors.any? { |mod| mod.name == INERTIA_EXT_NAME }
+          @inertia_runtime_present = true if present
+          present
+        end
+
+        def warn_inertia_stripped!
+          return if @inertia_strip_warned
+
+          @inertia_strip_warned = true
+          Typelizer.logger.warn(
+            "Typelizer: `inertia:` option found but jbuilder-inertia is not installed; option ignored"
+          )
+        end
+      end
 
       def method_missing(name, *args, **kwargs, &block)
         set!(name, *args, **kwargs, &block)
@@ -50,6 +89,14 @@ module Typelizer
       end
 
       def set!(name, *args, **kwargs, &block)
+        # Stripping happens at the very top, before any other logic
+        # (structural R7 rule): foreign-inert kwargs must be gone before any
+        # intercept or early return so behavior is identical under either
+        # gem's prepend order.
+        if kwargs.key?(:inertia) && !SetExt.inertia_runtime_present?(self)
+          kwargs.delete(:inertia)
+          SetExt.warn_inertia_stripped!
+        end
         RESERVED_KWARGS.each { |k| kwargs.delete(k) }
 
         # When kwargs is empty, omit them entirely so we don't accidentally
