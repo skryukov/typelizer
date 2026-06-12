@@ -1002,6 +1002,171 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "empty partial references" do
+      # An interface with zero properties is dropped from generation (no
+      # .ts file, no index export — see Writer#call), so emitting a NAMED
+      # reference to it would produce a dangling `import type` (TS2305).
+      def write_empty_partial(relative_path = "profiles/_profile.json.jbuilder")
+        # The only statement is a fully-dynamic `json.partial!`, which warns
+        # and skips — the walked interface ends up with zero properties.
+        write_template(relative_path, <<~'RUBY')
+          json.partial! "#{kind.pluralize}/attributes", kind: kind
+        RUBY
+      end
+
+      it "falls back to `unknown` (with one warning) when a `partial:` kwarg resolves to an empty interface" do
+        write_empty_partial
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.profile @profile, partial: "profiles/profile", as: :profile
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("profile: unknown")
+        expect(output).not_to include("Profile")
+        expect(output).not_to include("import type")
+        expect(logs).to include("things/show.json.jbuilder:1")
+        expect(logs).to include('partial "profiles/profile" produced no statically-typed properties')
+        expect(logs).to include("`profile` falls back to `unknown`")
+        expect(logs).to include("typelize:")
+        # One clear warning — the generic post-inference unknown warning is
+        # suppressed for this prop instead of double-firing.
+        expect(logs).not_to include("could not infer a type for `profile`")
+      end
+
+      it "warns once per reference site per generation cycle (multi-writer dedup)" do
+        write_empty_partial
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.profile @profile, partial: "profiles/profile", as: :profile
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          2.times { render_interface(Typelizer::Jbuilder::Templates::ThingsShow) }
+        end
+
+        expect(logs.scan("produced no statically-typed properties").size).to eq(1)
+      end
+
+      it "keeps statically-known collection-ness: the collection form renders Array<unknown>" do
+        write_empty_partial
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.profiles @profiles, partial: "profiles/profile", as: :profile
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("profiles: Array<unknown>")
+        expect(output).not_to include("Profile")
+        expect(logs).to include("produced no statically-typed properties")
+      end
+
+      it "omits an empty member from a block-composed intersection, keeping the other members intact" do
+        write_empty_partial
+        write_template("courses/_course.json.jbuilder", <<~RUBY)
+          json.id course.id, typelize: "number"
+        RUBY
+        write_template("courses/show.json.jbuilder", <<~RUBY)
+          json.course do
+            json.partial! "courses/course", course: @course
+            json.partial! "profiles/profile", profile: @profile
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::CoursesShow)
+        end
+
+        expect(output).to include("course: Course;")
+        expect(output).not_to include("Profile")
+        expect(output).to include("import type {Course}")
+        expect(logs).to include('partial "profiles/profile" produced no statically-typed properties')
+        expect(logs).to include("omitted from `course`'s intersection type")
+      end
+
+      it "still supports recursive non-empty partials (in-progress walk is treated as non-empty)" do
+        write_template("comments/_comment.json.jbuilder", <<~RUBY)
+          json.id comment.id, typelize: "number"
+          json.replies comment.replies, partial: "comments/comment", as: :comment
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::Comment)
+        end
+
+        expect(output).to include("replies: Array<Comment>")
+        expect(logs).not_to include("produced no statically-typed properties")
+      end
+
+      it "handles a self-merging (cycle-guarded, hence empty) partial gracefully when referenced elsewhere" do
+        # `loops/_loop` only merges itself: the cycle guard skips the merge,
+        # so the interface ends up empty — a reference to it must degrade to
+        # `unknown` instead of importing a dropped type.
+        write_template("loops/_loop.json.jbuilder", <<~RUBY)
+          json.partial! "loops/loop"
+        RUBY
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.loop @loop, partial: "loops/loop", as: :loop
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("loop: unknown")
+        expect(output).not_to include("import type")
+        expect(logs).to include("cyclic `json.partial!` merge")
+        expect(logs).to include('partial "loops/loop" produced no statically-typed properties')
+      end
+
+      it "never emits an import without a matching generated type (generation-level invariant)" do
+        write_empty_partial
+        write_template("posts/_post.json.jbuilder", <<~RUBY)
+          json.id post.id, typelize: "number"
+        RUBY
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.thing @x, partial: "profiles/profile", as: :profile
+          json.other @y, partial: "posts/post", as: :post
+          json.box do
+            json.partial! "profiles/profile", profile: @x
+            json.partial! "posts/post", post: @y
+          end
+        RUBY
+
+        with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          ctx = Typelizer::WriterContext.new(writer_name: nil)
+          interfaces = Typelizer::Jbuilder.registry.values.map { |klass| ctx.interface_for(klass) }
+          # The writer drops empty interfaces from generation and index.ts.
+          emitted = interfaces.reject(&:empty?)
+          rendered = emitted.map { |i| Typelizer::Renderer.call("interface.ts.erb", interface: i) }
+
+          exported = emitted.map(&:name)
+          imported = rendered
+            .flat_map { |src| src.scan(/import type \{([^}]+)\}/) }
+            .flatten
+            .flat_map { |list| list.split(",").map(&:strip) }
+
+          expect(imported).to include("Post") # sanity: real imports survive
+          expect(imported.uniq - exported).to eq([])
+        end
+      end
+    end
+
     describe "block-argument forms" do
       it "does not crash on `json.items @items, &renderer`" do
         write_template("things/show.json.jbuilder", <<~RUBY)

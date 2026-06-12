@@ -26,8 +26,13 @@ module Typelizer
         # A) — see `handle_partial_bang` — which would otherwise recurse
         # until SystemStackError.
         @walks_in_progress = Set.new
+        # Per-cycle dedup for empty-partial-reference warnings (keys:
+        # [referencing template path, line, partial name]). Same lifetime
+        # rationale as `warned_unknowns`: each writer re-walks the template
+        # within one generation cycle, but the warning should fire once.
+        @warned_empty_partials = Set.new
         class << self
-          attr_reader :parse_cache, :warned_unknowns, :walks_in_progress
+          attr_reader :parse_cache, :warned_unknowns, :walks_in_progress, :warned_empty_partials
 
           # Path-keyed map of `{digest:, tree:}` (digest matching the
           # writer's fingerprint-digest house style): the per-cycle
@@ -99,6 +104,7 @@ module Typelizer
             @parse_cache = {}
             @warned_unknowns = Set.new
             @walks_in_progress = Set.new
+            @warned_empty_partials = Set.new
           end
 
           private
@@ -202,6 +208,11 @@ module Typelizer
           @context = context
           @column_inference = column_inference
           @unknown_lines = {}
+          # Prop names that fell back to `unknown` because their `partial:`
+          # reference resolved to an EMPTY interface — they already warned at
+          # resolution time (see `warn_empty_partial`), so the generic
+          # post-inference unknown warning is suppressed for them.
+          @empty_partial_props = Set.new
         end
 
         def properties
@@ -344,7 +355,8 @@ module Typelizer
         def note_unknown_candidate(node, prop)
           return prop unless prop.is_a?(Property)
 
-          if !prop.user_asserted && self.class.unknown_type?(prop.type)
+          if !prop.user_asserted && self.class.unknown_type?(prop.type) &&
+              !@empty_partial_props.include?(prop.name.to_s)
             @unknown_lines[prop.name.to_s] ||= node.location.start_line
           end
           prop
@@ -382,7 +394,7 @@ module Typelizer
 
           if (partial = kwargs[:partial])
             if partial.is_a?(String)
-              return prop_from_partial(name, args, partial, optional: optional)
+              return prop_from_partial(node, name, args, partial, optional: optional)
             end
             # Mirrors `handle_partial_bang`: a dynamic template reference
             # can't be resolved statically, so the property itself survives
@@ -488,7 +500,7 @@ module Typelizer
         # via `infer_nested_property_types`.
         def handle_prop_with_block(node, name:, optional:)
           multi = !node.block.parameters.nil?
-          interfaces, rest = partition_composed_partials(node.block)
+          interfaces, rest = partition_composed_partials(node.block, prop_name: name)
           if interfaces.any?
             additional = interfaces.drop(1)
             rest_props = with_nested { extract(rest, optional: false) }
@@ -503,11 +515,11 @@ module Typelizer
         # no `collection:` kwarg, and a resolvable template counts as a named
         # member; everything else (including unresolvable partials, which the
         # regular extraction path warns about) stays in the remainder.
-        def partition_composed_partials(block_node)
+        def partition_composed_partials(block_node, prop_name:)
           interfaces = []
           rest = []
           (block_node.body&.body || []).each do |stmt|
-            if (iface = nameable_partial_interface(stmt))
+            if (iface = nameable_partial_interface(stmt, prop_name: prop_name))
               interfaces << iface
             else
               rest << stmt
@@ -516,14 +528,26 @@ module Typelizer
           [interfaces.uniq, rest]
         end
 
-        def nameable_partial_interface(stmt)
+        def nameable_partial_interface(stmt, prop_name:)
           return nil unless json_call?(stmt) && stmt.name == :partial!
           first = positional_args(stmt).first
           return nil unless first.is_a?(Prism::StringNode)
           # Collection partials keep their merged-object warning path.
           return nil if keyword_args(stmt).key?(:collection)
           partial_class = @partial_resolver.call(first.unescaped)
-          partial_class && @context.interface_for(partial_class)
+          return nil unless partial_class
+
+          iface = @context.interface_for(partial_class)
+          if empty_partial_interface?(partial_class, iface)
+            # An empty interface is dropped from generation, so naming it as
+            # an intersection member would emit a dangling import (TS2305).
+            # Returning nil routes the statement into the remainder, where
+            # `handle_partial_bang` merges its (zero) properties — the member
+            # is simply omitted while the other members stay intact.
+            warn_empty_partial(stmt, first.unescaped, "it is omitted from `#{prop_name}`'s intersection type")
+            return nil
+          end
+          iface
         end
 
         def collection_attr_shortcut(args)
@@ -534,12 +558,62 @@ module Typelizer
           props.empty? ? nil : props
         end
 
-        def prop_from_partial(name, args, partial, optional:)
+        def prop_from_partial(node, name, args, partial, optional:)
           partial_class = @partial_resolver.call(partial)
           return build_property(name, type: "unknown", optional: optional) unless partial_class
 
+          multi = looks_like_collection?(name, args.first)
           iface = @context.interface_for(partial_class)
-          build_property(name, type: iface, optional: optional, multi: looks_like_collection?(name, args.first))
+          if empty_partial_interface?(partial_class, iface)
+            # An empty interface is dropped from generation (no file, no
+            # index export — see Writer), so a named reference to it would
+            # produce a TS2305 dangling import. Keep the property (its
+            # collection-ness is still statically known) but degrade the
+            # element type to `unknown`.
+            warn_empty_partial(node, partial, "`#{name}` falls back to `unknown`")
+            @empty_partial_props << name.to_s
+            return build_property(name, type: "unknown", optional: optional, multi: multi)
+          end
+
+          build_property(name, type: iface, optional: optional, multi: multi)
+        end
+
+        # True when the partial's interface is conclusively empty (it would
+        # be dropped from generation). Asking `empty?` triggers the partial's
+        # own property walk — fine inside a generation cycle (memoized per
+        # WriterContext), EXCEPT when that walk is already on the stack:
+        # `Interface#properties` (and this walker's `parsed`) memoize
+        # non-reentrantly, so re-entering would recurse until
+        # SystemStackError. An in-progress walk is treated as NON-empty,
+        # which is safe by construction, not just optimistic: the only way a
+        # partial can be mid-walk while a reference back to it is resolved is
+        # that one of its own statements triggered this sub-walk, and every
+        # such statement (a `partial:` kwarg prop, a composed-partial block,
+        # a top-level `json.partial!` merge of a template that references it
+        # back) emits at least one property into the partial — so the
+        # finished interface can never be empty. This preserves recursive
+        # types (Comment.replies → Comment). A self-referencing partial that
+        # IS empty (sole statement `json.partial!` of itself) never reaches
+        # this check: `handle_partial_bang`'s cycle guard returns before any
+        # interface reference is taken.
+        def empty_partial_interface?(partial_class, iface)
+          return false if self.class.walks_in_progress.include?(partial_class._template_path)
+
+          iface.empty?
+        end
+
+        # One clear warning per reference site per generation cycle. The
+        # generic post-inference "could not infer a type" warning is
+        # suppressed for these props (see `note_unknown_candidate`) so the
+        # same property doesn't warn twice with two different messages.
+        def warn_empty_partial(node, partial_name, consequence)
+          key = [@path, node.location.start_line, partial_name]
+          warned = self.class.warned_empty_partials
+          return if warned.include?(key)
+
+          warned << key
+          log_warning(node, "partial \"#{partial_name}\" produced no statically-typed properties; " \
+            "#{consequence} — use `typelize:` to pin a type")
         end
 
         # Jbuilder resolves array-vs-object at runtime by checking if the value
