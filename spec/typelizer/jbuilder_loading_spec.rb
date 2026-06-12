@@ -87,6 +87,16 @@ RSpec.describe "Jbuilder plugin loading" do
       expect(JSON.parse(json)).to eq("id" => 1, "title" => "Hello", "published" => true)
     end
 
+    it "renders extract!/array!/call with typelize: identical to the unannotated template" do
+      annotated = renderer.render(template: "multi_attr_annotated", formats: [:json])
+      plain = renderer.render(template: "multi_attr_plain", formats: [:json])
+
+      expect(JSON.parse(annotated)).to eq(JSON.parse(plain))
+      expect(JSON.parse(annotated)).to eq(
+        "id" => 5, "name" => "Ann", "items" => [{"id" => 1}, {"id" => 2}]
+      )
+    end
+
     it "renders a plain jbuilder template byte-identical to vanilla jbuilder" do
       expect(::JbuilderTemplate.ancestors).to include(Typelizer::Jbuilder::SetExt)
 
@@ -128,6 +138,16 @@ RSpec.describe "Jbuilder plugin loading" do
       Typelizer.configuration.jbuilder_views = nil
       Typelizer.configuration.jbuilder_enabled = true
       expect(Typelizer::Jbuilder.enabled?).to be(true)
+    end
+
+    it "round-trips jbuilder_views and jbuilder_enabled through the module-level delegators" do
+      Typelizer.jbuilder_views = ["app/views"]
+      Typelizer.jbuilder_enabled = false
+
+      expect(Typelizer.jbuilder_views).to eq(["app/views"])
+      expect(Typelizer.configuration.jbuilder_views).to eq(["app/views"])
+      expect(Typelizer.jbuilder_enabled).to be(false)
+      expect(Typelizer.configuration.jbuilder_enabled).to be(false)
     end
   end
 end

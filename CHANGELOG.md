@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning].
 
 ### Changed
 
+- `Typelizer::Error` is now the gem's base exception class: `Typelizer::TypeGenerationError`, `Typelizer::Writer::WriterError` (previously a bare `StandardError` descendant), and the new Jbuilder errors all inherit from it, so `rescue Typelizer::Error` catches every Typelizer-raised failure from one root. ([@skryukov])
+
 - Every generation cycle now runs behind a single process-wide reentrant lock (`GenerationLock`), shared by the request middleware, rake tasks, and Listen-triggered regeneration, so concurrent triggers serialize instead of interleaving. ([@skryukov])
 
 - **One-time digest churn**: interface fingerprints now include the root-array flag, and internal self-type-name resolution was hardened for serializers whose names don't end in `Serializer`/`Resource`. Every generated file's digest header changes once; run `rails typelizer:types:refresh` after upgrading to rewrite them in one sweep. Output content is unchanged for existing serializers. ([@skryukov])

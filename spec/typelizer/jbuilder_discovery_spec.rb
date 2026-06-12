@@ -151,6 +151,61 @@ RSpec.describe "Jbuilder discovery lifecycle" do
     end
   end
 
+  describe "views_root normalization" do
+    it "registers correct absolute paths when discover is given a relative root" do
+      configuration.jbuilder_views = nil
+      write_template("rel/show.json.jbuilder", "json.ok true\n")
+
+      Dir.chdir(File.dirname(views_root)) do
+        Typelizer::Jbuilder.discover(File.basename(views_root))
+      end
+
+      # The double-prefix bug re-expanded glob results against the relative
+      # root, deriving garbage names from the duplicated path — the constant
+      # below only exists when the path was normalized exactly once.
+      expect(Typelizer::Jbuilder::Templates.const_defined?(:RelShow, false)).to be(true)
+      registered = Typelizer::Jbuilder::Templates::RelShow._template_path
+      expect(Pathname.new(registered)).to be_absolute
+      expect(File.identical?(registered, File.join(views_root, "rel/show.json.jbuilder"))).to be(true)
+    end
+
+    it "accepts a Pathname views_root" do
+      configuration.jbuilder_views = nil
+      write_template("pn/show.json.jbuilder", "json.ok true\n")
+
+      Typelizer::Jbuilder.discover(Pathname.new(views_root))
+
+      expect(Typelizer::Jbuilder::Templates.const_defined?(:PnShow, false)).to be(true)
+      expect(Typelizer::Jbuilder::Templates::PnShow._template_path)
+        .to eq(File.expand_path(File.join(views_root, "pn/show.json.jbuilder")))
+    end
+  end
+
+  describe "type-name sanitization and validation" do
+    it "derives deterministic valid names for digit-leading and dotted path segments" do
+      configuration.jbuilder_views = nil
+      write_template("2fa/show.json.jbuilder", "json.ok true\n")
+      write_template("v2.1/status.json.jbuilder", "json.ok true\n")
+
+      Typelizer::Jbuilder.discover(views_root)
+
+      expect(Typelizer::Jbuilder::Templates.const_defined?(:N2faShow, false)).to be(true)
+      expect(Typelizer::Jbuilder::Templates.const_defined?(:V21Status, false)).to be(true)
+    end
+
+    it "raises a Typelizer::Error naming the template and a typelize_as hint for an invalid explicit name" do
+      configuration.jbuilder_views = nil
+      path = write_template("users/list.json.jbuilder", %(typelize_as "userList"\n\njson.ok true\n))
+
+      expect { Typelizer::Jbuilder.discover(views_root) }
+        .to raise_error(Typelizer::Error) { |error|
+          expect(error.message).to include(path)
+          expect(error.message).to include("userList")
+          expect(error.message).to include("typelize_as")
+        }
+    end
+  end
+
   describe "content-keyed parse cache" do
     it "re-parses a template whose content changed without an explicit cache reset" do
       path = write_template("cache/show.json.jbuilder", %(typelize_as "CacheOne"\n\njson.x 1\n))
@@ -232,34 +287,46 @@ RSpec.describe "Jbuilder discovery lifecycle" do
   end
 
   describe "generation lock" do
-    it "serializes a racing reset!/discover cycle so constants are never yanked mid-walk" do
+    it "serializes a racing refresh! against a real generation cycle so constants are never yanked mid-cycle" do
       configuration.jbuilder_views = [views_root]
       write_template("race/show.json.jbuilder", "json.ok true\n")
 
       events = Queue.new
       entered = Queue.new
 
-      walker_thread = Thread.new do
-        Typelizer::GenerationLock.synchronize do
-          Typelizer::Jbuilder.refresh!
-          klass = Typelizer::Jbuilder::Templates.const_get(:RaceShow, false)
-          entered << true
-          sleep 0.05 # widen the race window; correctness doesn't depend on it
-          # Still the same constant mid-walk — the racing refresh! had to wait.
-          events << [:walk_done, klass.equal?(Typelizer::Jbuilder::Templates.const_get(:RaceShow, false))]
-        end
+      # Instrument a point INSIDE the real lock path (`Typelizer.interfaces`
+      # calls `load_serializers` after `Jbuilder.refresh!`, with the
+      # GenerationLock held) to probe constant stability mid-cycle while a
+      # destructive `refresh!` contends for the same lock.
+      allow(Typelizer).to receive(:load_serializers).and_wrap_original do |original|
+        klass = Typelizer::Jbuilder::Templates.const_get(:RaceShow, false)
+        entered << true
+        sleep 0.05 # widen the race window; correctness doesn't depend on it
+        # Still the same constant mid-cycle — the racing refresh! had to wait.
+        events << [:mid_cycle_stable, klass.equal?(Typelizer::Jbuilder::Templates.const_get(:RaceShow, false))]
+        original.call
+      end
+
+      generation = Thread.new do
+        names = Typelizer.interfaces(writer_name: :jb_discovery).map(&:name)
+        events << [:generation_done, names]
       end
 
       racer = Thread.new do
-        entered.pop # deterministic: contend only once the walk holds the lock
+        entered.pop # deterministic: contend only once the cycle holds the lock
         Typelizer::Jbuilder.refresh!
         events << [:refresh_done]
       end
 
-      [walker_thread, racer].each(&:join)
+      [generation, racer].each(&:join)
 
-      expect(events.pop).to eq([:walk_done, true])
-      expect(events.pop).to eq([:refresh_done])
+      expect(events.pop).to eq([:mid_cycle_stable, true])
+      # The lock is released before either thread reports completion, so the
+      # last two events can land in either order — assert content, not order.
+      remaining = [events.pop, events.pop]
+      expect(remaining).to include([:refresh_done])
+      generation_done = remaining.find { |event| event.first == :generation_done }
+      expect(generation_done&.last).to include("RaceShow")
     end
   end
 
@@ -278,8 +345,9 @@ RSpec.describe "Jbuilder discovery lifecycle" do
 
       env = {"RAILS_ENV" => "production", "TYPELIZER" => nil, "SECRET_KEY_BASE" => "dummy-secret"}
       output = IO.popen(env, [RbConfig.ruby, "-e", script], err: [:child, :out], &:read)
+      status = $?
 
-      expect($?).to be_success, "production boot failed:\n#{output}"
+      expect(status).to be_success, "production boot failed:\n#{output}"
       expect(output).to include("NO_BOOT_DISCOVERY")
     end
   end

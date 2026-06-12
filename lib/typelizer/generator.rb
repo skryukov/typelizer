@@ -16,11 +16,18 @@ module Typelizer
       # writer (see Typelizer::Jbuilder.refresh_once).
       GenerationLock.synchronize do
         Typelizer::Jbuilder.refresh_once do
-          Typelizer.configuration.writers.each do |writer_name, writer_config|
+          # Materialize every writer's interfaces up front: the protected-dir
+          # union must include per-serializer `output_dir` overrides from ALL
+          # writers before the first writer's stale-file cleanup runs.
+          writer_batches = Typelizer.configuration.writers.filter_map do |writer_name, writer_config|
             interfaces = Typelizer.interfaces(writer_name: writer_name)
-            next if interfaces.empty?
+            [writer_config, interfaces] unless interfaces.empty?
+          end
 
-            Writer.new(writer_config, protected_output_dirs: protected_output_dirs).call(interfaces, force: force)
+          protected_dirs = protected_output_dirs(writer_batches)
+
+          writer_batches.each do |writer_config, interfaces|
+            Writer.new(writer_config, protected_output_dirs: protected_dirs).call(interfaces, force: force)
           end
         end
       end
@@ -28,11 +35,15 @@ module Typelizer
 
     private
 
-    # Every configured writer's output dir — handed to each Writer so its
-    # cross-writer stale-file protection doesn't reach back into global
-    # configuration (the Generator owns the writer loop).
-    def protected_output_dirs
-      Typelizer.configuration.writers.values.map(&:output_dir)
+    # Every configured writer's output dir PLUS every per-interface override
+    # (`typelizer_config { |c| c.output_dir = ... }` at the serializer level)
+    # — handed to each Writer so its cross-writer stale-file protection
+    # covers overrides that point into another writer's dir, without reaching
+    # back into global configuration (the Generator owns the writer loop).
+    def protected_output_dirs(writer_batches)
+      writer_dirs = Typelizer.configuration.writers.values.map(&:output_dir)
+      interface_dirs = writer_batches.flat_map { |_, interfaces| interfaces.map { |i| i.config.output_dir } }
+      (writer_dirs + interface_dirs).uniq
     end
   end
 end

@@ -128,6 +128,38 @@ RSpec.describe "Jbuilder migration ergonomics" do
       expect(alba_out.join("AlbaPost.ts")).to exist
       expect(alba_out.join("index.ts")).to exist
     end
+
+    it "protects a serializer-level output_dir override pointing into another writer's dir from that writer's cleanup" do
+      jbuilder_out = scratch_dir.join("jbuilder_types")
+      override_dir = jbuilder_out.join("legacy")
+      register_jbuilder_writer!(jbuilder_out)
+      write_template("posts/show.json.jbuilder", "json.ok true\n")
+
+      # Standalone class (not a subclass of an existing serializer): it is
+      # discovered through its own `base_classes` registration, which the
+      # ensure below removes — a subclass would linger in `descendants`
+      # until GC and pollute later examples' generation cycles.
+      stub_const("MigOverrideUserSerializer", Class.new)
+      MigOverrideUserSerializer.class_eval do
+        include Alba::Resource
+        include Typelizer::DSL
+
+        typelizer_config { |c| c.output_dir = override_dir }
+        typelize_from ::User
+        attributes :id, :username
+      end
+
+      # Full multi-writer pass: the default writer emits the override
+      # interface into `jbuilder_out/legacy` BEFORE the jbuilder writer's
+      # stale-file cleanup globs `jbuilder_out/**` — the override dir must be
+      # in the protected set or the file is collected as stale.
+      Typelizer::Generator.call(force: false)
+
+      expect(override_dir.join("MigOverrideUser.ts")).to exist
+      expect(jbuilder_out.join("PostsShow.ts")).to exist
+    ensure
+      Typelizer.base_classes.delete("MigOverrideUserSerializer")
+    end
   end
 
   describe "cross-plugin duplicate-export detection" do
@@ -154,6 +186,40 @@ RSpec.describe "Jbuilder migration ergonomics" do
       expect(logs).to include("index.ts")
       # Warning only — generation still completes.
       expect(shared_out.join("index.ts")).to exist
+    end
+
+    it "warns once per duplicate name-set across cycles and re-warns when the set changes" do
+      shared_out = scratch_dir.join("dedup_types")
+      configuration.writer(:mig_dedup) do |w|
+        w.output_dir = shared_out
+        w.reject_class = ->(serializer:) {
+          !%w[Alba::PostSerializer Alba::UserSerializer].include?(serializer.name) &&
+            !serializer.name.to_s.start_with?("Typelizer::Jbuilder::Templates::")
+        }
+      end
+      write_template("posts/_post.json.jbuilder", <<~RUBY)
+        typelize_as "AlbaPost"
+
+        json.id post.id, typelize: "number"
+      RUBY
+
+      first = with_capture_logger { run_writer!(:mig_dedup) }
+      second = with_capture_logger { run_writer!(:mig_dedup) }
+
+      # Same unchanged duplicate set: warn on the first cycle only.
+      expect(first).to include('duplicate exported type "AlbaPost"')
+      expect(second).not_to include("duplicate exported type")
+
+      # The colliding set changes (a second collision appears): warn again.
+      write_template("users/_user.json.jbuilder", <<~RUBY)
+        typelize_as "AlbaUser"
+
+        json.id user.id, typelize: "number"
+      RUBY
+
+      third = with_capture_logger { run_writer!(:mig_dedup) }
+      expect(third).to include('duplicate exported type "AlbaPost"')
+      expect(third).to include('duplicate exported type "AlbaUser"')
     end
 
     it "does not warn when the same-named types live in separate writers (the supported migration setup)" do

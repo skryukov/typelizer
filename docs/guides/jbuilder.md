@@ -59,6 +59,8 @@ The generated type name is derived from the template path. When a partial follow
 | `users/_avatar.json.jbuilder` | `UsersAvatar` |
 | `_post.json.jbuilder` (root) | `Post` — collides with `posts/_post.json.jbuilder`; keep partials under a resource directory |
 
+Path segments that wouldn't form a valid type name are sanitized deterministically: characters outside `A-Za-z0-9_` are stripped (`v2.1/show.json.jbuilder` → `V21Show`) and digit-leading segments are prefixed with `N` (`2fa/show.json.jbuilder` → `N2faShow`). If sanitization still can't produce a valid name, generation raises with a `typelize_as` hint — and an explicit `typelize_as` name is never rewritten: an invalid one (e.g. `typelize_as "userList"`) raises instead.
+
 Two templates claiming the same type name raise a `Typelizer::Jbuilder::NameCollision` error at generation time, naming both template paths. Rename one of them with `typelize_as`.
 
 ### Render safety vs. plugin enablement
@@ -163,6 +165,8 @@ json.result typelize: "{ ok: boolean } | { error: string }"
 ```
 
 The `typelize:` kwarg always wins — it's scoped to that exact property at that exact nesting level, so a nested `json.stats { json.total @t, typelize: "number" }` never affects a top-level `total`. Use it when you need to pin a shape that the walker can't infer.
+
+`typelize:` applies to named `json.<name>` calls; on multi-attribute emitters (`json.extract!`, `json.array!`, `json.(...)`) it has no per-field meaning, so it's ignored for type generation — but still render-safe (stripped before jbuilder sees it).
 
 ## Partials
 

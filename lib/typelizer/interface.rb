@@ -37,8 +37,10 @@ module Typelizer
       end
     end
 
-    # Per-serializer name override declared via `typelize_as "Foo"` in the
-    # serializer file (or in a jbuilder template via the runtime helper).
+    # Per-serializer name override declared via `typelize_as "Foo"` — a
+    # general DSL method available in every serializer class; jbuilder
+    # templates declare it too (read statically by the walker at discovery
+    # time and bound to the generated template class).
     def type_name_override
       return nil unless serializer.respond_to?(:_typelizer_type_name)
       serializer._typelizer_type_name
@@ -76,8 +78,10 @@ module Typelizer
       end
     end
 
+    # Feature-detected (like `trait_interfaces`) so duck-typed third-party
+    # plugins that don't inherit from SerializerPlugins::Base keep working.
     def root_is_array
-      serializer_plugin.root_is_array
+      serializer_plugin.respond_to?(:root_is_array) && serializer_plugin.root_is_array
     end
 
     def wrapped?
@@ -119,7 +123,8 @@ module Typelizer
         # Post-inference hook: plugins whose property sources carry no class
         # body (e.g. jbuilder templates) can only judge an `unknown` fallback
         # honestly AFTER model inference had its chance to fill types in.
-        serializer_plugin.after_type_inference(props)
+        # Feature-detected for duck-typed plugins (trait_interfaces pattern).
+        serializer_plugin.after_type_inference(props) if serializer_plugin.respond_to?(:after_type_inference)
         props = transform_properties(props)
         PropertySorter.sort(props, config.properties_sort_order)
       end

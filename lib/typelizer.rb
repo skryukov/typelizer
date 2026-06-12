@@ -47,10 +47,10 @@ module Typelizer
     extend Forwardable
 
     # readers
-    def_delegators :configuration, :dirs, :reject_class, :listen, :writer
+    def_delegators :configuration, :dirs, :reject_class, :listen, :writer, :jbuilder_views, :jbuilder_enabled
 
     # writers
-    def_delegators :configuration, :dirs=, :reject_class=, :listen=
+    def_delegators :configuration, :dirs=, :reject_class=, :listen=, :jbuilder_views=, :jbuilder_enabled=
 
     # Is Typelizer active?
     #

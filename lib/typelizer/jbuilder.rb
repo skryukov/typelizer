@@ -108,17 +108,7 @@ module Typelizer
         # straight to upstream `set!` (this runs once per json.* call).
         return super(name, *args, &block) if kwargs.empty?
 
-        # Stripping happens before any other logic (structural R7 rule):
-        # foreign-inert kwargs must be gone before any intercept or early
-        # return so behavior is identical under either gem's prepend order.
-        FOREIGN_KWARGS.each_key do |kwarg|
-          next unless kwargs.key?(kwarg)
-          next if SetExt.foreign_runtime_present?(kwarg, self)
-
-          kwargs.delete(kwarg)
-          SetExt.warn_foreign_stripped!(kwarg)
-        end
-        RESERVED_KWARGS.each { |k| kwargs.delete(k) }
+        _typelizer_strip_kwargs!(kwargs)
 
         # When kwargs is empty, omit them entirely so we don't accidentally
         # forward an empty Hash as a positional arg to upstream `set!` (which
@@ -131,6 +121,68 @@ module Typelizer
         else
           super
         end
+      end
+
+      # The non-`set!` emitters need the same protection: jbuilder's
+      # signatures (`extract!(object, *attributes)`,
+      # `array!(collection = [], *attrs)`, `call(object, *attributes)`)
+      # declare no `**kwargs`, so a `typelize:` annotation would pack into
+      # the positional attribute list and crash the render. Same
+      # top-of-method rule as `set!`; when stripping empties the kwargs they
+      # are omitted entirely so no spurious positional Hash reaches upstream.
+      # (The walker intentionally ignores `typelize:` here — it has no
+      # per-field meaning on multi-attribute emitters.)
+      def extract!(object, *attributes, **kwargs)
+        return super(object, *attributes) if kwargs.empty?
+
+        _typelizer_strip_kwargs!(kwargs)
+
+        if kwargs.empty?
+          super(object, *attributes)
+        else
+          super
+        end
+      end
+
+      def array!(*args, **kwargs, &block)
+        return super(*args, &block) if kwargs.empty?
+
+        _typelizer_strip_kwargs!(kwargs)
+
+        if kwargs.empty?
+          super(*args, &block)
+        else
+          super
+        end
+      end
+
+      def call(object, *attributes, **kwargs, &block)
+        return super(object, *attributes, &block) if kwargs.empty?
+
+        _typelizer_strip_kwargs!(kwargs)
+
+        if kwargs.empty?
+          super(object, *attributes, &block)
+        else
+          super
+        end
+      end
+
+      private
+
+      # Stripping happens before any other logic (structural R7 rule):
+      # foreign-inert kwargs must be gone before any intercept or early
+      # return so behavior is identical under either gem's prepend order.
+      def _typelizer_strip_kwargs!(kwargs)
+        FOREIGN_KWARGS.each_key do |kwarg|
+          next unless kwargs.key?(kwarg)
+          next if SetExt.foreign_runtime_present?(kwarg, self)
+
+          kwargs.delete(kwarg)
+          SetExt.warn_foreign_stripped!(kwarg)
+        end
+        RESERVED_KWARGS.each { |k| kwargs.delete(k) }
+        kwargs
       end
     end
 
@@ -151,8 +203,12 @@ module Typelizer
       end
 
       def template(path, views_root: default_views_root, model: nil, as: nil)
+        # Normalize once at entry (mirrors `discover` and the listener):
+        # a relative or Pathname root would otherwise double-prefix glob
+        # results on re-expansion and crash the type-name derivation.
+        views_root = File.expand_path(views_root.to_s)
         full_path = File.expand_path(path, views_root)
-        type_name = as || derive_type_name(full_path, views_root)
+        type_name = as ? validate_type_name!(as.to_s, full_path) : derive_type_name(full_path, views_root)
         check_name_collision!(type_name, full_path)
 
         klass = ensure_class(type_name)
@@ -186,6 +242,9 @@ module Typelizer
       # registration time and the same parse is reused later for the
       # property walk.
       def discover(views_root = default_views_root, model_resolver: nil)
+        # Same entry normalization as `template`: accept relative paths and
+        # Pathnames without double-prefixing the glob results downstream.
+        views_root = File.expand_path(views_root.to_s)
         walker = SerializerPlugins::Jbuilder.activate_walker!
         # Sorted for deterministic registration order — stable `index.ts`
         # output and stable collision error messages across filesystems.
@@ -301,17 +360,44 @@ module Typelizer
         klass
       end
 
+      # Generated type names double as Ruby constant names (under
+      # `Templates::`) and TypeScript identifiers, so they must match this
+      # shape. Path-derived names are sanitized into it (see
+      # `sanitize_segment`); explicit `typelize_as` names must already
+      # conform — a user-chosen name is never silently rewritten.
+      VALID_TYPE_NAME = /\A[A-Z][A-Za-z0-9_]*\z/
+
+      def validate_type_name!(type_name, full_path)
+        return type_name if type_name.match?(VALID_TYPE_NAME)
+
+        raise Typelizer::Error, "Typelizer::Jbuilder: #{full_path}: #{type_name.inspect} is not a " \
+          "valid type name (must match #{VALID_TYPE_NAME.inspect}) — " \
+          "use `typelize_as \"PascalCaseName\"` to set a valid one"
+      end
+
       # Rails convention: a `_foo.json.jbuilder` partial inside `foos/`
       # represents the `Foo` resource, so we drop the redundant directory. Any
       # other layout (e.g. `admin/_user`, `users/_avatar`) keeps the full path
       # to avoid collisions and stay honest about the file's location.
+      #
+      # Each segment is sanitized deterministically into constant-safe form:
+      # characters outside [A-Za-z0-9_] are stripped (`v2.1` → `V21`) and
+      # digit-leading segments are prefixed with `N` (`2fa` → `N2fa`). If
+      # sanitization still can't produce a valid name, we raise with a
+      # `typelize_as` hint instead of letting a bare NameError escape.
       def derive_type_name(full_path, views_root)
         rel = full_path.sub(%r{\A#{Regexp.escape(views_root)}/?}, "")
           .sub(/\.json\.jbuilder\z/, "")
           .sub(/\.jbuilder\z/, "")
         parts = rel.split("/")
         parts = collapse_partial_parent(parts)
-        parts.map { |part| part.delete_prefix("_").camelize }.join
+        name = parts.map { |part| sanitize_segment(part.delete_prefix("_")) }.join
+        validate_type_name!(name, full_path)
+      end
+
+      def sanitize_segment(segment)
+        cleaned = segment.gsub(/[^A-Za-z0-9_]/, "").camelize
+        cleaned.match?(/\A\d/) ? "N#{cleaned}" : cleaned
       end
 
       def collapse_partial_parent(parts)

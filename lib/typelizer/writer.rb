@@ -2,9 +2,11 @@
 
 require "fileutils"
 
+require_relative "error"
+
 module Typelizer
   class Writer
-    class WriterError < StandardError; end
+    class WriterError < Typelizer::Error; end
 
     # `protected_output_dirs` is the full set of writer output dirs to shield
     # from this writer's stale-file cleanup (the Generator passes every
@@ -15,6 +17,17 @@ module Typelizer
       @template_cache = {}
       @config = config
       @protected_output_dirs = protected_output_dirs
+    end
+
+    class << self
+      # Per-writer (keyed by output_dir — unique across writers) memo of the
+      # last duplicate-export name set we warned about, so the warning fires
+      # once per name-set instead of on every generation cycle, and fires
+      # again only when the colliding set changes. Class-level because Writer
+      # instances are recreated each cycle.
+      def warned_duplicate_exports
+        @warned_duplicate_exports ||= {}
+      end
     end
 
     def call(interfaces, force:)
@@ -87,9 +100,18 @@ module Typelizer
     # warning fires only when they share ONE index, naming both sources so
     # the writer scoping (`reject_class`) or `typelize_as` can be fixed.
     def warn_duplicate_exports(interfaces)
-      interfaces.group_by(&:name).each do |name, group|
-        next if group.size < 2
+      duplicate_groups = interfaces.group_by(&:name).select { |_, group| group.size >= 2 }
 
+      # Dedup across cycles: generation re-runs on every request/file change,
+      # and re-warning about the same unchanged duplicate set on each cycle
+      # is noise. Re-warn only when the set of colliding names changes.
+      signature = duplicate_groups.keys.sort
+      memo_key = config.output_dir.to_s
+      return if self.class.warned_duplicate_exports[memo_key] == signature
+
+      self.class.warned_duplicate_exports[memo_key] = signature
+
+      duplicate_groups.each do |name, group|
         sources = group.map(&:source_description).sort
         Typelizer.logger.warn(
           "Typelizer: duplicate exported type #{name.inspect} in #{File.join(config.output_dir.to_s, "index.ts")} — " \
