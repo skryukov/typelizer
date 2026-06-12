@@ -34,11 +34,17 @@ RSpec.describe "Typelizer::DSL#typelize_as", type: :typelizer do
   end
 
   it "is a no-op when typelizer is disabled" do
-    Typelizer::DSL.disable!
-    klass = Class.new { include Typelizer::DSL }
+    # Mirror `DSL.disable!` on an anonymous module instead of calling it:
+    # `disable!` prepends onto the real ClassMethods process-wide and cannot
+    # be undone, which would poison every later example in a random-order run
+    # (see dsl_disabled_spec.rb for the same isolation pattern).
+    class_methods = Module.new do
+      include Typelizer::DSL::ClassMethods
+      prepend Typelizer::DSL::Disabled
+    end
+    klass = Class.new { extend class_methods }
+
     expect { klass.typelize_as "Whatever" }.not_to raise_error
     expect(klass.respond_to?(:_typelizer_type_name)).to be false
-  ensure
-    Typelizer::DSL::ClassMethods.send(:remove_method, :typelize_as) if Typelizer::DSL::Disabled.method_defined?(:typelize_as)
   end
 end

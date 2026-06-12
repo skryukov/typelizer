@@ -208,6 +208,95 @@ RSpec.describe Typelizer::Jbuilder do
     end
   end
 
+  describe "typelize: assertions (user_asserted)" do
+    let(:views_root) { Dir.mktmpdir("typelizer-jbuilder-asserted-spec") }
+
+    after do
+      Typelizer::Jbuilder.reset!
+      Typelizer::Jbuilder.discover(Rails.root.join("app/views").to_s)
+      FileUtils.rm_rf(views_root)
+    end
+
+    def write_template(relative_path, body)
+      full = File.join(views_root, relative_path)
+      FileUtils.mkdir_p(File.dirname(full))
+      File.write(full, body)
+      full
+    end
+
+    def render_interface(klass)
+      ctx = Typelizer::WriterContext.new(writer_name: nil)
+      iface = ctx.interface_for(klass)
+      Typelizer::Renderer.call("interface.ts.erb", interface: iface)
+    end
+
+    it "survives model inference when the asserted type disagrees with a JSON-typed AR attribute" do
+      write_template("users/show.json.jbuilder", <<~RUBY)
+        typelize_from User
+
+        json.attr_json user.attr_json, typelize: "string[]"
+      RUBY
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+
+      expect(output).to include("attr_json: Array<string>")
+      expect(output).not_to include("attr_json: unknown")
+    end
+
+    it "scopes a nested typelize: to its nesting level (no flat-key leak onto same-named top-level props)" do
+      write_template("users/show.json.jbuilder", <<~RUBY)
+        typelize_from User
+
+        json.name user.name
+        json.stats do
+          json.name 123, typelize: "number"
+        end
+      RUBY
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+
+      expect(output).to include("name: string;")
+      expect(output).to include("name: number;")
+    end
+
+    it "drops a removed typelize: on the next generation in the same process (no stale registry)" do
+      path = write_template("widgets/show.json.jbuilder", <<~RUBY)
+        json.score 1, typelize: "string"
+      RUBY
+      klass = Typelizer::Jbuilder.template("widgets/show.json.jbuilder", views_root: views_root)
+
+      expect(render_interface(klass)).to include("score: string")
+
+      File.write(path, "json.score 1\n")
+      Typelizer::SerializerPlugins::Jbuilder::Walker.reset_cache!
+
+      expect(render_interface(klass)).to include("score: number")
+    end
+
+    it "does not mutate the serializer class and tolerates an empty-but-present _typelizer_attributes" do
+      write_template("users/show.json.jbuilder", <<~RUBY)
+        typelize_from User
+
+        json.name user.name
+        json.score 1, typelize: "string"
+      RUBY
+
+      Typelizer::Jbuilder.discover(views_root)
+      klass = Typelizer::Jbuilder::Templates::UsersShow
+      # Virtual classes include the DSL, so the `dsl_attrs` registry can be
+      # present-but-empty (`respond_to?` true). It must stay inert and empty.
+      klass.send(:ensure_type_store, :_typelizer_attributes)
+
+      output = render_interface(klass)
+
+      expect(output).to include("name: string")
+      expect(output).to include("score: string")
+      expect(klass._typelizer_attributes).to eq({})
+    end
+  end
+
   describe "walker correctness" do
     let(:views_root) { Dir.mktmpdir("typelizer-jbuilder-walker-spec") }
 

@@ -60,15 +60,12 @@ module Typelizer
         end
       end
 
+      # `typelize:` kwargs arrive as `user_asserted` properties straight from
+      # the walker — `Interface#infer_types` skips AR model inference for
+      # them per property (scoped to their nesting level), so no class-level
+      # registry mutation is needed here.
       def properties
-        props = walker.properties
-        # `typelize:` kwargs are user-asserted types — register them on the
-        # virtual class so `Interface#infer_types` skips AR model inference
-        # for these names (matching how the class-level DSL works).
-        walker.type_overrides.each do |name, attrs|
-          serializer.store_type(:_typelizer_attributes, name.to_sym, attrs)
-        end
-        props
+        walker.properties
       end
 
       def root_is_array

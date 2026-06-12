@@ -229,11 +229,23 @@ module Typelizer
 
         prop
           .then { |p| apply_dsl_type(p, dsl_attrs) }
-          .then { |p| has_dsl ? p : apply_model_inference(p) }
+          .then { |p| resolve_asserted_type(p) }
+          .then { |p| (has_dsl || p.user_asserted) ? p : apply_model_inference(p) }
           .then { |p| apply_multi_flag(p, multi_attrs) }
           .then { |p| apply_metadata(p) }
           .then { |p| infer_nested_property_types(p) }
       end
+    end
+
+    # `user_asserted` properties (e.g. jbuilder `typelize:` kwargs) carry
+    # their type directly instead of going through the class-level
+    # `dsl_attrs` registry. Run them through the same class-name resolution
+    # `apply_dsl_type` performs so `typelize: "PostSerializer"` still
+    # resolves to an interface reference.
+    def resolve_asserted_type(prop)
+      return prop unless prop.user_asserted
+
+      prop.with(**resolve_class_type(type: prop.type))
     end
 
     def apply_dsl_type(prop, dsl_attrs)

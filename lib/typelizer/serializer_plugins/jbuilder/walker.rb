@@ -118,23 +118,14 @@ module Typelizer
           parsed.fetch(:root_is_array)
         end
 
-        # Names → parsed type info for every `typelize:` kwarg the walker
-        # encountered. Surfaced to the plugin so it can install them as
-        # serializer-class DSL attributes (suppressing AR column inference).
-        def type_overrides
-          parsed.fetch(:type_overrides)
-        end
-
         private
 
         def parsed
           @parsed ||= begin
-            @type_overrides = {}
             stmts = self.class.parsed_tree(@path).statements.body
             {
               root_is_array: detect_root_array(stmts),
-              properties: extract(stmts, optional: false),
-              type_overrides: @type_overrides
+              properties: extract(stmts, optional: false)
             }
           end
         end
@@ -227,21 +218,22 @@ module Typelizer
 
         # Routes `typelize:` overrides through TypeParser so shortcuts
         # (`string?`, `number[]`, `string?[]`) expand into real TS. The
-        # `dsl_attrs` carry only what the user explicitly asserted in the
-        # typelize string — structural optionality (from `if` blocks, inertia
-        # kwargs) belongs on the property itself so `merge_branches` and
-        # similar context-aware passes can still adjust it without being
-        # overwritten by the registered DSL entry.
+        # property is flagged `user_asserted` so `Interface#infer_types`
+        # skips AR model inference for it — scoped to this exact property,
+        # at this exact nesting level, with no class-level registry.
+        # Optionality merges the user's assertion (`string?`) with structural
+        # optionality (from `if` blocks, inertia kwargs) so context-aware
+        # passes like `merge_branches` can still widen it.
         def property_from_override(name, override, optional:)
           parsed = TypeParser.parse_declaration(override)
-          dsl_attrs = {
+          build_property(
+            name,
             type: parsed[:type] || override.to_s,
             nullable: parsed[:nullable] || false,
-            multi: parsed[:multi] || false
-          }
-          dsl_attrs[:optional] = true if parsed[:optional]
-          @type_overrides[name] = dsl_attrs if @type_overrides
-          build_property(name, **dsl_attrs, optional: optional || parsed[:optional] || false)
+            multi: parsed[:multi] || false,
+            optional: optional || parsed[:optional] || false,
+            user_asserted: true
+          )
         end
 
         # If the block body is purely `json.partial!` calls, emit each as an
@@ -434,13 +426,15 @@ module Typelizer
         # fully-covered chain emits it, and stays optional if any branch
         # marked it optional (e.g. via `inertia: :defer`). Type ambiguity
         # (different base types per branch) is not unioned — first branch
-        # wins; flag with `typelize:` if needed.
+        # wins, except that an explicit `typelize:` assertion in any branch
+        # beats inferred guesses (and carries `user_asserted` through the
+        # merge, so model inference can't clobber the merged property).
         def merge_branches(branch_props, fully_covered:)
           names = branch_props.flat_map { |props| props.map(&:name) }.uniq
           names.map do |name|
             occurrences = branch_props.map { |props| props.find { |p| p.name == name } }
             present = occurrences.compact
-            base = present.first
+            base = present.find(&:user_asserted) || present.first
             nullable = present.any?(&:nullable)
             optional = present.any?(&:optional) || !(fully_covered && occurrences.all?)
             base.with(optional: optional, nullable: nullable)
@@ -456,7 +450,7 @@ module Typelizer
           build_property(col, type: @column_inference ? nil : name_hint(col), optional: optional)
         end
 
-        def build_property(name, type: nil, optional: false, nullable: false, multi: false, additional_types: nil)
+        def build_property(name, type: nil, optional: false, nullable: false, multi: false, additional_types: nil, user_asserted: false)
           Property.new(
             name: name,
             type: type,
@@ -464,7 +458,8 @@ module Typelizer
             nullable: nullable,
             multi: multi,
             column_name: name,
-            additional_types: additional_types
+            additional_types: additional_types,
+            user_asserted: user_asserted
           )
         end
 

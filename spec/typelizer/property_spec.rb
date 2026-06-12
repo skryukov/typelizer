@@ -517,6 +517,16 @@ RSpec.describe Typelizer::Property do
     end
   end
 
+  describe "#fingerprint" do
+    it "excludes user_asserted (it informs inference, not output)" do
+      asserted = described_class.new(name: "field", type: "string", user_asserted: true)
+      inferred = described_class.new(name: "field", type: "string", user_asserted: false)
+
+      expect(asserted.fingerprint).to eq(inferred.fingerprint)
+      expect(asserted).to eql(inferred)
+    end
+  end
+
   describe "determinism" do
     it "produces identical output on multiple runs with sorting" do
       prop = described_class.new(
