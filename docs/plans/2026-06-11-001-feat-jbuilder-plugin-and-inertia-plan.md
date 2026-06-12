@@ -1,7 +1,7 @@
 ---
 title: "feat: Productionize the Jbuilder plugin and rewrite jbuilder-inertia"
 type: feat
-status: active
+status: completed
 date: 2026-06-11
 deepened: 2026-06-11
 ---
