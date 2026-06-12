@@ -190,7 +190,7 @@ RSpec.describe Typelizer::Jbuilder do
       expect(output).not_to match(/Array<TeacherEarnings>/)
     end
 
-    it "falls back to inline shape when the block contains anything other than `partial!`" do
+    it "intersects named partials with a trailing inline shape for mixed blocks" do
       write_template("courses/_course.json.jbuilder", <<~ERB)
         json.id course.id, typelize: "number"
       ERB
@@ -205,8 +205,105 @@ RSpec.describe Typelizer::Jbuilder do
       page = Typelizer::Jbuilder::Templates::CoursesShow
       output = render_interface(page)
 
-      expect(output).to include("course: {")
+      expect(output).to include("course: Course & {")
       expect(output).to include("note: string")
+      expect(output).to include("import type {Course}")
+    end
+
+    it "keeps a single composed partial as a plain named interface (no intersection)" do
+      write_template("users/_user.json.jbuilder", <<~ERB)
+        json.id user.id, typelize: "number"
+      ERB
+      write_template("users/show.json.jbuilder", <<~ERB)
+        json.author do
+          json.partial! "users/user", user: @user
+        end
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+
+      expect(output).to include("author: User;")
+      expect(output).not_to include("&")
+    end
+
+    it "skips the trailing shape when the non-partial remainder emits no properties" do
+      write_template("courses/_course.json.jbuilder", <<~ERB)
+        json.id course.id, typelize: "number"
+      ERB
+      write_template("courses/show.json.jbuilder", <<~ERB)
+        json.course do
+          json.partial! "courses/course", course: @course
+          json.merge! extra_hash
+        end
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::CoursesShow)
+
+      expect(output).to include("course: Course;")
+      expect(output).not_to include("Course & ")
+    end
+
+    it "leaves a collection `partial!` inside a mixed block on the merged-object path, not as a named member" do
+      write_template("comments/_comment.json.jbuilder", <<~ERB)
+        json.id comment.id, typelize: "number"
+      ERB
+      write_template("courses/_course.json.jbuilder", <<~ERB)
+        json.title course.title, typelize: "string"
+      ERB
+      write_template("courses/show.json.jbuilder", <<~ERB)
+        json.course do
+          json.partial! "courses/course", course: @course
+          json.partial! "comments/comment", collection: @comments
+        end
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::CoursesShow)
+
+      # The collection partial's fields merge into the trailing inline shape
+      # (with its existing warning); only the plain partial is named.
+      expect(output).to include("course: Course & {")
+      expect(output).to include("id: number")
+    end
+
+    it "deduplicates a partial composed twice in the same block" do
+      write_template("courses/_course.json.jbuilder", <<~ERB)
+        json.id course.id, typelize: "number"
+      ERB
+      write_template("courses/show.json.jbuilder", <<~ERB)
+        json.course do
+          json.partial! "courses/course", course: @course
+          json.partial! "courses/course", course: @other_course
+        end
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::CoursesShow)
+
+      expect(output).to include("course: Course;")
+      expect(output).not_to include("Course & Course")
+    end
+
+    it "runs model inference inside the trailing shape of a mixed block" do
+      write_template("courses/_course.json.jbuilder", <<~ERB)
+        json.id course.id, typelize: "number"
+      ERB
+      write_template("courses/show.json.jbuilder", <<~ERB)
+        typelize_from User
+
+        json.course do
+          json.partial! "courses/course", course: @course
+          json.extract! user, :name
+        end
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::CoursesShow)
+
+      expect(output).to include("course: Course & {")
+      expect(output).to include("name: string")
     end
   end
 

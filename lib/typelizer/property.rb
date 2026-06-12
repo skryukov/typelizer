@@ -46,7 +46,13 @@ module Typelizer
       type_str = ([type_str] + trait_types).join(" & ") if trait_types.any?
 
       if additional_types&.any?
-        extra = additional_types.map { |t| t.respond_to?(:name) ? t.name : t.to_s }
+        extra = additional_types.map do |t|
+          if t.is_a?(Shape)
+            t.render(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
+          else
+            t.respond_to?(:name) ? t.name : t.to_s
+          end
+        end
         type_str = ([type_str] + extra).join(" & ")
       end
 

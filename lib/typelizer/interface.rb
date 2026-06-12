@@ -195,8 +195,9 @@ module Typelizer
 
     def collect_all_properties(props)
       props.flat_map do |prop|
-        children = nested_properties_of(prop.type)
-        children ? [prop] + collect_all_properties(children) : [prop]
+        children = ([prop.type] + Array(prop.additional_types))
+          .flat_map { |type| nested_properties_of(type) || [] }
+        children.any? ? [prop] + collect_all_properties(children) : [prop]
       end
     end
 

@@ -43,13 +43,61 @@ module Typelizer
 
     attr_reader :config, :template_cache
 
+    # Stale cleanup never crosses writers: another writer's output_dir may be
+    # nested inside this writer's (e.g. a migration-period `types/jbuilder`
+    # under the default `types`), and its files must not be collected as
+    # stale here — each writer cleans up only its own output.
     def cleanup_stale_files(written_files, interfaces)
       output_dirs = output_dirs_for(interfaces)
+      foreign_dirs = foreign_output_dirs(output_dirs)
 
       existing_files = output_dirs.flat_map { |dir| Dir[File.join(dir, "**/*.ts")] }
+      existing_files = existing_files.reject { |file| foreign_dirs.any? { |dir| File.expand_path(file).start_with?(dir) } }
       stale_files = existing_files - written_files
 
       File.delete(*stale_files) unless stale_files.empty?
+    end
+
+    # Output dirs configured for OTHER writers (expanded, with a trailing
+    # separator so prefix matching can't cross sibling dirs that merely share
+    # a name prefix). A foreign dir that is an ancestor of one of our own
+    # dirs is dropped too: files under our own dirs are always ours, and an
+    # ancestor prefix would otherwise swallow them.
+    def foreign_output_dirs(own_dirs)
+      own = own_dirs.map { |dir| File.expand_path(dir.to_s) }
+      Typelizer.configuration.writers.values
+        .map { |writer_config| File.expand_path(writer_config.output_dir.to_s) }
+        .uniq
+        .reject { |dir| own.include?(dir) || own.any? { |own_dir| own_dir.start_with?(dir + File::SEPARATOR) } }
+        .map { |dir| dir + File::SEPARATOR }
+    end
+
+    # Two serializers resolving to the same exported type name in one index
+    # produce duplicate `export` lines — invalid TS. This is a warning, not
+    # an error: during a staged cross-plugin migration (e.g. Alba
+    # `PostResource` alongside `posts/_post.json.jbuilder`, both → `Post`)
+    # the duplicate sources legitimately coexist in separate writers; the
+    # warning fires only when they share ONE index, naming both sources so
+    # the writer scoping (`reject_class`) or `typelize_as` can be fixed.
+    def warn_duplicate_exports(interfaces)
+      interfaces.group_by(&:name).each do |name, group|
+        next if group.size < 2
+
+        sources = group.map { |interface| describe_interface_source(interface) }.sort
+        Typelizer.logger.warn(
+          "Typelizer: duplicate exported type #{name.inspect} in #{File.join(config.output_dir.to_s, "index.ts")} — " \
+          "declared by #{sources.join(" and ")}; scope the writers' `reject_class` or rename one with `typelize_as`"
+        )
+      end
+    end
+
+    def describe_interface_source(interface)
+      serializer = interface.serializer
+      if serializer.respond_to?(:_template_path)
+        serializer._template_path.to_s
+      else
+        serializer.name.to_s
+      end
     end
 
     def collect_enums(interfaces)
@@ -67,6 +115,8 @@ module Typelizer
     end
 
     def write_index(interfaces, enums: [])
+      warn_duplicate_exports(interfaces)
+
       fingerprint = [
         enums.map(&:enum_type_name),
         interfaces.map { |i|

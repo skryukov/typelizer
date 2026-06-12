@@ -328,37 +328,61 @@ module Typelizer
           )
         end
 
-        # If the block body is purely `json.partial!` calls, emit each as an
-        # imported interface and intersect them — this is how jbuilder fakes
-        # Alba's named-trait composition (`Course & CourseDetails`). Falls
-        # back to an inline `Shape` for any other body so AR model inference
-        # (column types, enums) keeps working inside nested blocks via
-        # `infer_nested_property_types`.
+        # Composed-partial blocks emit named intersections — this is how
+        # jbuilder fakes Alba's named-trait composition:
+        #
+        #   json.course do                       course: Course & CourseDetails
+        #     json.partial! "courses/course"
+        #     json.partial! "courses/course_details"
+        #   end
+        #
+        # Every top-level `json.partial!` with a resolvable string-literal
+        # reference becomes a named imported interface; whatever else the
+        # block contains (own props, conditionals, dynamic/collection
+        # partials) is extracted as usual and trails the intersection as an
+        # inline `Shape` (`Course & { progress: number }`) — structurally
+        # equivalent to inlining the partial's fields, just named. Blocks
+        # with no nameable partials stay plain inline `Shape`s so AR model
+        # inference (column types, enums) keeps working inside nested blocks
+        # via `infer_nested_property_types`.
         def handle_prop_with_block(node, name:, optional:)
           multi = !node.block.parameters.nil?
-          if (interfaces = composed_partials(node.block))
-            base, *additional = interfaces
-            return build_property(name, type: base, additional_types: additional, optional: optional, multi: multi)
+          interfaces, rest = partition_composed_partials(node.block)
+          if interfaces.any?
+            additional = interfaces.drop(1)
+            rest_props = with_nested { extract(rest, optional: false) }
+            additional += [Shape.new(properties: rest_props)] if rest_props.any?
+            return build_property(name, type: interfaces.first, additional_types: additional, optional: optional, multi: multi)
           end
           build_property(name, type: Shape.new(properties: shape_body(node.block)), optional: optional, multi: multi)
         end
 
-        # Returns the resolved Interfaces for a block whose body is purely
-        # `json.partial!` calls, or `nil` if the body contains anything else
-        # (so the caller can fall back to inline-shape extraction).
-        def composed_partials(block_node)
-          stmts = block_node.body&.body || []
-          return nil if stmts.empty?
+        # Splits a block body into [named partial interfaces, other stmts].
+        # Only a top-level `json.partial!` with a string-literal reference,
+        # no `collection:` kwarg, and a resolvable template counts as a named
+        # member; everything else (including unresolvable partials, which the
+        # regular extraction path warns about) stays in the remainder.
+        def partition_composed_partials(block_node)
           interfaces = []
-          stmts.each do |stmt|
-            return nil unless json_call?(stmt) && stmt.name == :partial!
-            first = positional_args(stmt).first
-            return nil unless first.is_a?(Prism::StringNode)
-            partial_class = @partial_resolver.call(first.unescaped)
-            return nil unless partial_class
-            interfaces << @context.interface_for(partial_class)
+          rest = []
+          (block_node.body&.body || []).each do |stmt|
+            if (iface = nameable_partial_interface(stmt))
+              interfaces << iface
+            else
+              rest << stmt
+            end
           end
-          interfaces
+          [interfaces.uniq, rest]
+        end
+
+        def nameable_partial_interface(stmt)
+          return nil unless json_call?(stmt) && stmt.name == :partial!
+          first = positional_args(stmt).first
+          return nil unless first.is_a?(Prism::StringNode)
+          # Collection partials keep their merged-object warning path.
+          return nil if keyword_args(stmt).key?(:collection)
+          partial_class = @partial_resolver.call(first.unescaped)
+          partial_class && @context.interface_for(partial_class)
         end
 
         def collection_attr_shortcut(args)
