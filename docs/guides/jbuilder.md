@@ -502,7 +502,12 @@ The walker is static — it parses templates without running them. Constructs it
 | Collection `partial!` inside a block | Typed as merged object + warning | `json.<name> @collection, partial: "...", as: ...` |
 | Blockless `json.array!` | Object shape + warning | Block form or `typelize:` |
 | Root array inside a conditional | Object type + warning | `typelize:` |
-| `json.null!`, `json.key_format!`, etc. | No property emitted (no type effect) | Not needed |
+| `@items.each { json.set!(...) { ... } }` (iteration/expression wrapping json calls) | Skipped + warning (body never walked) | `json.array!` block form or `typelize:` |
+| `json.cache_collection! @items` (bare or with `partial:`) | Skipped + warning (runtime collection caching) | Collection `json.partial!` or `json.<name> @items, partial: "...", as: ...` |
+| `json.extract! obj, *attrs` (splat/dynamic attribute list) | Literal attributes emitted; dynamic ones skipped + warning | List attributes literally or `typelize:` |
+| `json.key_format!` | No property + warning (runtime key casing diverges from source names) | Align casing via `properties_transformer` config |
+| `json.ignore_nil!` | No property + warning (nil keys omitted at runtime) | Mark affected properties optional via `typelize:` |
+| `json.null!`, `json.deep_format_keys!`, etc. | No property emitted (no type effect) | Not needed |
 | `.jb` / Rabl templates | Not supported | Use `.json.jbuilder` |
 
 ### Unknown fallback {#unknown-fallback}

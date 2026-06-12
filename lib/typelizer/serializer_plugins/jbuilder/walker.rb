@@ -189,9 +189,10 @@ module Typelizer
         private_constant :VALUE_NODE_RESOLVERS
 
         # Runtime mutations with no static type effect — skipped silently.
-        # (`merge!` and `set!` are NOT here: they drop type information, so
-        # they warn through the configured logger instead.)
-        SKIP_CALLS = %i[null! nil! ignore_nil! key_format! deep_format_keys!].freeze
+        # (`merge!`, `set!`, `cache_collection!`, `key_format!` and
+        # `ignore_nil!` are NOT here: they drop or distort type information,
+        # so they warn through the configured logger instead.)
+        SKIP_CALLS = %i[null! nil! deep_format_keys!].freeze
 
         PASSTHROUGH_CALLS = %i[cache! cache_if! cache_root!].freeze
 
@@ -330,7 +331,15 @@ module Typelizer
             return []
           end
 
-          return unless json_call?(node)
+          unless json_call?(node)
+            # A non-json statement (iteration like `@xs.each { json.set!(...)
+            # { ... } }`, or any expression wrapping the DSL) is never walked,
+            # so json properties inside it would be dropped silently — warn,
+            # per the warn-on-drop contract. Plain non-json statements
+            # (assignments, helper calls) stay silent.
+            warn_skipped(node, "iteration or expression wrapping json properties") if contains_json_call?(node)
+            return []
+          end
 
           case node.name
           when :extract!, :call then handle_extract(node, optional: optional)
@@ -342,6 +351,19 @@ module Typelizer
             []
           when :set!
             warn_skipped(node, "`json.set!` (dynamic key)")
+            []
+          when :cache_collection!
+            # Both forms (bare and `partial:`) render each collection member
+            # through fragment-cache plumbing the walker cannot follow.
+            warn_skipped(node, "`json.cache_collection!` (runtime collection caching)")
+            []
+          when :key_format!
+            log_warning(node, "`json.key_format!` changes runtime key casing; generated types use " \
+              "source names — align casing via Typelizer's `properties_transformer` config")
+            []
+          when :ignore_nil!
+            log_warning(node, "`json.ignore_nil!` omits nil-valued keys at runtime; " \
+              "consider marking affected properties optional via `typelize:`")
             []
           when *SKIP_CALLS then []
           else note_unknown_candidate(node, handle_prop(node, optional: optional))
@@ -689,7 +711,16 @@ module Typelizer
         end
 
         def handle_extract(node, optional:)
-          symbol_args_to_properties(positional_args(node), optional: optional)
+          args = positional_args(node)
+          # `json.extract! obj, *helper_attrs` (or any non-symbol attribute
+          # argument) — the dynamic part is invisible statically. One warning
+          # per call site; the literal symbols still extract as usual.
+          if args.drop(1).any? { |a| !a.is_a?(Prism::SymbolNode) }
+            log_warning(node, "`json.#{node.name}` with a dynamic attribute list (splat or non-literal " \
+              "argument) cannot be statically typed; only literal attributes emitted — " \
+              "use `typelize:` to pin the rest")
+          end
+          symbol_args_to_properties(args, optional: optional)
         end
 
         def symbol_args_to_properties(args, optional: false)

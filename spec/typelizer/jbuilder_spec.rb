@@ -1239,6 +1239,185 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "iteration/expression wrapping json properties" do
+      it "warns when top-level iteration wraps json calls and emits nothing for it" do
+        write_template("repro/each_set.json.jbuilder", <<~RUBY)
+          json.ok true
+          @items.each do |item|
+            json.set! item.code do
+              json.secret_field item.name
+            end
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ReproEachSet)
+        end
+
+        expect(logs).to include("repro/each_set.json.jbuilder:2")
+        expect(logs).to include("iteration or expression wrapping json properties cannot be statically typed")
+        expect(logs).to include("typelize:")
+        expect(output).to include("ok: boolean")
+        expect(output).not_to include("secret_field")
+      end
+
+      it "warns inside a block body too" do
+        write_template("repro/show.json.jbuilder", <<~RUBY)
+          json.summary do
+            @rows.each { |row| json.set!(row.key, row.value) }
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ReproShow)
+        end
+
+        expect(logs).to include("repro/show.json.jbuilder:2")
+        expect(logs).to include("iteration or expression wrapping json properties")
+      end
+
+      it "stays silent for plain non-json statements" do
+        write_template("repro/show.json.jbuilder", <<~RUBY)
+          total = @items.size
+          helper_side_effect
+          json.ok true
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ReproShow)
+        end
+
+        expect(logs).not_to include("iteration or expression")
+      end
+    end
+
+    describe "cache_collection!" do
+      it "warns for the bare form and emits no bogus property" do
+        write_template("probe/index.json.jbuilder", <<~RUBY)
+          json.ok true
+          json.cache_collection! @people
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ProbeIndex)
+        end
+
+        expect(logs).to include("probe/index.json.jbuilder:2")
+        expect(logs).to include("json.cache_collection!")
+        expect(logs).to include("typelize:")
+        expect(output).to include("ok: boolean")
+        expect(output).not_to include("cache_collection")
+      end
+
+      it "warns for the `partial:` form and emits no bogus property" do
+        write_template("probe/_item.json.jbuilder", <<~RUBY)
+          json.id item.id, typelize: "number"
+        RUBY
+        write_template("probe/index.json.jbuilder", <<~RUBY)
+          json.cache_collection! @people, partial: "probe/item", as: :item
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ProbeIndex)
+        end
+
+        expect(logs).to include("probe/index.json.jbuilder:1")
+        expect(logs).to include("json.cache_collection!")
+        expect(output).not_to include("cache_collection")
+        expect(output).not_to include("ProbeItem")
+      end
+    end
+
+    describe "dynamic extract!/call attribute lists" do
+      it "warns once per call site and keeps the literal attributes" do
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          json.call(user, :name, *helper_attributes)
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+        end
+
+        expect(logs).to include("users/show.json.jbuilder:3")
+        expect(logs).to include("dynamic attribute list")
+        expect(logs).to include("only literal attributes emitted")
+        expect(logs.scan("dynamic attribute list").size).to eq(1)
+        expect(output).to include("name: string")
+        expect(output).not_to include("helper_attributes")
+      end
+
+      it "stays silent for all-literal attribute lists" do
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          json.extract! user, :name
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+        end
+
+        expect(logs).not_to include("dynamic attribute list")
+      end
+    end
+
+    describe "key_format! and ignore_nil!" do
+      it "warns for `json.key_format!` (bare and with args) and emits no property" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.key_format! camelize: :lower
+          json.key_format!
+          json.ok true
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("misc/show.json.jbuilder:2")
+        expect(logs).to include("changes runtime key casing")
+        expect(logs).to include("properties_transformer")
+        expect(output).to include("ok: boolean")
+        expect(output).not_to include("key_format")
+      end
+
+      it "warns for `json.ignore_nil!` (bare and with args) and emits no property" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.ignore_nil!
+          json.ignore_nil! false
+          json.ok true
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("misc/show.json.jbuilder:1")
+        expect(logs).to include("misc/show.json.jbuilder:2")
+        expect(logs).to include("omits nil-valued keys at runtime")
+        expect(logs).to include("typelize:")
+        expect(output).to include("ok: boolean")
+        expect(output).not_to include("ignore_nil")
+      end
+    end
+
     describe "discovery ordering" do
       it "registers templates in sorted path order regardless of FS glob order" do
         write_template("bbb/index.json.jbuilder", "json.x 1\n")
