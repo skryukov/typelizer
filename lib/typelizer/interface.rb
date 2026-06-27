@@ -217,18 +217,20 @@ module Typelizer
     end
 
     def fingerprint
-      [
+      parts = [
         name,
         properties_to_print.map(&:fingerprint),
         parent_interface&.name,
         root_key,
-        # Folded into the boolean's slot (a name implies a root array) so
-        # existing interfaces keep their digests — no fingerprint churn.
-        root_array_element_name || root_is_array,
         meta_fields.map(&:fingerprint),
         trait_interfaces.map { |t| [t.name, t.properties.map(&:fingerprint)] },
         CONFIGS_AFFECTING_OUTPUT.map { |key| config.public_send(key) }
-      ].inspect
+      ]
+      # Appended only for root arrays, so non-array interfaces keep the exact
+      # fingerprint they had before jbuilder existed — no digest churn for
+      # existing serializers on upgrade.
+      parts << [:root_array, root_array_element_name || true] if root_is_array
+      parts.inspect
     end
 
     def quote(str)
