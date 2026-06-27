@@ -5,24 +5,18 @@ require_relative "base"
 module Typelizer
   module SerializerPlugins
     # Boot-safe entry point for the jbuilder template plugin: emits Property
-    # objects by walking a template's Prism AST.
-    #
-    # This file is part of Typelizer's eager require chain, so it must stay
-    # loadable without the `prism` (or `jbuilder`) gem installed. Everything
-    # that references `Prism::*` lives in `jbuilder/walker.rb`, which is
-    # loaded lazily through `.activate_walker!` the first time a template is
-    # parsed — discovery/generation time, never boot or render time.
+    # objects by walking a template's Prism AST. Part of the eager require
+    # chain, so it must load without the prism/jbuilder gems — all `Prism::*`
+    # code lives in `jbuilder/walker.rb`, loaded lazily via `.activate_walker!`
+    # at discovery/generation time, never at boot or render.
     class Jbuilder < Base
       PRISM_REQUIREMENT = ">= 1.0"
 
       class << self
-        # Activates the prism gem and loads the Walker, memoizing after the
-        # first successful activation. Returns the Walker class.
-        #
-        # The post-require `Prism::VERSION` assertion is the authoritative
-        # guard, not the `gem` constraint: on Ruby 3.3+ prism ships as a
-        # bundled gem, so another tool in the process may have pre-activated
-        # an old prism (0.19), turning the version constraint into a no-op.
+        # Activates prism and loads the Walker (memoized). The post-require
+        # `Prism::VERSION` assertion is the real guard, not the `gem`
+        # constraint: on Ruby 3.3+ another tool may have pre-activated an old
+        # bundled prism (0.19), making the constraint a no-op.
         def activate_walker!
           return Walker if @walker_activated
 
@@ -60,10 +54,9 @@ module Typelizer
         end
       end
 
-      # `typelize:` kwargs arrive as `user_asserted` properties straight from
-      # the walker — `Interface#infer_types` skips AR model inference for
-      # them per property (scoped to their nesting level), so no class-level
-      # registry mutation is needed here.
+      # `typelize:` props arrive `user_asserted` from the walker, so
+      # `Interface#infer_types` already skips model inference per-property — no
+      # class-level registry needed.
       def properties
         walker.properties
       end
@@ -72,22 +65,17 @@ module Typelizer
         walker.root_is_array
       end
 
-      # The element type of a root `json.array! @xs, partial: "xs/x"`
-      # template: the partial's Interface (referenced and imported by name —
-      # `type X = Array<Element>;` with no inline Data alias), the string
-      # "unknown" when the partial is unresolvable or conclusively empty
-      # (`Array<unknown>`), or nil for block-form root arrays, which keep
-      # inlining their element shape into the `...Data` alias.
+      # Element type of a root `json.array! @xs, partial: "xs/x"`: the partial's
+      # Interface (imported by name, `type X = Array<Element>;`), "unknown" when
+      # unresolvable/empty (`Array<unknown>`), or nil for block-form root arrays
+      # (which inline their element shape into `...Data`).
       def root_array_element
         walker.root_array_element
       end
 
-      # Post-inference hook called by `Interface#properties` once final types
-      # are known. The walker's nil/"unknown" emissions can still be rescued
-      # by model inference (a bound AR column overwrites the walker's guess —
-      # see `Interface#infer_types`), so the walker itself cannot honestly
-      # warn; only a property whose FINAL type is still unknown earns the
-      # development warning, with the file:line the walker recorded.
+      # Post-inference hook (`Interface#properties`): the walker's nil/"unknown"
+      # emissions can still be rescued by model inference, so only a property
+      # whose FINAL type is unknown warns, at the line the walker recorded.
       def after_type_inference(props)
         props.each { |prop| warn_unknown_property(prop) }
       end
@@ -96,12 +84,9 @@ module Typelizer
 
       def warn_unknown_property(prop)
         unless final_unknown?(prop)
-          # Recurse into inline shapes (own type and trailing intersection
-          # members) — nested props record their own lines. Checked AFTER the
-          # cheap unknown test so the common typed-leaf case allocates
-          # nothing; an unknown-typed prop never carries Shape members
-          # (shapes/intersections are built with Shape/Interface types), so
-          # skipping recursion for it drops no coverage.
+          # Recurse into inline shapes (own type + intersection members).
+          # Checked after the cheap unknown test so typed leaves allocate
+          # nothing; an unknown-typed prop never carries Shape members.
           prop.type.properties.each { |sub| warn_unknown_property(sub) } if prop.type.is_a?(Shape)
           prop.additional_types&.each do |member|
             member.properties.each { |sub| warn_unknown_property(sub) } if member.is_a?(Shape)
@@ -159,15 +144,11 @@ module Typelizer
         !!(model.is_a?(Class) && defined?(::ActiveRecord::Base) && model < ::ActiveRecord::Base)
       end
 
-      # Rails partial-lookup semantics: a bare name (`json.partial! "post"`)
-      # resolves against the current template's directory first; a prefixed
-      # name (`"posts/post"`) resolves against the views root. After the
-      # template's own root misses, every other registered views root is
-      # tried in registration order — multi-root apps (a core root plus an
-      # overlay root) reference partials across roots exactly like Rails'
-      # view-path stack. Each candidate carries the root it belongs to, so a
-      # cross-root partial auto-registers under ITS root and derives its
-      # type name relative to that root, not the referencing template's.
+      # Rails partial-lookup semantics: a bare name resolves against the
+      # template's own directory first, a prefixed name against the views root.
+      # After the own root misses, sibling roots are tried in registration
+      # order (multi-root apps). Each candidate carries its owning root, so a
+      # cross-root partial registers under ITS root.
       def resolve_partial_to_class(partial_path)
         partial_candidate_paths(partial_path).each do |path, root|
           klass = Typelizer::Jbuilder.template_for(path, views_root: root)
@@ -176,10 +157,9 @@ module Typelizer
         nil
       end
 
-      # Ordered [absolute candidate path, owning views root] pairs. Bare
-      # names are projected onto sibling roots at the template's directory
-      # relative to its own root (mirroring how Rails resolves a bare
-      # `render "x"` against the same controller prefix in every view path).
+      # Ordered [absolute candidate path, owning views root] pairs. Bare names
+      # are projected onto sibling roots at the template's directory relative to
+      # its own root (like Rails resolving a bare `render "x"` in every view path).
       def partial_candidate_paths(partial_path)
         basename = "_#{File.basename(partial_path)}.json.jbuilder"
         own_root = File.expand_path(views_root)

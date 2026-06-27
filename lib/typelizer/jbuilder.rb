@@ -5,18 +5,14 @@ require_relative "error"
 module Typelizer
   module Jbuilder
     # Two templates claiming the same type name (via `typelize_as` or
-    # path-derived naming). Raised from `discover`/`template`, which only run
-    # inside a generation cycle — never at boot — so a collision is a
-    # generation-time error, not a production boot crash.
+    # path-derived naming). Raised only during a generation cycle, never at boot.
     class NameCollision < Error; end
 
     module Templates; end
 
-    # Runtime no-op helpers so jbuilder templates can declare
-    # `typelize_as "Foo"` / `typelize_from User` at the top of the file.
-    # The plugin reads these calls statically via Prism; at render time they
-    # don't need to do anything. Auto-included into ActionView::Base via the
-    # railtie; can be included manually for non-Rails setups.
+    # Runtime no-op helpers so templates can declare `typelize_as "Foo"` /
+    # `typelize_from User` at the top. The plugin reads these statically via
+    # Prism; at render time they do nothing. Auto-included via the railtie.
     module TemplateHelpers
       def typelize_as(_name)
       end
@@ -26,50 +22,39 @@ module Typelizer
     end
 
     # Inline `json.foo value, typelize: "string"` annotations are read by the
-    # AST walker for type generation, but at render time they're junk to
-    # jbuilder — its `set!` doesn't declare `**kwargs`, so Ruby 3 packs them as
-    # a positional Hash and `_extract_method_values` raises
-    # `{typelize: "..."} is not a symbol nor a string`.
-    #
-    # This module strips the typelizer-reserved kwargs before forwarding to
+    # AST walker, but at render time jbuilder's `set!` has no `**kwargs`, so
+    # Ruby 3 packs them as a positional Hash and `_extract_method_values`
+    # raises. This module strips typelizer-reserved kwargs before forwarding to
     # upstream `set!`. Prepended onto `JbuilderTemplate` via the railtie
-    # whenever the jbuilder gem is present — independently of whether the
-    # typelizer jbuilder plugin is enabled — so annotated templates never
-    # crash a render in environments where Typelizer is dev-only.
+    # whenever jbuilder is present — independent of whether the plugin is
+    # enabled — so annotated templates never crash a render.
     #
-    # Each gem strips its own render-inert vocabulary unconditionally
-    # (`typelize:`), but the foreign `inertia:` kwarg is render-ACTIVE and
-    # owned by jbuilder-inertia: it is stripped only when that gem's patch is
-    # absent from the template class's ancestry (otherwise the directive must
-    # pass through untouched, regardless of which gem's patch is outermost).
+    # Each gem strips its own render-inert vocabulary (`typelize:`); the
+    # render-ACTIVE `inertia:` kwarg (owned by jbuilder-inertia) is stripped
+    # only when that gem's patch is absent from the template's ancestry.
     #
-    # The `method_missing` override is required to defeat jbuilder's
+    # The `method_missing` override defeats jbuilder's
     # `alias_method :method_missing, :set!` quirk (the alias captures the
-    # original `set!` body, bypassing any prepended `set!`).
+    # original `set!`, bypassing any prepended `set!`).
     module SetExt
       RESERVED_KWARGS = %i[typelize].freeze
 
-      # Render-ACTIVE kwargs owned by other gems' prepended template patches,
-      # mapped to their owner: the patch constant is matched by NAME so
-      # typelizer never has to load (or even know about) those gems. A
-      # foreign kwarg is stripped only when its owner patch is absent from
-      # the template class's ancestry.
+      # Render-ACTIVE kwargs owned by other gems' template patches, mapped to
+      # their owner (matched by NAME so typelizer never loads those gems). A
+      # foreign kwarg is stripped only when its owner patch is absent.
       FOREIGN_KWARGS = {
         inertia: {owner: "JbuilderInertia::JbuilderExt", gem: "jbuilder-inertia"}.freeze
       }.freeze
 
       class << self
-        # Lazy (at strip time, never at patch-install time — `on_load`
-        # ordering between the gems follows require order that neither
-        # controls) and one-way memoized per owner: once the patch is seen
-        # the answer is permanent (a prepended module can never be removed),
-        # but while absent we re-check on every strip so a late prepend is
-        # picked up by the very next render. The constant-presence check
-        # short-circuits the common negative (owner gem not loaded at all)
-        # without scanning ancestors.
+        # Lazy (at strip time — `on_load` ordering between the gems isn't ours
+        # to control) and one-way memoized per owner: once seen the patch can't
+        # be removed, but while absent we re-check each strip so a late prepend
+        # is picked up next render. The const-defined check short-circuits the
+        # common "gem not loaded" case.
         #
         # `Jbuilder < BasicObject`, so `template.class` would dispatch into
-        # `set!` and emit a "class" key — bind `Object#class` explicitly.
+        # `set!`; bind `Object#class` explicitly.
         def foreign_runtime_present?(kwarg, template)
           memo = (@foreign_runtime_present ||= {})
           return true if memo[kwarg]
@@ -110,12 +95,9 @@ module Typelizer
 
         _typelizer_strip_kwargs!(kwargs)
 
-        # When kwargs is empty, omit them entirely so we don't accidentally
-        # forward an empty Hash as a positional arg to upstream `set!` (which
-        # has no `**kwargs` in jbuilder's signature — a positional Hash there
-        # would be treated as a value). When kwargs is non-empty, splat with
-        # `**` so the next prepend in the chain (e.g. jbuilder-inertia's
-        # extension) receives them as actual kwargs.
+        # Omit kwargs entirely when empty (jbuilder's `set!` has no `**kwargs`,
+        # so an empty Hash would become a positional value); otherwise splat so
+        # the next prepend in the chain receives real kwargs.
         if kwargs.empty?
           super(name, *args, &block)
         else
@@ -124,14 +106,10 @@ module Typelizer
       end
 
       # The non-`set!` emitters need the same protection: jbuilder's
-      # signatures (`extract!(object, *attributes)`,
-      # `array!(collection = [], *attrs)`, `call(object, *attributes)`)
-      # declare no `**kwargs`, so a `typelize:` annotation would pack into
-      # the positional attribute list and crash the render. Same
-      # top-of-method rule as `set!`; when stripping empties the kwargs they
-      # are omitted entirely so no spurious positional Hash reaches upstream.
-      # (The walker intentionally ignores `typelize:` here — it has no
-      # per-field meaning on multi-attribute emitters.)
+      # `extract!`/`array!`/`call` declare no `**kwargs`, so a `typelize:`
+      # annotation would pack into the positional list and crash. Same
+      # strip-then-omit-if-empty rule as `set!`. (The walker ignores
+      # `typelize:` here — it has no per-field meaning on these.)
       def extract!(object, *attributes, **kwargs)
         return super(object, *attributes) if kwargs.empty?
 
@@ -170,9 +148,8 @@ module Typelizer
 
       private
 
-      # Stripping happens before any other logic (structural R7 rule):
-      # foreign-inert kwargs must be gone before any intercept or early
-      # return so behavior is identical under either gem's prepend order.
+      # Strip before any other logic so behavior is identical under either
+      # gem's prepend order.
       def _typelizer_strip_kwargs!(kwargs)
         FOREIGN_KWARGS.each_key do |kwarg|
           next unless kwargs.key?(kwarg)
@@ -187,14 +164,10 @@ module Typelizer
     end
 
     class << self
-      # Whether the jbuilder plugin is enabled for automatic work (template
-      # discovery, parsing, prism activation). Auto-detected from discovery
-      # config being present (`config.jbuilder_views = [...]`), with
-      # `config.jbuilder_enabled = true/false` as an explicit override.
-      #
-      # This gates ONLY discovery-side behavior. The render-safety patches
-      # (`SetExt`, `TemplateHelpers`) install whenever jbuilder is present,
-      # regardless of this predicate — see the railtie.
+      # Whether the plugin does automatic work (discovery, parsing, prism).
+      # Auto-detected from `config.jbuilder_views` being present, with
+      # `config.jbuilder_enabled` as an explicit override. Gates ONLY
+      # discovery — render-safety patches install regardless (see railtie).
       def enabled?
         override = Typelizer.configuration.jbuilder_enabled
         return override unless override.nil?
@@ -203,9 +176,8 @@ module Typelizer
       end
 
       def template(path, views_root: default_views_root, model: nil, as: nil)
-        # Normalize once at entry (mirrors `discover` and the listener):
-        # a relative or Pathname root would otherwise double-prefix glob
-        # results on re-expansion and crash the type-name derivation.
+        # Normalize once at entry (mirrors `discover` and the listener): a
+        # relative or Pathname root would double-prefix glob results.
         views_root = File.expand_path(views_root.to_s)
         track_views_root(views_root)
         full_path = File.expand_path(path, views_root)
@@ -216,10 +188,9 @@ module Typelizer
         klass.define_singleton_method(:_template_path) { full_path }
         klass.define_singleton_method(:_views_root) { views_root }
         # Routes column/enum/comment inference through the model-plugin
-        # pipeline. The model is stored by NAME and constantized lazily at
-        # each generation, so a Zeitwerk reload between cycles always
-        # resolves the freshly loaded class (a captured class object would
-        # go stale and keep answering with pre-reload columns).
+        # pipeline. Stored by NAME and constantized lazily each generation so a
+        # Zeitwerk reload always resolves the freshly loaded class (a captured
+        # class would go stale with pre-reload columns).
         model_name = model.is_a?(Class) ? model.name : model&.to_s
         if model_name
           klass.define_singleton_method(:_typelizer_model_name) { model_name.safe_constantize }
@@ -237,17 +208,12 @@ module Typelizer
         klass
       end
 
-      # Templates own their own type-name and model bindings via top-of-file
-      # DSL calls: `typelize_as "Foo"`, `typelize_from User`. `discover`
-      # consults the Walker's cached parse so the bindings are fixed at
-      # registration time and the same parse is reused later for the
-      # property walk.
+      # Templates own their type-name/model bindings via top-of-file DSL
+      # (`typelize_as`, `typelize_from`). `discover` reads them from the
+      # Walker's cached parse, which is reused for the property walk.
       def discover(views_root = default_views_root, model_resolver: nil)
-        # Same entry normalization as `template`: accept relative paths and
-        # Pathnames without double-prefixing the glob results downstream.
-        # The root is tracked even when it currently holds no templates, so
-        # a partial added there mid-cycle is still reachable via fallback
-        # resolution.
+        # Same entry normalization as `template`. The root is tracked even when
+        # empty so a partial added there mid-cycle stays reachable via fallback.
         views_root = File.expand_path(views_root.to_s)
         track_views_root(views_root)
         walker = SerializerPlugins::Jbuilder.activate_walker!
@@ -268,24 +234,17 @@ module Typelizer
         @registry ||= {}
       end
 
-      # Every views root seen by `template`/`discover` in the current
-      # discovery cycle, absolute, in registration order. Multi-root apps
-      # (e.g. a core/enterprise split registered as separate `discover`
-      # calls or `jbuilder_views` entries) reference partials across roots
-      # exactly like Rails' view-path stack — the partial resolver falls
-      # back to these siblings after the template's own root misses.
+      # Every views root seen this cycle, absolute, in registration order.
+      # Multi-root apps reference partials across roots like Rails' view-path
+      # stack — the resolver falls back to these after the own root misses.
       def views_roots
         @views_roots ||= []
       end
 
-      # One full re-discovery from a clean slate, run at the start of every
-      # generation cycle (`Typelizer.interfaces`) under the shared
-      # GenerationLock — template adds/edits/renames/deletes are reflected
-      # on the next cycle without a process restart. No-op unless discovery
-      # roots are configured: production boots never discover (generation
-      # simply doesn't run there unless `rake typelizer:generate` explicitly
-      # asks), and explicit `discover` registrations (non-Rails flows
-      # without `jbuilder_views`) are left untouched.
+      # One full re-discovery from a clean slate at the start of each
+      # generation cycle, so template adds/edits/renames/deletes are picked up
+      # without a restart. No-op without discovery roots: production never
+      # discovers, and explicit `discover` registrations are left untouched.
       def refresh!
         return if @refresh_suppressed
         return unless enabled?
@@ -299,14 +258,10 @@ module Typelizer
         end
       end
 
-      # One discovery refresh shared by a whole multi-writer generation pass:
-      # runs `refresh!` once up front, then suppresses the per-writer
-      # `Typelizer.interfaces` refresh for the duration of the block, so
-      # `Generator#call` does a single reset!+glob+reparse instead of one per
-      # writer. Direct `Typelizer.interfaces` callers (rake openapi, specs)
-      # still refresh. The plain module flag is race-free because callers
-      # hold the reentrant GenerationLock for the whole block, so no other
-      # thread can enter `refresh!` until the flag is cleared.
+      # One discovery refresh shared by a whole multi-writer pass: `refresh!`
+      # once up front, then suppress the per-writer refresh for the block so
+      # `Generator#call` does a single reset!+glob+reparse. Race-free because
+      # callers hold the reentrant GenerationLock throughout.
       def refresh_once
         refresh!
         @refresh_suppressed = true
@@ -316,11 +271,9 @@ module Typelizer
       end
 
       # Clears only per-discovery state: the path→class registry, the
-      # generated `Templates::` constants, the jbuilder-registered
-      # `Typelizer.base_classes` entries, and the Walker's parse cache.
-      # Cross-cycle state — configuration, walker activation, and the
-      # extension/resolver registries (U6) — survives: adapter registrations
-      # must outlive a single generation cycle.
+      # `Templates::` constants, the jbuilder `base_classes` entries, and the
+      # Walker's parse cache. Cross-cycle state — config, walker activation,
+      # adapter registries — survives.
       def reset!
         registry.clear
         views_roots.clear
@@ -332,10 +285,9 @@ module Typelizer
         SerializerPlugins::Jbuilder::Walker.reset_cache! if SerializerPlugins::Jbuilder.walker_activated?
       end
 
-      # Returns a `reject_class` predicate that excludes serializers matching
-      # the given name patterns while keeping every jbuilder template. Use
-      # during a staged migration from another serializer library to jbuilder
-      # to avoid `index.ts` collisions without deleting the legacy Ruby files.
+      # A `reject_class` predicate that excludes serializers matching the
+      # patterns while keeping every jbuilder template — for a staged migration
+      # off another serializer library without `index.ts` collisions.
       #
       #   config.reject_class = Typelizer::Jbuilder.exclude(/Resource\z/)
       def exclude(*patterns)
@@ -382,11 +334,9 @@ module Typelizer
         klass
       end
 
-      # Generated type names double as Ruby constant names (under
-      # `Templates::`) and TypeScript identifiers, so they must match this
-      # shape. Path-derived names are sanitized into it (see
-      # `sanitize_segment`); explicit `typelize_as` names must already
-      # conform — a user-chosen name is never silently rewritten.
+      # Generated names are both Ruby constants (under `Templates::`) and TS
+      # identifiers. Path-derived names are sanitized to this shape; explicit
+      # `typelize_as` names must already conform (never silently rewritten).
       VALID_TYPE_NAME = /\A[A-Z][A-Za-z0-9_]*\z/
 
       def validate_type_name!(type_name, full_path)
@@ -398,15 +348,10 @@ module Typelizer
       end
 
       # Rails convention: a `_foo.json.jbuilder` partial inside `foos/`
-      # represents the `Foo` resource, so we drop the redundant directory. Any
-      # other layout (e.g. `admin/_user`, `users/_avatar`) keeps the full path
-      # to avoid collisions and stay honest about the file's location.
-      #
-      # Each segment is sanitized deterministically into constant-safe form:
-      # characters outside [A-Za-z0-9_] are stripped (`v2.1` → `V21`) and
-      # digit-leading segments are prefixed with `N` (`2fa` → `N2fa`). If
-      # sanitization still can't produce a valid name, we raise with a
-      # `typelize_as` hint instead of letting a bare NameError escape.
+      # represents `Foo`, so we drop the redundant directory; other layouts
+      # keep the full path to avoid collisions. Each segment is sanitized to
+      # constant-safe form (`v2.1` → `V21`, digit-leading `2fa` → `N2fa`); if
+      # that still can't produce a valid name, we raise with a `typelize_as` hint.
       def derive_type_name(full_path, views_root)
         rel = full_path.sub(%r{\A#{Regexp.escape(views_root)}/?}, "")
           .sub(/\.json\.jbuilder\z/, "")
