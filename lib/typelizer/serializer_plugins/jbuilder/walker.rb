@@ -85,7 +85,10 @@ module Typelizer
 
             tree = parsed_tree(path)
             tree.statements.body.each do |node|
-              break unless node.is_a?(Prism::CallNode) && node.receiver.nil?
+              # Scan every top-level bare call, not just the leading run: a
+              # `typelize_as`/`typelize_from` after a `json.*` line (which has a
+              # receiver) must still be picked up rather than silently dropped.
+              next unless node.is_a?(Prism::CallNode) && node.receiver.nil?
               arg = node.arguments&.arguments&.first
               case node.name
               when :typelize_as
@@ -489,7 +492,11 @@ module Typelizer
           end
 
           if (collection_props = collection_attr_shortcut(args))
-            return build_property(name, type: Shape.new(properties: collection_props), optional: optional, multi: true)
+            # Array-vs-object follows the same runtime heuristic as the partial
+            # form (`prop_from_partial`): jbuilder emits an array only when the
+            # value is a collection, so a singular name stays an object.
+            multi = looks_like_collection?(name, args.first)
+            return build_property(name, type: Shape.new(properties: collection_props), optional: optional, multi: multi)
           end
 
           if value
@@ -547,17 +554,13 @@ module Typelizer
           block.body&.body&.last if block.is_a?(Prism::BlockNode)
         end
 
-        # `typelize:` is only honored for literal values — a String/Symbol
-        # type declaration, or the hash/array forms with literal leaves.
-        # Anything that survives `literal_value` as a Prism node (constants,
-        # variables, method calls) is dynamic and cannot be honored.
+        # `typelize:` is honored only for a literal type *string* — the
+        # documented form, e.g. `typelize: "{ id: number }"` (a Symbol is
+        # accepted as a bare type name). A Ruby hash/array value can't be
+        # turned into a TS type by TypeParser, so it falls through to the
+        # non-literal warning instead of stringifying into a broken type.
         def literal_override?(value)
-          case value
-          when String, Symbol, Integer, Float, true, false, nil then true
-          when Array then value.all? { |v| literal_override?(v) }
-          when Hash then value.values.all? { |v| literal_override?(v) }
-          else false
-          end
+          value.is_a?(String) || value.is_a?(Symbol)
         end
 
         # Routes `typelize:` overrides through TypeParser so shortcuts
@@ -847,6 +850,15 @@ module Typelizer
         # type for an array value.
         def handle_array_bang(node, optional:)
           if node.block.is_a?(Prism::BlockNode)
+            # At the template root this is the root array's element shape (see
+            # `detect_root_array`). Nested inside another block it can't be an
+            # array on the enclosing key — same limitation as a nested
+            # collection `partial!` — so warn rather than silently typing it
+            # as an object.
+            if @nested
+              log_warning(node, "`json.array!` with a block inside another block is typed as an " \
+                "object, not an array — use `typelize:` to pin an array type")
+            end
             shape_body(node.block)
           elsif keyword_args(node).key?(:partial)
             handle_array_partial(node, keyword_args(node)[:partial])

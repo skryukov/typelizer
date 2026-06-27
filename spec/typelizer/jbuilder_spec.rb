@@ -480,6 +480,88 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "re-review regression fixes" do
+      it "types a singular attribute-shortcut as an object, not an array" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.author @author, :name, :email
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("author: {")
+        expect(output).not_to include("author: Array<")
+      end
+
+      it "types a plural attribute-shortcut as an array" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.authors @authors, :name, :email
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("authors: Array<")
+      end
+
+      it "warns and falls back to inference when typelize: is a Ruby hash, not a type string" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.foo bar, typelize: {id: "number"}
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = nil
+        logs = with_capture_logger do
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("non-literal value cannot be honored")
+        expect(output).not_to include(%({id: "number"}))
+      end
+
+      it "warns when json.array! with a block is nested inside another block" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.wrapper do
+            json.array! @items do |item|
+              json.id item.id
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        logs = with_capture_logger do
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("inside another block is typed as an object, not an array")
+      end
+
+      it "does not warn for a root-level json.array! block" do
+        write_template("things/index.json.jbuilder", <<~RUBY)
+          json.array! @items do |item|
+            json.id item.id
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        logs = with_capture_logger do
+          render_interface(Typelizer::Jbuilder::Templates::ThingsIndex)
+        end
+
+        expect(logs).not_to include("inside another block")
+      end
+
+      it "reads typelize_as declared after a json.* line" do
+        path = write_template("things/show.json.jbuilder", <<~RUBY)
+          json.ping true
+          typelize_as "CustomThing"
+        RUBY
+
+        walker = Typelizer::SerializerPlugins::Jbuilder.activate_walker!
+        expect(walker.metadata_for(path)[:type_name]).to eq("CustomThing")
+      end
+    end
+
     describe "if/elsif/else branch merging" do
       it "requires props present in every branch and widens the rest to optional" do
         write_template("things/show.json.jbuilder", <<~RUBY)
