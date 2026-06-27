@@ -3,52 +3,35 @@
 require "digest"
 require "set"
 
-# Loaded lazily via `Typelizer::SerializerPlugins::Jbuilder.activate_walker!`
-# — never as part of Typelizer's eager require chain. Everything that
-# references `Prism::*` lives here so that requiring "typelizer" stays safe
-# for users without the prism gem (or with only Ruby's bundled prism < 1.0).
+# Loaded lazily via `Jbuilder.activate_walker!`, never on the eager require
+# chain: all `Prism::*` references live here so `require "typelizer"` stays
+# safe without the prism gem (or with Ruby's bundled prism < 1.0).
 module Typelizer
   module SerializerPlugins
     class Jbuilder
       class Walker
-        # Module-level cache so metadata extraction (eager, in `discover`)
-        # and the full property walk (lazy, in `Plugin#properties`) share
-        # one Prism parse per template.
+        # Shared Prism parse per template (eager metadata extraction + lazy
+        # property walk).
         @parse_cache = {}
-        # Per-cycle dedup for the post-inference "unknown" warnings (keys:
-        # [template path, prop name, line]). Multiple writers build their own
-        # Interface for the same template within one generation cycle; the
-        # warning should fire once per template+prop per cycle, so the set
-        # lives here and is cleared together with the parse cache.
+        # Per-cycle warning dedup keyed by [path, prop, line] — each writer
+        # re-walks a template within one cycle, but the warning fires once.
         @warned_unknowns = Set.new
-        # Template paths whose property walk is currently on the stack.
-        # Guards cyclic top-level `json.partial!` merges (A merges B merges
-        # A) — see `handle_partial_bang` — which would otherwise recurse
-        # until SystemStackError.
+        # Templates whose walk is on the stack — breaks cyclic `json.partial!`
+        # merges (A merges B merges A); see `handle_partial_bang`.
         @walks_in_progress = Set.new
-        # Per-cycle dedup for empty-partial-reference warnings (keys:
-        # [referencing template path, line, partial name]). Same lifetime
-        # rationale as `warned_unknowns`: each writer re-walks the template
-        # within one generation cycle, but the warning should fire once.
+        # Per-cycle dedup for empty-partial warnings, keyed by
+        # [path, line, partial name]. Same rationale as `@warned_unknowns`.
         @warned_empty_partials = Set.new
         class << self
           attr_reader :parse_cache, :warned_unknowns, :walks_in_progress, :warned_empty_partials
 
-          # Path-keyed map of `{digest:, tree:}` (digest matching the
-          # writer's fingerprint-digest house style): the per-cycle
-          # `reset_cache!` makes within-cycle reuse safe, and the digest
-          # keeps long-lived processes honest — explicit-discover flows that
-          # never reset still re-parse an edited template automatically (the
-          # stale entry is replaced so the cache never accretes old parses).
-          # Cascade invalidation for composed partials needs nothing extra:
-          # a partial's properties are re-walked through its parent's
-          # Interface every cycle, so its fresh parse flows upward.
-          #
-          # The source is read ONCE and both digested and parsed from that
-          # string — no read/parse race with concurrent file edits — and an
-          # unreadable template surfaces as a named `Typelizer::Error`
-          # instead of a bare Errno (metadata extraction still swallows it
-          # via `metadata_for`'s rescue; the property-walk path raises).
+          # Digest-keyed parse cache. Within a cycle reuse is safe
+          # (`reset_cache!` clears it); across cycles the digest
+          # auto-invalidates an edited template, so long-lived processes never
+          # serve a stale parse. The source is read once, then digested and
+          # parsed from that one string (no read/parse race); an unreadable
+          # template raises a named `Typelizer::Error` (`metadata_for`
+          # swallows it, the property walk re-raises).
           def parsed_tree(path)
             content = begin
               File.read(path)
@@ -147,26 +130,18 @@ module Typelizer
           /\Ais_|\A(has|can|should|was)_/ => "boolean"
         }.freeze
 
-        # --- Internal widening registries ------------------------------------
-        # Table-driven on purpose (a future inertia-builder / props_template
-        # adapter is one entry away), but deliberately module-private: no
-        # registration API is exposed until a real second adapter exists.
-        # These are frozen constants — code, not per-discovery state — so
-        # `Typelizer::Jbuilder.reset!` cycles never touch them.
-        #
-        # The directive vocabulary mirrors jbuilder-inertia's
-        # `JbuilderInertia::PropBuilder::KNOWN_DIRECTIVES` (defer, optional,
-        # merge, once, always, scroll). Only `defer` and `optional` may omit
-        # the key from the initial Inertia page load, so only they widen the
-        # generated property to optional.
+        # Internal widening registries. Table-driven (a second adapter is one
+        # entry away) but module-private — no registration API until one
+        # exists. The vocabulary mirrors jbuilder-inertia's
+        # `PropBuilder::KNOWN_DIRECTIVES`; only `defer`/`optional` can omit a
+        # key from the initial Inertia load, so only they widen to optional.
         INERTIA_WIDENING_DIRECTIVES = %i[defer optional].freeze
         private_constant :INERTIA_WIDENING_DIRECTIVES
 
-        # kwarg name → resolver lambda deciding optionality from the kwarg's
-        # literal value. Handles the symbol (`inertia: :defer`), array
-        # (`inertia: [:defer, :merge]`), and hash
-        # (`inertia: {defer: {group: "x"}}`) forms. Non-widening directives
-        # (merge/always/once/scroll) and unrecognized shapes never widen.
+        # kwarg → lambda deciding optionality from its literal value, across
+        # the symbol (`inertia: :defer`), array, and hash
+        # (`inertia: {defer: {...}}`) forms. Non-widening directives and
+        # unrecognized shapes never widen.
         OPTIONAL_KWARG_RESOLVERS = {
           inertia: lambda do |value|
             case value
@@ -191,21 +166,17 @@ module Typelizer
         }.freeze
         private_constant :VALUE_NODE_RESOLVERS
 
-        # Every jbuilder API method that drops or distorts type information
-        # warns through the configured logger (`merge!`, dynamic `set!`,
-        # `cache_collection!`, `key_format!`/`deep_format_keys!`,
-        # `ignore_nil!`, `nil!`/`null!`, `attributes!`/`target!`) — nothing
-        # is skipped silently.
-
+        # Every type-distorting jbuilder API method warns through the logger
+        # rather than being skipped silently (see the `extract_one` dispatch);
+        # jbuilder_api_canary_spec guards that the dispatch stays exhaustive.
         PASSTHROUGH_CALLS = %i[cache! cache_if! cache_root!].freeze
 
         COLLECTION_METHODS = %i[all where includes order limit offset group distinct none].freeze
 
-        # `column_inference: true` means the template is bound to a model the
-        # model-plugin pipeline can type from (an AR class) — `extract!`-style
-        # props are then emitted with `type: nil` so column inference fills
-        # them in. Without it, name hints are applied directly (PORO/no-model
-        # templates would otherwise be all-`unknown`).
+        # `column_inference: true` → bound to a model: `extract!`-style props
+        # are emitted with `type: nil` so column inference fills them in.
+        # Otherwise name hints apply directly (a PORO/no-model template would
+        # otherwise be all-`unknown`).
         def initialize(path:, partial_resolver:, context:, column_inference: true)
           @path = path
           @partial_resolver = partial_resolver
@@ -264,10 +235,9 @@ module Typelizer
           end
         end
 
-        # Only top-level statements are inspected — documented v1 behavior.
-        # A root `array!` (or collection `partial!`) nested under a
-        # conditional cannot be expressed in the generated type, so the root
-        # stays an object; we warn instead of silently mistyping.
+        # Only top-level statements are inspected (v1). A root `array!` /
+        # collection `partial!` under a conditional can't be expressed, so the
+        # root stays an object and we warn instead of mistyping.
         def detect_root_array(stmts)
           return true if stmts.any? { |n| root_array_call?(n) }
 
@@ -282,14 +252,11 @@ module Typelizer
             (node.name == :partial! && keyword_args(node).key?(:collection))
         end
 
-        # Blockless `json.array! @xs, partial: "xs/x", as: :x` at the
-        # template root: the array's element type is the partial's named
-        # interface, so the template renders `type X = Array<Element>;`
-        # (imported, no inline Data alias). Degradation mirrors
-        # `prop_from_partial`: an unresolvable partial warns and falls back
-        # to `Array<unknown>`; a resolvable-but-EMPTY partial would be
-        # dropped from generation (naming it would emit a dangling import —
-        # TS2305), so it also warns and falls back to `Array<unknown>`.
+        # Blockless `json.array! @xs, partial: "xs/x"` at the root: the element
+        # type is the partial's named interface, rendering
+        # `type X = Array<Element>;`. Unresolvable or empty partials warn and
+        # fall back to `Array<unknown>` (naming an empty interface would emit a
+        # dangling TS2305 import).
         def detect_root_array_element(stmts)
           node = stmts.find { |n| root_array_partial_call?(n) }
           return nil unless node
@@ -331,14 +298,11 @@ module Typelizer
           merge_same_level(stmts.flat_map { |n| extract_one(n, optional: optional) }.compact)
         end
 
-        # Same-name properties emitted at one statement-list level — e.g. an
-        # unconditional `json.foo` plus a conditional re-emit of `foo`, or an
-        # own prop alongside a merged partial's — collapse into a single
-        # property instead of duplicate TS keys (`foo: string; foo?: number`).
-        # Mirrors `merge_branches`' widening semantics: the key stays
-        # required if ANY occurrence is unconditionally present, nullability
-        # widens across occurrences, and the type is first-wins unless an
-        # occurrence carries a `typelize:` assertion.
+        # Collapses same-name properties emitted at one level (an
+        # unconditional `json.foo` plus a conditional re-emit, or an own prop
+        # alongside a merged partial's) into one TS key. Same widening as
+        # `merge_branches`: required if any occurrence is unconditional,
+        # nullability widens, type is first-wins unless `typelize:`-asserted.
         def merge_same_level(props)
           return props if props.map { |p| p.name.to_s }.uniq.size == props.size
 
@@ -353,10 +317,8 @@ module Typelizer
           end
         end
 
-        # Control-flow forms the walker does not model: their bodies are
-        # never walked (documented v1 limitation), so any json.* calls inside
-        # would be dropped — warn instead of staying silent, per the
-        # warn-on-drop contract.
+        # Control-flow forms the walker doesn't model: bodies aren't walked
+        # (v1), so json.* calls inside warn instead of being dropped silently.
         UNWALKED_CONTROL_FLOW = {
           Prism::CaseNode => "case",
           Prism::CaseMatchNode => "case",
@@ -376,11 +338,9 @@ module Typelizer
           end
 
           unless json_call?(node)
-            # A non-json statement (iteration like `@xs.each { json.set!(...)
-            # { ... } }`, or any expression wrapping the DSL) is never walked,
-            # so json properties inside it would be dropped silently — warn,
-            # per the warn-on-drop contract. Plain non-json statements
-            # (assignments, helper calls) stay silent.
+            # A non-json statement wrapping the DSL (iteration, any expression)
+            # is never walked, so json calls inside it would drop silently —
+            # warn. Plain non-json statements (assignments, helpers) stay silent.
             warn_skipped(node, "iteration or expression wrapping json properties") if contains_json_call?(node)
             return []
           end
@@ -395,10 +355,9 @@ module Typelizer
             []
           when :set! then handle_set_bang(node, optional: optional)
           when :child!
-            # `json.child!` is only typeable as an element of an enclosing
-            # `json.<name> do ... end` array (handled by
-            # `handle_prop_with_block` before this walk reaches the call) —
-            # reaching it here means there is no property to attach it to.
+            # Only typeable as an element of an enclosing `json.<name> do ... end`
+            # array (handled in `handle_prop_with_block`); reaching here means
+            # there's no property to attach it to.
             warn_skipped(node, "`json.child!` at the template root (no enclosing `json.<name>` block)")
             []
           when :cache_collection!
@@ -431,10 +390,10 @@ module Typelizer
           end
         end
 
-        # Records the source line of a property the walker could not type
-        # (type nil — delegated to model inference — or a hard "unknown").
-        # No warning is logged here: a bound model's columns can still fill
-        # the type in post-walk, so warning at this point would cry wolf.
+        # Records the source line of a property the walker couldn't type (nil
+        # → model inference, or a hard "unknown"). No warning here: a bound
+        # model's columns can still fill it in post-walk, so warning now would
+        # cry wolf.
         def note_unknown_candidate(node, prop)
           return prop unless prop.is_a?(Property)
 
@@ -445,11 +404,9 @@ module Typelizer
           prop
         end
 
-        # `name:`/`args:` overrides exist for `json.set!` with a literal key,
-        # which is `json.<key> ...` spelled differently: the property name
-        # comes from the first argument instead of the call name, and the
-        # remaining arguments behave exactly like a normal prop's (value,
-        # `partial:`, attribute shortcut, block).
+        # `name:`/`args:` overrides let `json.set!` with a literal key reuse
+        # this path — it's `json.<key> ...` spelled differently: name from the
+        # first arg, remaining args behave like a normal prop's.
         def handle_prop(node, optional:, name: node.name.to_s, args: positional_args(node))
           kwargs = keyword_args(node)
           optional ||= kwargs.any? { |key, value| OPTIONAL_KWARG_RESOLVERS[key]&.call(value) }
@@ -457,11 +414,9 @@ module Typelizer
           value = args.first
           if (resolver = value_node_resolver(value))
             optional ||= resolver[:widening].include?(value.name)
-            # Resolver blocks contain arbitrary Ruby returning a plain value —
-            # never jbuilder DSL — so the block is NOT walked as a shape. Its
-            # final expression feeds the regular expression-inference path
-            # below (literals, Time calls); anything else falls through to
-            # name hints and, when a model is bound, column inference.
+            # The resolver block is arbitrary Ruby returning a plain value
+            # (never DSL), so it isn't walked as a shape; its final expression
+            # feeds the normal inference path below.
             value = resolver_value_expression(value)
           end
 
@@ -512,11 +467,9 @@ module Typelizer
           build_property(name, type: "unknown", optional: optional)
         end
 
-        # `json.set!` with a literal String/Symbol key is statically known —
-        # it routes through the normal property flow under that key. String
-        # keys exist precisely for names that aren't valid Ruby method names
-        # (`json.set! "kebab-key", value`); `Property#render` quotes such
-        # names in the generated TS. Dynamic keys keep the warning.
+        # `json.set!` with a literal String/Symbol key routes through the
+        # normal property flow under that key; `Property#render` quotes keys
+        # that aren't valid identifiers. Dynamic keys warn.
         def handle_set_bang(node, optional:)
           args = positional_args(node)
           key = args.first
@@ -564,13 +517,10 @@ module Typelizer
         end
 
         # Routes `typelize:` overrides through TypeParser so shortcuts
-        # (`string?`, `number[]`, `string?[]`) expand into real TS. The
-        # property is flagged `user_asserted` so `Interface#infer_types`
-        # skips AR model inference for it — scoped to this exact property,
-        # at this exact nesting level, with no class-level registry.
-        # Optionality merges the user's assertion (`string?`) with structural
-        # optionality (from `if` blocks, inertia kwargs) so context-aware
-        # passes like `merge_branches` can still widen it.
+        # (`string?`, `number[]`) expand into real TS. Flagged `user_asserted`
+        # so `Interface#infer_types` skips model inference for this exact
+        # property at this nesting level. Optionality merges the assertion
+        # (`string?`) with structural optionality so `merge_branches` can widen.
         def property_from_override(name, override, optional:)
           parsed = TypeParser.parse_declaration(override)
           build_property(
@@ -583,23 +533,19 @@ module Typelizer
           )
         end
 
-        # Composed-partial blocks emit named intersections — this is how
-        # jbuilder fakes Alba's named-trait composition:
+        # Composed-partial blocks emit named intersections — jbuilder's
+        # stand-in for Alba's named-trait composition:
         #
         #   json.course do                       course: Course & CourseDetails
         #     json.partial! "courses/course"
         #     json.partial! "courses/course_details"
         #   end
         #
-        # Every top-level `json.partial!` with a resolvable string-literal
-        # reference becomes a named imported interface; whatever else the
-        # block contains (own props, conditionals, dynamic/collection
-        # partials) is extracted as usual and trails the intersection as an
-        # inline `Shape` (`Course & { progress: number }`) — structurally
-        # equivalent to inlining the partial's fields, just named. Blocks
-        # with no nameable partials stay plain inline `Shape`s so AR model
-        # inference (column types, enums) keeps working inside nested blocks
-        # via `infer_nested_property_types`.
+        # Each top-level resolvable string `json.partial!` becomes a named
+        # interface; anything else (own props, conditionals, dynamic partials)
+        # trails the intersection as an inline `Shape`. A block with no
+        # nameable partials stays a plain `Shape` so nested model inference
+        # keeps working (`infer_nested_property_types`).
         def handle_prop_with_block(node, name:, optional:)
           children, non_children = partition_child_bangs(node.block)
           if children.any?
@@ -622,16 +568,11 @@ module Typelizer
           (block_node.body&.body || []).partition { |stmt| json_call?(stmt) && stmt.name == :child! }
         end
 
-        # `json.<name> do ... end` whose body builds elements with
-        # `json.child!` is jbuilder's literal-array form — the property
-        # becomes an ARRAY whose element type merges every child's shape with
-        # the same widening semantics as conditional branches
-        # (`merge_branches` with full coverage): keys present in every child
-        # stay required, the rest go optional, and nullability widens across
-        # children. Named props mixed into the same block render into the
-        # array's parent object at runtime alongside the children — a shape
-        # TS cannot express on one key — so they are dropped from the type
-        # with a warning and only the array elements are typed.
+        # `json.<name> do ... json.child! ... end` is jbuilder's literal-array
+        # form: the property becomes an array whose element type merges every
+        # child's shape with full-coverage `merge_branches` semantics. Named
+        # props mixed into the same block can't be expressed on one TS key, so
+        # they're dropped with a warning and only the elements are typed.
         def handle_child_array(node, name:, optional:, children:, rest:)
           if rest.any?
             log_warning(node, "mixing `json.child!` with named properties is not statically typeable; " \
@@ -645,11 +586,9 @@ module Typelizer
           build_property(name, type: Shape.new(properties: merged), optional: optional, multi: true)
         end
 
-        # Splits a block body into [named partial interfaces, other stmts].
-        # Only a top-level `json.partial!` with a string-literal reference,
-        # no `collection:` kwarg, and a resolvable template counts as a named
-        # member; everything else (including unresolvable partials, which the
-        # regular extraction path warns about) stays in the remainder.
+        # Splits a block into [named partial interfaces, other stmts]. Only a
+        # top-level string-literal `json.partial!` with no `collection:` and a
+        # resolvable template counts as a named member; everything else stays.
         def partition_composed_partials(block_node, prop_name:)
           interfaces = []
           rest = []
@@ -674,11 +613,9 @@ module Typelizer
 
           iface = @context.interface_for(partial_class)
           if empty_partial_interface?(partial_class, iface)
-            # An empty interface is dropped from generation, so naming it as
-            # an intersection member would emit a dangling import (TS2305).
-            # Returning nil routes the statement into the remainder, where
-            # `handle_partial_bang` merges its (zero) properties — the member
-            # is simply omitted while the other members stay intact.
+            # Naming an empty (dropped) interface as an intersection member
+            # would emit a TS2305 dangling import. Returning nil routes it into
+            # the remainder (merged, zero props); other members stay intact.
             warn_empty_partial(stmt, first.unescaped, "it is omitted from `#{prop_name}`'s intersection type")
             return nil
           end
@@ -700,11 +637,9 @@ module Typelizer
           multi = looks_like_collection?(name, args.first)
           iface = @context.interface_for(partial_class)
           if empty_partial_interface?(partial_class, iface)
-            # An empty interface is dropped from generation (no file, no
-            # index export — see Writer), so a named reference to it would
-            # produce a TS2305 dangling import. Keep the property (its
-            # collection-ness is still statically known) but degrade the
-            # element type to `unknown`.
+            # An empty interface is dropped from generation, so a named
+            # reference would be a TS2305 dangling import. Keep the property
+            # (collection-ness is known) but degrade the element to `unknown`.
             warn_empty_partial(node, partial, "`#{name}` falls back to `unknown`")
             @empty_partial_props << name.to_s
             return build_property(name, type: "unknown", optional: optional, multi: multi)
@@ -713,34 +648,27 @@ module Typelizer
           build_property(name, type: iface, optional: optional, multi: multi)
         end
 
-        # True when the partial's interface is conclusively empty (it would
-        # be dropped from generation). Asking `empty?` triggers the partial's
-        # own property walk — fine inside a generation cycle (memoized per
-        # WriterContext), EXCEPT when that walk is already on the stack:
-        # `Interface#properties` (and this walker's `parsed`) memoize
-        # non-reentrantly, so re-entering would recurse until
-        # SystemStackError. An in-progress walk is treated as NON-empty,
-        # which is safe by construction, not just optimistic: the only way a
-        # partial can be mid-walk while a reference back to it is resolved is
-        # that one of its own statements triggered this sub-walk, and every
-        # such statement (a `partial:` kwarg prop, a composed-partial block,
-        # a top-level `json.partial!` merge of a template that references it
-        # back) emits at least one property into the partial — so the
-        # finished interface can never be empty. This preserves recursive
-        # types (Comment.replies → Comment). A self-referencing partial that
-        # IS empty (sole statement `json.partial!` of itself) never reaches
-        # this check: `handle_partial_bang`'s cycle guard returns before any
-        # interface reference is taken.
+        # True when the partial's interface is conclusively empty (would be
+        # dropped from generation). Asking `empty?` triggers the partial's own
+        # walk — fine within a cycle (memoized), EXCEPT when that walk is
+        # already on the stack: `Interface#properties`/`parsed` memoize
+        # non-reentrantly, so re-entering would recurse to SystemStackError.
+        # An in-progress walk is treated as NON-empty, which is safe by
+        # construction: a partial can only be mid-walk while a reference back
+        # to it resolves if one of its own statements triggered the sub-walk,
+        # and every such statement emits at least one property — so the
+        # finished interface can't be empty. This preserves recursive types
+        # (Comment.replies → Comment). A self-referencing EMPTY partial never
+        # reaches here — `handle_partial_bang`'s cycle guard returns first.
         def empty_partial_interface?(partial_class, iface)
           return false if self.class.walks_in_progress.include?(partial_class._template_path)
 
           iface.empty?
         end
 
-        # One clear warning per reference site per generation cycle. The
-        # generic post-inference "could not infer a type" warning is
-        # suppressed for these props (see `note_unknown_candidate`) so the
-        # same property doesn't warn twice with two different messages.
+        # One warning per reference site per cycle; the generic post-inference
+        # unknown warning is suppressed for these props (`note_unknown_candidate`)
+        # so the same property doesn't warn twice.
         def warn_empty_partial(node, partial_name, consequence)
           key = [@path, node.location.start_line, partial_name]
           warned = self.class.warned_empty_partials
@@ -751,22 +679,18 @@ module Typelizer
             "#{consequence} — use `typelize:` to pin a type")
         end
 
-        # Jbuilder resolves array-vs-object at runtime by checking if the value
-        # responds to `each`. Statically, we infer from the property name
-        # (plural → array) and fall back to known collection method names on the
-        # argument.
+        # Jbuilder picks array-vs-object at runtime via `each`. Statically we
+        # infer from the name (plural → array), falling back to known
+        # collection method names on the argument.
         def looks_like_collection?(name, node)
           return true if node.is_a?(Prism::CallNode) && COLLECTION_METHODS.include?(node.name)
           plural_name?(name)
         end
 
-        # Words that LOOK plural (`singularize` finds a different form) but
-        # are conceptually singular nouns. Treated as singular by the
-        # collection heuristic so `json.earnings @summary, partial: ...`
-        # generates `earnings: Earnings`, not `Array<Earnings>`. Apps with
-        # additional domain-specific cases can extend Rails' inflector via
-        # `Inflector.inflections { |i| i.uncountable %w[...] }` — that's
-        # also honored because `singularize` consults inflections first.
+        # Words that look plural but are conceptually singular, so e.g.
+        # `json.earnings @summary, partial: ...` types `Earnings`, not
+        # `Array<Earnings>`. Apps can extend this via Rails' inflector
+        # uncountables (`singularize` consults inflections first).
         SINGULAR_LOOKING_PLURALS = %w[news settings earnings analytics statistics series].freeze
 
         def plural_name?(name)
@@ -776,12 +700,10 @@ module Typelizer
           str.singularize != str
         end
 
-        # Handles both the positional form (`json.partial! "posts/post"`) and
-        # the kwargs-only form (`json.partial! partial: "posts/post",
-        # collection: @posts, as: :post`). At the template root a collection
-        # partial becomes the root array (see `detect_root_array`); inside a
-        # block it cannot be expressed (the partial's properties merge into
-        # the surrounding shape), so we warn instead of silently mistyping.
+        # Positional (`json.partial! "posts/post"`) and kwargs-only
+        # (`partial:`/`collection:`/`as:`) forms. At the root a collection
+        # partial becomes the root array; inside a block it can't be expressed
+        # (props merge into the surrounding shape), so we warn.
         def handle_partial_bang(node)
           first = positional_args(node).first
           kwargs = keyword_args(node)
@@ -842,19 +764,14 @@ module Typelizer
             .map { |sym| note_unknown_candidate(sym, property_from_column(sym.unescaped, optional: optional)) }
         end
 
-        # `json.array! @items do |item| ... end` — emit the element shape;
-        # the root-array wrapping itself is handled via `root_is_array`.
-        # Blockless forms other than the root-level `partial:` one can't
-        # participate in the root-array detection (documented v1
-        # limitation), so they warn instead of silently producing an object
-        # type for an array value.
+        # `json.array! @items do |item| ... end` — emit the element shape; the
+        # root-array wrapping is handled via `root_is_array`. Blockless forms
+        # other than the root-level `partial:` one warn (v1 limitation).
         def handle_array_bang(node, optional:)
           if node.block.is_a?(Prism::BlockNode)
-            # At the template root this is the root array's element shape (see
-            # `detect_root_array`). Nested inside another block it can't be an
-            # array on the enclosing key — same limitation as a nested
-            # collection `partial!` — so warn rather than silently typing it
-            # as an object.
+            # Root: the root array's element shape (see `detect_root_array`).
+            # Nested: can't be an array on the enclosing key (like a nested
+            # collection `partial!`), so warn instead of typing it as an object.
             if @nested
               log_warning(node, "`json.array!` with a block inside another block is typed as an " \
                 "object, not an array — use `typelize:` to pin an array type")
@@ -872,12 +789,9 @@ module Typelizer
           end
         end
 
-        # Blockless `json.array!` with a `partial:` option renders the
-        # partial once per element. At the template root the element type is
-        # resolved by `detect_root_array_element` (the property walk itself
-        # emits nothing); anywhere else the construct can't be expressed in
-        # the generated type, and a dynamic reference can't be resolved at
-        # all — both warn instead of staying silent.
+        # Blockless `json.array! partial:` renders the partial per element. At
+        # the root the element type comes from `detect_root_array_element`;
+        # elsewhere (or with a dynamic reference) it can't be expressed — warn.
         def handle_array_partial(node, partial)
           unless partial.is_a?(String)
             log_warning(node, "`partial:` with a dynamic template reference cannot be resolved " \
@@ -894,10 +808,9 @@ module Typelizer
           extract(node.block.body&.body || [], optional: optional)
         end
 
-        # Walks an if/elsif/else (or unless/else) chain and merges same-name
-        # properties across branches. A property emitted in every branch of a
-        # fully-covered chain (terminating in `else`) stays required; anything
-        # else is optional.
+        # Walks an if/elsif/else (or unless/else) chain, merging same-name
+        # props across branches (required only if every branch of a fully
+        # covered chain emits it).
         def handle_conditional(node)
           branches, fully_covered = collect_branches(node)
           branch_props = branches.map { |body| extract(body, optional: false) }
@@ -905,10 +818,9 @@ module Typelizer
         end
 
         def collect_branches(node)
-          # `unless` has no elsif chain — only an optional `else_clause`
-          # (which, by unless-semantics, is the condition-true branch; the
-          # branches are symmetric for merging purposes). Prism exposes it as
-          # `else_clause`, not `subsequent`.
+          # `unless` has no elsif chain — only an optional `else_clause` (Prism
+          # exposes it as `else_clause`, not `subsequent`); branches are
+          # symmetric for merging.
           if node.is_a?(Prism::UnlessNode)
             branches = [node.statements&.body || []]
             if (else_clause = node.else_clause)
@@ -935,15 +847,12 @@ module Typelizer
           [branches, false]
         end
 
-        # When the same property name appears in multiple branches we widen
-        # nullability across them (`Foo` + `Foo | null` → `Foo | null`) and
-        # widen optionality: a prop is optional unless every branch of a
-        # fully-covered chain emits it, and stays optional if any branch
-        # marked it optional (e.g. via `inertia: :defer`). Type ambiguity
-        # (different base types per branch) is not unioned — first branch
-        # wins, except that an explicit `typelize:` assertion in any branch
-        # beats inferred guesses (and carries `user_asserted` through the
-        # merge, so model inference can't clobber the merged property).
+        # Merges same-name props across branches: nullability widens
+        # (`Foo` + `Foo | null` → `Foo | null`); a prop is optional unless
+        # every branch of a fully-covered chain emits it (or any branch marked
+        # it optional). Type ambiguity isn't unioned — first branch wins,
+        # except a `typelize:` assertion in any branch wins and carries
+        # `user_asserted` through so model inference can't clobber it.
         def merge_branches(branch_props, fully_covered:)
           indexed = branch_props.map { |props| props.to_h { |p| [p.name.to_s, p] } }
           names = branch_props.flat_map { |props| props.map { |p| p.name.to_s } }.uniq
@@ -956,12 +865,10 @@ module Typelizer
           end
         end
 
-        # Nullability widening across merged occurrences of one property:
-        # explicit `nullable` flags widen, and so does a branch that emits a
-        # bare `nil` literal (typed `"null"`) when the surviving base type is
-        # something else — `string` + `null` → `string | null`. When the base
-        # ITSELF is the `null` literal it already renders as `null`, so no
-        # extra `| null` is added (that would render `null | null`).
+        # Nullability widens across merged occurrences: an explicit `nullable`
+        # flag, or a branch emitting a bare `nil` (typed "null") when the base
+        # is something else (`string` + `null` → `string | null`). If the base
+        # is itself the `null` literal, no extra `| null` (avoids `null | null`).
         def widened_nullable(base, occurrences)
           occurrences.any?(&:nullable) ||
             (!null_type?(base) && occurrences.any? { |p| null_type?(p) })
@@ -972,10 +879,9 @@ module Typelizer
         end
 
         # With an inferable (AR) model the type stays nil so model inference
-        # resolves it from `_typelizer_model_name` — nested shapes only run
-        # inference on nil-typed props, so a premature hint would block the
-        # column type. Without one (PORO `typelize_from`, no model), name
-        # hints are the best signal available.
+        # resolves it (nested shapes only infer nil-typed props, so a premature
+        # hint would block the column type). Without a model, name hints are
+        # the best signal.
         def property_from_column(col, optional: false)
           build_property(col, type: @column_inference ? nil : name_hint(col), optional: optional)
         end
