@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 require_relative "error"
+# camelize/singularize/demodulize/safe_constantize — needed by name
+# derivation (and the walker's pluralization heuristic) in non-Rails
+# processes where nothing else has loaded the core extensions yet.
+require "active_support/core_ext/string/inflections"
 
 module Typelizer
   module Jbuilder
@@ -226,6 +230,7 @@ module Typelizer
         type_name = as ? validate_type_name!(as.to_s, full_path) : derive_type_name(full_path, views_root)
         check_name_collision!(type_name, full_path)
 
+        previous = registry[full_path]
         klass = ensure_class(type_name)
         klass.define_singleton_method(:_template_path) { full_path }
         klass.define_singleton_method(:_views_root) { views_root }
@@ -247,6 +252,14 @@ module Typelizer
         end
 
         registry[full_path] = klass
+        if (rel = relative_key(full_path, views_root))
+          # First registration wins the relative slot (Rails view-path order).
+          relative_registry[rel] = klass if relative_registry[rel].nil? || relative_registry[rel].equal?(previous)
+        end
+        # Re-registering the same template under a new name (explicit `as:`
+        # rename between `template` calls) must not leave the old constant
+        # generating a stale type.
+        remove_registration(previous) if previous && !previous.equal?(klass)
         klass
       end
 
@@ -262,6 +275,18 @@ module Typelizer
         # Sorted for deterministic registration order — stable `index.ts`
         # output and stable collision error messages across filesystems.
         Dir.glob(File.join(views_root, "**/*.json.jbuilder")).sort.each do |path|
+          # Rails view-path shadowing: a template at the same relative path
+          # as one from an earlier root is overridden by it at render time —
+          # the earlier registration wins, this file is skipped (it is not a
+          # name collision).
+          rel = relative_key(path, views_root)
+          if rel && (winner = relative_registry[rel]) && winner._template_path != path
+            Typelizer.logger.debug(
+              "Typelizer::Jbuilder: #{path} is shadowed by #{winner._template_path} (view-path order); skipping"
+            )
+            next
+          end
+
           metadata = walker.metadata_for(path)
           model = metadata[:model] || model_resolver&.call(path)
           template(path, views_root: views_root, model: model, as: metadata[:type_name])
@@ -269,11 +294,20 @@ module Typelizer
       end
 
       def template_for(absolute_path, views_root: default_views_root)
-        registry[absolute_path] || auto_register_partial(absolute_path, views_root)
+        registry[absolute_path] ||
+          shadowing_registration(absolute_path, views_root) ||
+          auto_register_partial(absolute_path, views_root)
       end
 
       def registry
         @registry ||= {}
+      end
+
+      # relative-path → class, first registration winning the slot: the
+      # cross-root shadowing index (Rails view-path semantics — the first
+      # root containing a relative path renders it).
+      def relative_registry
+        @relative_registry ||= {}
       end
 
       # Every views root seen this cycle, absolute, in registration order.
@@ -318,6 +352,7 @@ module Typelizer
       # adapter registries — survives.
       def reset!
         registry.clear
+        relative_registry.clear
         views_roots.clear
         prefix = "#{Templates.name}::"
         Typelizer.base_classes.delete_if { |name| name.start_with?(prefix) }
@@ -347,6 +382,30 @@ module Typelizer
       # entry). Order-preserving dedup: first registration wins the slot.
       def track_views_root(views_root)
         views_roots << views_root unless views_roots.include?(views_root)
+      end
+
+      # The path relative to its views root, or nil when outside it.
+      def relative_key(full_path, views_root)
+        prefix = "#{views_root}/"
+        full_path.delete_prefix(prefix) if full_path.start_with?(prefix)
+      end
+
+      # A template that exists on disk in THIS root but is shadowed by an
+      # earlier root resolves to the winner's class — Rails renders the
+      # winner, so types must reference it too.
+      def shadowing_registration(absolute_path, views_root)
+        rel = relative_key(absolute_path, File.expand_path(views_root.to_s))
+        rel && relative_registry[rel]
+      end
+
+      # Removes a superseded registration's constant and generation entry
+      # (the path key in `registry` has already been overwritten).
+      def remove_registration(klass)
+        Typelizer.base_classes.delete(klass.name)
+        const_name = klass.name.split("::").last.to_sym
+        if Templates.const_defined?(const_name, false) && Templates.const_get(const_name, false).equal?(klass)
+          Templates.send(:remove_const, const_name)
+        end
       end
 
       def check_name_collision!(type_name, full_path)

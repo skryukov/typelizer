@@ -63,6 +63,8 @@ Path segments that wouldn't form a valid type name are sanitized deterministical
 
 Two templates claiming the same type name raise a `Typelizer::Jbuilder::NameCollision` error at generation time, naming both template paths. Rename one of them with `typelize_as`.
 
+One exception: with multiple discovery roots, a template at the *same relative path* as one from an earlier root is Rails view-path shadowing, not a collision — the earlier root's template wins (it is the one Rails renders), and the shadowed file is skipped with a debug log. Partial references to the shadowed path resolve to the winner's type.
+
 Property names need no sanitizing — TypeScript allows any string as a quoted key. A name that isn't a valid JS identifier (only possible via a literal `json.set!` key, e.g. `json.set! "kebab-key", value`) renders quoted (`'kebab-key': string;`, or double-quoted with `prefer_double_quotes`); normal names stay bare and byte-identical.
 
 ### Render safety vs. plugin enablement

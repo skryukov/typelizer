@@ -103,7 +103,10 @@ module Typelizer
 
         debug("Watching #{dirs.map { |dir| relative_path(dir) }.inspect} for jbuilder template changes")
 
-        ::Listen.to(*dirs, only: /\.jbuilder\z/, **options) do |changed, added, removed|
+        # Matches the discovery glob (`**/*.json.jbuilder`): other .jbuilder
+        # flavors (xml) never produce types, so their edits shouldn't trigger
+        # reload cycles.
+        ::Listen.to(*dirs, only: /\.json\.jbuilder\z/, **options) do |changed, added, removed|
           debug("Jbuilder templates changed: #{(changed + added + removed).map { |f| relative_path(f) }.inspect}")
           @block.call
         end.start

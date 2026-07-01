@@ -135,8 +135,12 @@ module Typelizer
         serializer._template_path
       end
 
+      # Feature-detected: `template()`-produced classes always define
+      # `_views_root`, but a hand-rolled duck-typed serializer may not — the
+      # `plugin_configs` fallback must be reachable for it, not NoMethodError.
       def views_root
-        serializer._views_root ||
+        explicit = serializer._views_root if serializer.respond_to?(:_views_root)
+        explicit ||
           config.plugin_configs.dig(:jbuilder, :views_root) ||
           "app/views"
       end

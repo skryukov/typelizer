@@ -2476,5 +2476,67 @@ RSpec.describe Typelizer::Jbuilder do
       expect(logs).to include("missing/widget")
       expect(logs).to include("could not be resolved")
     end
+
+    describe "view-path shadowing (same relative path across roots)" do
+      it "lets the first root win instead of raising NameCollision" do
+        write_template(core_root, "posts/show.json.jbuilder", <<~RUBY)
+          json.core true
+        RUBY
+        write_template(overlay_root, "posts/show.json.jbuilder", <<~RUBY)
+          json.overlay true
+        RUBY
+
+        expect {
+          Typelizer::Jbuilder.discover(core_root)
+          Typelizer::Jbuilder.discover(overlay_root)
+        }.not_to raise_error
+
+        output = render_interface(Typelizer::Jbuilder::Templates::PostsShow)
+        # Rails renders the first view path's template; the shadowed file
+        # must not produce a type (or abort the whole cycle).
+        expect(output).to include("core: boolean")
+        expect(output).not_to include("overlay")
+      end
+
+      it "resolves partial references to a shadowed path to the winning root's type" do
+        write_template(core_root, "widgets/_widget.json.jbuilder", <<~RUBY)
+          json.core true
+        RUBY
+        write_template(overlay_root, "widgets/_widget.json.jbuilder", <<~RUBY)
+          json.overlay true
+        RUBY
+        write_template(overlay_root, "dash/show.json.jbuilder", <<~RUBY)
+          json.widget @widget, partial: "widgets/widget", as: :widget
+        RUBY
+
+        Typelizer::Jbuilder.discover(core_root)
+        Typelizer::Jbuilder.discover(overlay_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::DashShow)
+
+        expect(output).to include("widget: Widget")
+        expect(Typelizer::Jbuilder::Templates::Widget._views_root).to eq(File.expand_path(core_root))
+      end
+
+      it "still raises NameCollision for different relative paths claiming one name" do
+        write_template(core_root, "aaa/thing.json.jbuilder", %(typelize_as "DupName"\n\njson.x 1\n))
+        write_template(core_root, "bbb/thing.json.jbuilder", %(typelize_as "DupName"\n\njson.x 1\n))
+
+        expect { Typelizer::Jbuilder.discover(core_root) }
+          .to raise_error(Typelizer::Jbuilder::NameCollision)
+      end
+    end
+
+    describe "explicit re-registration" do
+      it "removes the stale constant when a template is re-registered under a new name" do
+        path = write_template(core_root, "reports/summary.json.jbuilder", %(json.ok true\n))
+
+        Typelizer::Jbuilder.template(path, views_root: core_root, as: "OldName")
+        Typelizer::Jbuilder.template(path, views_root: core_root, as: "NewName")
+
+        expect(Typelizer::Jbuilder::Templates.constants).to include(:NewName)
+        expect(Typelizer::Jbuilder::Templates.constants).not_to include(:OldName)
+        expect(Typelizer.base_classes).not_to include("Typelizer::Jbuilder::Templates::OldName")
+      end
+    end
   end
 end
