@@ -433,6 +433,90 @@ RSpec.describe Typelizer::Jbuilder do
       Typelizer.logger = original
     end
 
+    describe "root array detection (re-review round 3)" do
+      it "types `json.(collection) { |el| ... }` as a root array (jbuilder's call form)" do
+        write_template("people/index.json.jbuilder", <<~RUBY)
+          json.(@people) do |person|
+            json.full_name "x"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::PeopleIndex)
+
+        expect(output).to include("type PeopleIndex = Array<PeopleIndexData>")
+        expect(output).to include("full_name: string")
+      end
+
+      it "sees a root array through a cache! wrapper" do
+        write_template("items/index.json.jbuilder", <<~RUBY)
+          json.cache! "items" do
+            json.array! @items do |item|
+              json.label "x"
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ItemsIndex)
+
+        expect(output).to include("type ItemsIndex = Array<ItemsIndexData>")
+        expect(output).to include("label: string")
+      end
+
+      it "sees a root collection partial through cache_root! with no spurious warning" do
+        write_template("users/_user.json.jbuilder", <<~RUBY)
+          json.name user.name, typelize: "string"
+        RUBY
+        write_template("users/index.json.jbuilder", <<~RUBY)
+          json.cache_root! "users" do
+            json.partial! partial: "users/user", collection: @users, as: :user
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::UsersIndex)
+        end
+
+        expect(output).to include("type UsersIndex = Array<UsersIndexData>")
+        expect(output).to include("name: string")
+        expect(logs).not_to include("collection")
+      end
+
+      it "types a blockless root `json.array! @xs, :attrs` as a root array of the attribute shape" do
+        write_template("people/index.json.jbuilder", <<~RUBY)
+          json.array! @people, :id, :name
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::PeopleIndex)
+
+        expect(output).to include("type PeopleIndex = Array<PeopleIndexData>")
+        expect(output).to include("id: number")
+      end
+
+      it "warns on a root array nested two conditionals deep" do
+        write_template("items/index.json.jbuilder", <<~RUBY)
+          if @a
+            if @b
+              json.array! @items do |item|
+                json.id item.id
+              end
+            end
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ItemsIndex)
+        end
+
+        expect(logs).to include("conditional root arrays are not supported")
+      end
+    end
+
     describe "unless/else branch merging" do
       it "keeps else-branch-only props as present and optional" do
         write_template("things/show.json.jbuilder", <<~RUBY)

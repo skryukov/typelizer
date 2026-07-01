@@ -238,20 +238,41 @@ module Typelizer
           end
         end
 
-        # Only top-level statements are inspected (v1). A root `array!` /
+        # Only top-level statements are inspected (v1), but cache wrappers are
+        # transparent (see `expand_root_passthrough`). A root `array!` /
         # collection `partial!` under a conditional can't be expressed, so the
         # root stays an object and we warn instead of mistyping.
         def detect_root_array(stmts)
+          stmts = expand_root_passthrough(stmts)
           return true if stmts.any? { |n| root_array_call?(n) }
 
           warn_on_conditional_root_array(stmts)
           false
         end
 
+        # `cache!`/`cache_if!`/`cache_root!` wrap their block transparently at
+        # render time (the cached fragment merges into the current scope), so
+        # a root array inside one still makes the ROOT an array. Property
+        # extraction goes through `handle_passthrough`; this mirrors that
+        # transparency for root-shape scanning.
+        def expand_root_passthrough(stmts)
+          stmts.flat_map do |node|
+            if json_call?(node) && PASSTHROUGH_CALLS.include?(node.name) && node.block.is_a?(Prism::BlockNode)
+              expand_root_passthrough(node.block.body&.body || [])
+            else
+              [node]
+            end
+          end
+        end
+
         def root_array_call?(node)
           return false unless json_call?(node)
 
-          (node.name == :array! && (node.block || keyword_args(node)[:partial].is_a?(String))) ||
+          (node.name == :array! && (node.block || keyword_args(node)[:partial].is_a?(String) ||
+            collection_attr_shortcut(positional_args(node)))) ||
+            # jbuilder's `json.(collection) { |el| ... }` — `call` with a block
+            # is `_array(object, &block)`, the root-array form.
+            (node.name == :call && !node.block.nil?) ||
             (node.name == :partial! && keyword_args(node).key?(:collection))
         end
 
@@ -261,7 +282,7 @@ module Typelizer
         # fall back to `Array<unknown>` (naming an empty interface would emit a
         # dangling TS2305 import).
         def detect_root_array_element(stmts)
-          node = stmts.find { |n| root_array_partial_call?(n) }
+          node = expand_root_passthrough(stmts).find { |n| root_array_partial_call?(n) }
           return nil unless node
 
           partial_name = keyword_args(node)[:partial]
@@ -284,15 +305,22 @@ module Typelizer
             keyword_args(node)[:partial].is_a?(String)
         end
 
+        # Recurses through arbitrarily nested conditionals (and cache wrappers
+        # inside them) so a doubly-nested root array still warns.
         def warn_on_conditional_root_array(stmts)
           stmts.each do |node|
             next unless node.is_a?(Prism::IfNode) || node.is_a?(Prism::UnlessNode)
             branches, _ = collect_branches(node)
-            branches.flatten.each do |n|
-              next unless root_array_call?(n)
-              log_warning(n, "a root array (`json.array!` / collection `json.partial!`) inside a conditional " \
-                "is typed as an object — conditional root arrays are not supported; " \
-                "use `typelize:` to pin the type")
+            branches.each do |branch|
+              expand_root_passthrough(branch).each do |n|
+                if root_array_call?(n)
+                  log_warning(n, "a root array (`json.array!` / collection `json.partial!`) inside a conditional " \
+                    "is typed as an object — conditional root arrays are not supported; " \
+                    "use `typelize:` to pin the type")
+                elsif n.is_a?(Prism::IfNode) || n.is_a?(Prism::UnlessNode)
+                  warn_on_conditional_root_array([n])
+                end
+              end
             end
           end
         end
@@ -351,7 +379,12 @@ module Typelizer
           end
 
           case node.name
-          when :extract!, :call then handle_extract(node, optional: optional)
+          when :extract! then handle_extract(node, optional: optional)
+          when :call
+            # jbuilder's `call`: with a block it is `_array(object, &block)`
+            # (the root-array form — see `root_array_call?`); blockless it is
+            # `extract!(object, *attributes)`.
+            node.block ? handle_array_bang(node, optional: optional) : handle_extract(node, optional: optional)
           when :partial! then handle_partial_bang(node)
           when :array! then handle_array_bang(node, optional: optional)
           when *PASSTHROUGH_CALLS then handle_passthrough(node, optional: optional)
@@ -802,18 +835,24 @@ module Typelizer
             # Nested: can't be an array on the enclosing key (like a nested
             # collection `partial!`), so warn instead of typing it as an object.
             if @nested
-              log_warning(node, "`json.array!` with a block inside another block is typed as an " \
+              log_warning(node, "`json.#{node.name}` with a block inside another block is typed as an " \
                 "object, not an array — use `typelize:` to pin an array type")
             end
             shape_body(node.block)
           elsif keyword_args(node).key?(:partial)
             handle_array_partial(node, keyword_args(node)[:partial])
-          elsif (args = positional_args(node)).size >= 2
-            log_warning(node, "`json.array!` without a block emits its attributes as an object shape, " \
-              "not an array — use the block form or `typelize:` to pin an array type")
-            collection_attr_shortcut(args) || []
+          elsif (props = collection_attr_shortcut(positional_args(node)))
+            # At the root this is the root array's element shape
+            # (`json.array! @people, :id, :name` renders one object per
+            # element — see `root_array_call?`); inside a block it can't be
+            # expressed on the enclosing key, so warn.
+            if @nested
+              log_warning(node, "`json.array!` without a block emits its attributes as an object shape, " \
+                "not an array — use the block form or `typelize:` to pin an array type")
+            end
+            props
           else
-            warn_skipped(node, "`json.array!` without a block or attribute list")
+            warn_skipped(node, "`json.#{node.name}` without a block or attribute list")
             []
           end
         end
