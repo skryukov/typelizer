@@ -183,6 +183,10 @@ module Typelizer
           @context = context
           @column_inference = column_inference
           @unknown_lines = {}
+          # Nesting path of the property currently being walked (prop names of
+          # the enclosing blocks) — keys `@unknown_lines` so two same-named
+          # unknowns at different nesting levels each get their own line.
+          @name_stack = []
           # Prop names that fell back to `unknown` but already warned at walk
           # time with a more specific message (an empty `partial:` reference,
           # a value-less `typelize:`), so the generic post-inference unknown
@@ -205,12 +209,14 @@ module Typelizer
           parsed.fetch(:root_array_element)
         end
 
-        # prop name → source line for properties whose walker-side type is
-        # nil or "unknown". These are CANDIDATE unknowns: model inference
-        # runs after the walk (`Interface#infer_types`) and can still rescue
-        # them, so the actual warning decision is made post-inference by
+        # Dot-joined nesting path ("a.b.name") → source line for properties
+        # whose walker-side type is nil or "unknown". These are CANDIDATE
+        # unknowns: model inference runs after the walk
+        # (`Interface#infer_types`) and can still rescue them, so the actual
+        # warning decision is made post-inference by
         # `Plugin#after_type_inference` — this map only supplies the
-        # file:line the walker alone knows.
+        # file:line the walker alone knows. Path-keyed so two same-named
+        # unknowns at different nesting levels each warn with their own line.
         def unknown_candidates
           parsed.fetch(:unknown_lines)
         end
@@ -502,9 +508,22 @@ module Typelizer
 
           if !prop.user_asserted && self.class.unknown_type?(prop.type) &&
               !@prewarned_props.include?(prop.name.to_s)
-            @unknown_lines[prop.name.to_s] ||= node.location.start_line
+            @unknown_lines[unknown_key(prop.name)] ||= node.location.start_line
           end
           prop
+        end
+
+        def unknown_key(name)
+          (@name_stack + [name.to_s]).join(".")
+        end
+
+        # Tracks the nesting path for `unknown_key` while a named block's
+        # contents are walked.
+        def with_name(name)
+          @name_stack.push(name.to_s)
+          yield
+        ensure
+          @name_stack.pop
         end
 
         # `name:`/`args:` overrides let `json.set!` with a literal key reuse
@@ -524,10 +543,21 @@ module Typelizer
           end
 
           if (override = kwargs[:typelize])
-            if literal_override?(override)
-              if args.any? || node.block
-                return property_from_override(name, override, optional: optional)
-              end
+            if !literal_override?(override)
+              # A non-literal `typelize:` (constant, variable, method call)
+              # cannot be honored statically — fall through to normal
+              # inference instead of stringifying a Prism node.
+              log_warning(node, "`typelize:` with a non-literal value cannot be honored; " \
+                "falling back to type inference — use a literal type (e.g. `typelize: \"string\"`)")
+            elsif unbalanced_override?(override)
+              # Emitted verbatim this would be syntactically broken TS that
+              # only tsc catches, far from the template.
+              log_warning(node, "`typelize:` value #{override.to_s.inspect} has unbalanced " \
+                "brackets, braces, or quotes and would emit broken TypeScript; " \
+                "falling back to type inference")
+            elsif args.any? || node.block
+              return property_from_override(name, override, optional: optional)
+            else
               # No value and no block: at render time the braceless kwargs
               # hash IS the value (see SetExt's sole-hash rule), rendered as a
               # nested object — honoring the assertion would type a shape
@@ -538,11 +568,6 @@ module Typelizer
               @prewarned_props << name.to_s
               return build_property(name, type: "unknown", optional: optional)
             end
-            # A non-literal `typelize:` (constant, variable, method call)
-            # cannot be honored statically — fall through to normal
-            # inference instead of stringifying a Prism node.
-            log_warning(node, "`typelize:` with a non-literal value cannot be honored; " \
-              "falling back to type inference — use a literal type (e.g. `typelize: \"string\"`)")
           end
 
           if node.block.is_a?(Prism::BlockNode)
@@ -562,7 +587,7 @@ module Typelizer
             return build_property(name, type: guess_from_name(name), optional: optional)
           end
 
-          if (collection_props = collection_attr_shortcut(args))
+          if (collection_props = with_name(name) { collection_attr_shortcut(args) })
             # Array-vs-object follows the same runtime heuristic as the partial
             # form (`prop_from_partial`): jbuilder emits an array only when the
             # value is a collection, so a singular name stays an object.
@@ -571,7 +596,14 @@ module Typelizer
           end
 
           if value
-            return build_property(name, type: infer_type(value, name: name), optional: optional)
+            inferred = infer_value(value, name: name)
+            return build_property(
+              name,
+              type: inferred[:type],
+              nullable: inferred[:nullable],
+              optional: optional,
+              inference_locked: inferred[:locked]
+            )
           end
 
           if resolver
@@ -632,6 +664,32 @@ module Typelizer
           value.is_a?(String) || value.is_a?(Symbol)
         end
 
+        DELIMITER_PAIRS = {"{" => "}", "[" => "]", "(" => ")", "<" => ">"}.freeze
+        private_constant :DELIMITER_PAIRS
+
+        # Cheap syntactic sanity check for a `typelize:` string: unbalanced
+        # brackets/braces/quotes. Skips quoted content (string-literal types
+        # may contain brackets) and the `>` of `=>` arrows.
+        def unbalanced_override?(override)
+          stack = []
+          quote = nil
+          prev = nil
+          override.to_s.each_char do |ch|
+            if quote
+              quote = nil if ch == quote
+            elsif ch == "'" || ch == '"' || ch == "`"
+              quote = ch
+            elsif DELIMITER_PAIRS.key?(ch)
+              stack << DELIMITER_PAIRS[ch]
+            elsif DELIMITER_PAIRS.value?(ch)
+              arrow = ch == ">" && prev == "="
+              return true if !arrow && stack.pop != ch
+            end
+            prev = ch
+          end
+          !stack.empty? || !quote.nil?
+        end
+
         # Routes `typelize:` overrides through TypeParser so shortcuts
         # (`string?`, `number[]`) expand into real TS. Flagged `user_asserted`
         # so `Interface#infer_types` skips model inference for this exact
@@ -668,24 +726,32 @@ module Typelizer
           # whether the block declares a parameter — see jbuilder's `_set`.
           # `args` excludes the key for `json.set! "k", value do ... end`.
           multi = args.any?
+          if args.first.is_a?(Prism::SplatNode)
+            # jbuilder's `_set` sees a splat's ELEMENTS: empty splat + block
+            # renders an object, non-empty an array — undecidable statically.
+            log_warning(node, "a splat value with a block renders an array only when the splat " \
+              "is non-empty at runtime — typed as an array; use `typelize:` to pin the type")
+          end
           # An object block (no value) is yielded the builder itself — its
           # param (or `it`/`_1`) aliases the builder. Array blocks are yielded
           # the ELEMENT — their param shadows any same-named outer alias.
           warn_shadowed_builder_param(node) if multi
-          with_block_scope(node.block, yields_builder: !multi) do
-            children, non_children = partition_child_bangs(node.block)
-            if children.any?
-              next handle_child_array(node, name: name, optional: optional, children: children, rest: non_children)
-            end
+          with_name(name) do
+            with_block_scope(node.block, yields_builder: !multi) do
+              children, non_children = partition_child_bangs(node.block)
+              if children.any?
+                next handle_child_array(node, name: name, optional: optional, children: children, rest: non_children)
+              end
 
-            interfaces, rest = partition_composed_partials(node.block, prop_name: name)
-            if interfaces.any?
-              additional = interfaces.drop(1)
-              rest_props = with_nested { extract(rest, optional: false) }
-              additional += [Shape.new(properties: rest_props)] if rest_props.any?
-              next build_property(name, type: interfaces.first, additional_types: additional, optional: optional, multi: multi)
+              interfaces, rest = partition_composed_partials(node.block, prop_name: name)
+              if interfaces.any?
+                additional = interfaces.drop(1)
+                rest_props = with_nested { extract(rest, optional: false) }
+                additional += [Shape.new(properties: rest_props)] if rest_props.any?
+                next build_property(name, type: interfaces.first, additional_types: additional, optional: optional, multi: multi)
+              end
+              build_property(name, type: Shape.new(properties: shape_body(node.block)), optional: optional, multi: multi)
             end
-            build_property(name, type: Shape.new(properties: shape_body(node.block)), optional: optional, multi: multi)
           end
         end
 
@@ -1027,7 +1093,7 @@ module Typelizer
           build_property(col, type: @column_inference ? nil : name_hint(col), optional: optional)
         end
 
-        def build_property(name, type: nil, optional: false, nullable: false, multi: false, additional_types: nil, user_asserted: false)
+        def build_property(name, type: nil, optional: false, nullable: false, multi: false, additional_types: nil, user_asserted: false, inference_locked: false)
           Property.new(
             name: name,
             type: type,
@@ -1036,7 +1102,8 @@ module Typelizer
             multi: multi,
             column_name: name,
             additional_types: additional_types,
-            user_asserted: user_asserted
+            user_asserted: user_asserted,
+            inference_locked: inference_locked
           )
         end
 
@@ -1120,11 +1187,49 @@ module Typelizer
           Typelizer.logger.warn("Typelizer::Jbuilder: #{@path}:#{node.location.start_line}: #{message}")
         end
 
-        def infer_type(node, name:)
-          return "null" if node.is_a?(Prism::NilNode)
-          return TYPE_BY_LITERAL[node.class] if TYPE_BY_LITERAL.key?(node.class)
-          return "string" if time_call?(node)
-          guess_from_name(name)
+        # Value-level inference: the type, whether it came from a source-code
+        # literal (`locked` — a same-named model column must not override
+        # what the template demonstrably renders), and whether a conditional
+        # arm contributes `null`.
+        def infer_value(node, name:)
+          return {type: "null", nullable: false, locked: true} if node.is_a?(Prism::NilNode)
+          if TYPE_BY_LITERAL.key?(node.class)
+            return {type: TYPE_BY_LITERAL[node.class], nullable: false, locked: true}
+          end
+          return {type: "string", nullable: false, locked: true} if time_call?(node)
+          if node.is_a?(Prism::IfNode) || node.is_a?(Prism::UnlessNode)
+            return infer_conditional_value(node, name: name)
+          end
+          {type: guess_from_name(name), nullable: false, locked: false}
+        end
+
+        # A ternary / if-else expression as a VALUE: the runtime value is one
+        # of the arms' final expressions. A `nil` arm (or a chain with no
+        # else) contributes nullability; differing literal arm types union;
+        # an uninferable arm falls back to name-hint/unknown for the type but
+        # keeps the nullability signal.
+        def infer_conditional_value(node, name:)
+          branches, fully_covered = collect_branches(node)
+          arms = branches.map { |body| body.last }
+          if arms.any?(&:nil?)
+            return {type: guess_from_name(name), nullable: false, locked: false}
+          end
+
+          inferred = arms.map { |arm| infer_value(arm, name: name) }
+          nullable = !fully_covered ||
+            inferred.any? { |i| i[:type] == "null" || i[:nullable] }
+          types = inferred.map { |i| i[:type] }.reject { |t| t == "null" }.uniq
+
+          return {type: "null", nullable: false, locked: true} if types.empty?
+          if types.any? { |t| self.class.unknown_type?(t) }
+            return {type: guess_from_name(name), nullable: nullable, locked: false}
+          end
+
+          {
+            type: (types.size == 1) ? types.first : types,
+            nullable: nullable,
+            locked: inferred.all? { |i| i[:locked] }
+          }
         end
 
         def time_call?(node)

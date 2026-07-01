@@ -77,19 +77,23 @@ module Typelizer
       # emissions can still be rescued by model inference, so only a property
       # whose FINAL type is unknown warns, at the line the walker recorded.
       def after_type_inference(props)
-        props.each { |prop| warn_unknown_property(prop) }
+        props.each { |prop| warn_unknown_property(prop, path: []) }
       end
 
       private
 
-      def warn_unknown_property(prop)
+      # `path` mirrors the walker's `@name_stack` (enclosing prop names), so
+      # the `unknown_candidates` lookup distinguishes same-named props at
+      # different nesting levels.
+      def warn_unknown_property(prop, path:)
         unless final_unknown?(prop)
           # Recurse into inline shapes (own type + intersection members).
           # Checked after the cheap unknown test so typed leaves allocate
           # nothing; an unknown-typed prop never carries Shape members.
-          prop.type.properties.each { |sub| warn_unknown_property(sub) } if prop.type.is_a?(Shape)
+          child_path = path + [prop.name.to_s]
+          prop.type.properties.each { |sub| warn_unknown_property(sub, path: child_path) } if prop.type.is_a?(Shape)
           prop.additional_types&.each do |member|
-            member.properties.each { |sub| warn_unknown_property(sub) } if member.is_a?(Shape)
+            member.properties.each { |sub| warn_unknown_property(sub, path: child_path) } if member.is_a?(Shape)
           end
           return
         end
@@ -97,10 +101,11 @@ module Typelizer
         # No recorded line means the property didn't originate from this
         # template's walk (e.g. merged in from a top-level `json.partial!` —
         # the partial's own interface warns with the partial's path:line).
-        line = walker.unknown_candidates[prop.name.to_s]
+        path_key = (path + [prop.name.to_s]).join(".")
+        line = walker.unknown_candidates[path_key]
         return unless line
 
-        key = [template_path, prop.name.to_s, line]
+        key = [template_path, path_key, line]
         warned = walker.class.warned_unknowns
         return if warned.include?(key)
 

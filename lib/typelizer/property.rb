@@ -2,7 +2,7 @@ module Typelizer
   Property = Struct.new(
     :name, :type, :optional, :nullable,
     :multi, :column_name, :column_type, :comment, :enum, :enum_type_name, :deprecated,
-    :with_traits, :additional_types, :user_asserted,
+    :with_traits, :additional_types, :user_asserted, :inference_locked,
     keyword_init: true
   ) do
     def with(**attrs)
@@ -60,12 +60,12 @@ module Typelizer
     def fingerprint
       # Use array format for consistent output across Ruby versions
       # (Hash#inspect format changed in Ruby 3.4).
-      # column_type and user_asserted are excluded because they only inform
-      # inference, not output.
+      # column_type, user_asserted, and inference_locked are excluded because
+      # they only inform inference, not output.
       # additional_types is excluded from to_h to avoid changing fingerprints
       # for properties that don't use it; when present, its rendered names are
       # merged back in (it affects generated output).
-      hash = to_h.except(:column_type, :additional_types, :user_asserted)
+      hash = to_h.except(:column_type, :additional_types, :user_asserted, :inference_locked)
         .merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
       if additional_types&.any?
         hash = hash.merge(additional_types: additional_types.map { |t| render_member(t) })

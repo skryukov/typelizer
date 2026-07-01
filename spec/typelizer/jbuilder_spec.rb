@@ -433,6 +433,137 @@ RSpec.describe Typelizer::Jbuilder do
       Typelizer.logger = original
     end
 
+    describe "literal types vs model inference (re-review round 3)" do
+      it "keeps a literal value's type when a same-named model column exists" do
+        write_template("posts/show.json.jbuilder", <<~RUBY)
+          typelize_from Post
+          json.title 42
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::PostsShow)
+
+        # The template demonstrably renders a number; the string (nullable)
+        # `title` column must not overwrite it or inject `| null`.
+        expect(output).to include("title: number")
+        expect(output).not_to include("string")
+        expect(output).not_to include("null")
+      end
+
+      it "still lets the model fill in extracted attributes" do
+        write_template("posts/show.json.jbuilder", <<~RUBY)
+          typelize_from Post
+          json.extract! post, :title
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::PostsShow)
+
+        expect(output).to include("title: string | null")
+      end
+    end
+
+    describe "value-level conditionals (re-review round 3)" do
+      it "types a ternary with a nil arm as nullable" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.deleted_at @deleted ? Time.current.iso8601 : nil
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("deleted_at: string | null")
+      end
+
+      it "unions differing literal ternary arms" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.value @flag ? 1 : "s"
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to match(/value: (number \| string|string \| number)/)
+      end
+
+      it "keeps the nullability signal when the non-nil arm is opaque but name-hinted" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.updated_at @dirty ? compute_stamp : nil
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("updated_at: string | null")
+      end
+    end
+
+    describe "walk-time warning coverage (re-review round 3)" do
+      it "warns when a splat value accompanies a block (array-vs-object undecidable)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.stuff(*@things) do
+            json.label "x"
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("splat value with a block")
+        expect(output).to include("stuff: Array<")
+      end
+
+      it "warns on an unbalanced typelize: string instead of emitting broken TS" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.config @config, typelize: "{ broken"
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("unbalanced")
+        expect(output).not_to include("{ broken")
+      end
+
+      it "accepts balanced typelize: strings with arrows and quoted brackets" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.handler @h, typelize: "(x: string) => void"
+          json.paren @p, typelize: "'(' | ')'"
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).not_to include("unbalanced")
+      end
+
+      it "warns once per nesting level for same-named unknowns, each with its own line" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.foo mystery
+          json.nested do
+            json.foo other_mystery
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs.scan("could not infer a type for `foo`").size).to eq(2)
+        expect(logs).to include("things/show.json.jbuilder:1")
+        expect(logs).to include("things/show.json.jbuilder:3")
+      end
+    end
+
     describe "builder rebinding via it/_1/child! params (re-review round 3)" do
       it "recognizes `it` as the builder inside a parameterless object block" do
         write_template("things/show.json.jbuilder", <<~RUBY)

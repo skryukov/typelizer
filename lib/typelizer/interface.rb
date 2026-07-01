@@ -283,12 +283,16 @@ module Typelizer
       props.map do |prop|
         has_dsl = prop.lookup_in(dsl_attrs)&.any?
 
+        # `inference_locked` marks a type read off a source-code literal
+        # (e.g. jbuilder's `json.title 42`): a same-named model column must
+        # not overwrite it, and column metadata (comments, enums) describes
+        # the column's value, not the literal one.
         prop
           .then { |p| apply_dsl_type(p, dsl_attrs) }
           .then { |p| resolve_asserted_type(p) }
-          .then { |p| (has_dsl || p.user_asserted) ? p : apply_model_inference(p) }
+          .then { |p| (has_dsl || p.user_asserted || p.inference_locked) ? p : apply_model_inference(p) }
           .then { |p| apply_multi_flag(p, multi_attrs) }
-          .then { |p| apply_metadata(p) }
+          .then { |p| p.inference_locked ? p : apply_metadata(p) }
           .then { |p| infer_nested_property_types(p) }
       end
     end

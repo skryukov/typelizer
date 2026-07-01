@@ -47,7 +47,7 @@ module Typelizer
       shape.map_properties do |sub_prop|
         sub_prop
           .then { |p| p.type ? p : apply_model_inference(p) }
-          .then { |p| apply_metadata(p) }
+          .then { |p| p.inference_locked ? p : apply_metadata(p) }
           .then { |p| infer_nested_property_types(p) }
       end
     end
