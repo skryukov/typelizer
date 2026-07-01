@@ -212,8 +212,7 @@ module Typelizer
         # `Plugin#after_type_inference` — this map only supplies the
         # file:line the walker alone knows.
         def unknown_candidates
-          parsed
-          @unknown_lines
+          parsed.fetch(:unknown_lines)
         end
 
         private
@@ -227,7 +226,11 @@ module Typelizer
               {
                 root_is_array: root_is_array,
                 root_array_element: root_is_array ? detect_root_array_element(stmts) : nil,
-                properties: extract(stmts, optional: false)
+                properties: extract(stmts, optional: false),
+                # Populated as a side effect of `extract` above (see
+                # `note_unknown_candidate`); captured here so `unknown_candidates`
+                # reads it through `parsed` like every other derived value.
+                unknown_lines: @unknown_lines
               }
             ensure
               self.class.walks_in_progress.delete(@path)

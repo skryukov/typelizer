@@ -16,6 +16,12 @@ module Typelizer
         false
       end
 
+      # The named element type of a root array — an Interface, a type string,
+      # or nil to inline the element shape. Only consulted when `root_is_array`.
+      def root_array_element
+        nil
+      end
+
       def meta_fields
         nil
       end
