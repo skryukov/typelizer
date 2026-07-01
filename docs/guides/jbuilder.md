@@ -456,7 +456,7 @@ json.array! @portals, partial: "portals/portal", as: :portal
 
 A dynamic `partial:` value keeps the dynamic-reference warning (the root stays an object); an unresolvable or empty partial warns and degrades to `Array<unknown>`.
 
-Two forms can't participate in root-array detection and log a warning instead of silently mistyping: a blockless `json.array!` without a `partial:` option (its attributes are emitted as an object shape — use the block form, the `partial:` option, or `typelize:`), and a root array nested inside a conditional (only top-level statements are inspected; the root stays an object).
+A blockless root `json.array! @xs, :attrs` types as a root array of the attribute shape, and `json.(collection) { |el| ... }` (jbuilder's `call` form) is detected like `array!` — root-array detection also sees through `cache!`/`cache_if!`/`cache_root!` wrappers. One form can't participate and logs a warning instead of silently mistyping: a root array nested inside a conditional (the root stays an object).
 
 ## Conditional fields
 
@@ -518,6 +518,8 @@ When branches disagree, same-name properties are merged with these rules:
 - **Optionality widens.** A property marked optional in *any* branch (e.g. via `inertia: :defer`) stays optional after the merge — and it's widened exactly once, not doubled.
 - **Base types don't union.** When branches disagree on the base type (`string` vs `number`), the first branch's type wins — except that an explicit `typelize:` assertion in any branch beats inferred guesses. Pin the combined type with `typelize:` if the distinction matters.
 
+Re-setting the same key *sequentially* (outside branches) follows jbuilder's runtime re-set semantics instead: a later unconditional write **replaces** the type (`json.status 1` then `json.status "active"` generates `status: string` — including an own property overriding a merged `json.partial!`'s), two object blocks **deep-merge** per key, and a later *conditional* write unions with the earlier type (keys arriving only from the conditional block become optional).
+
 ## Caching blocks
 
 `json.cache!`, `json.cache_if!`, and `json.cache_root!` are treated as transparent pass-throughs — the walker descends into their blocks as if the cache wrapper weren't there:
@@ -571,7 +573,7 @@ The walker is static — it parses templates without running them. Constructs it
 | `json.partial! some_variable` | Skipped + warning (dynamic reference) | String-literal reference or `typelize:` |
 | `json.partial! "missing/thing"` | Skipped + warning (unresolvable template) | Fix the path |
 | Collection `partial!` inside a block | Typed as merged object + warning | `json.<name> @collection, partial: "...", as: ...` |
-| Blockless `json.array!` (no `partial:`) | Object shape + warning | Block form, `partial:` option, or `typelize:` |
+| Blockless `json.array!` inside another block | Object shape + warning | Block form, `partial:` option, or `typelize:` |
 | `json.array! @xs, partial: some_variable` | Skipped + warning (dynamic reference; root stays an object) | String-literal `partial:` or `typelize:` |
 | Root array inside a conditional | Object type + warning | `typelize:` |
 | `@items.each { json.set!(...) { ... } }` (iteration/expression wrapping json calls) | Skipped + warning (body never walked) | `json.array!` block form or `typelize:` |

@@ -61,6 +61,12 @@ RSpec.describe "Jbuilder plugin loading" do
   end
 
   describe "render safety (patches decoupled from plugin enablement)" do
+    # Referencing ActionView::Base fires the :action_view load hooks — the
+    # patches install lazily on action_view load, always before a render is
+    # possible. Under random spec order these examples may run before
+    # anything else has loaded ActionView, so fire the hooks explicitly.
+    before { ActionView::Base }
+
     let(:renderer) do
       controller = Class.new(ActionController::Base)
       controller.view_paths = [File.expand_path("../fixtures/jbuilder_views", __dir__)]
