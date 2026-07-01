@@ -183,11 +183,11 @@ module Typelizer
           @context = context
           @column_inference = column_inference
           @unknown_lines = {}
-          # Prop names that fell back to `unknown` because their `partial:`
-          # reference resolved to an EMPTY interface — they already warned at
-          # resolution time (see `warn_empty_partial`), so the generic
-          # post-inference unknown warning is suppressed for them.
-          @empty_partial_props = Set.new
+          # Prop names that fell back to `unknown` but already warned at walk
+          # time with a more specific message (an empty `partial:` reference,
+          # a value-less `typelize:`), so the generic post-inference unknown
+          # warning is suppressed for them.
+          @prewarned_props = Set.new
         end
 
         def properties
@@ -403,7 +403,7 @@ module Typelizer
           return prop unless prop.is_a?(Property)
 
           if !prop.user_asserted && self.class.unknown_type?(prop.type) &&
-              !@empty_partial_props.include?(prop.name.to_s)
+              !@prewarned_props.include?(prop.name.to_s)
             @unknown_lines[prop.name.to_s] ||= node.location.start_line
           end
           prop
@@ -426,7 +426,20 @@ module Typelizer
           end
 
           if (override = kwargs[:typelize])
-            return property_from_override(name, override, optional: optional) if literal_override?(override)
+            if literal_override?(override)
+              if args.any? || node.block
+                return property_from_override(name, override, optional: optional)
+              end
+              # No value and no block: at render time the braceless kwargs
+              # hash IS the value (see SetExt's sole-hash rule), rendered as a
+              # nested object — honoring the assertion would type a shape
+              # that never renders.
+              log_warning(node, "`typelize:` without a value or block is rendered as the " \
+                "property's literal hash value, not honored as an annotation — " \
+                "add a value or block (e.g. `json.#{name} @#{name}, typelize: #{override.to_s.inspect}`)")
+              @prewarned_props << name.to_s
+              return build_property(name, type: "unknown", optional: optional)
+            end
             # A non-literal `typelize:` (constant, variable, method call)
             # cannot be honored statically — fall through to normal
             # inference instead of stringifying a Prism node.
@@ -656,7 +669,7 @@ module Typelizer
             # reference would be a TS2305 dangling import. Keep the property
             # (collection-ness is known) but degrade the element to `unknown`.
             warn_empty_partial(node, partial, "`#{name}` falls back to `unknown`")
-            @empty_partial_props << name.to_s
+            @prewarned_props << name.to_s
             return build_property(name, type: "unknown", optional: optional, multi: multi)
           end
 

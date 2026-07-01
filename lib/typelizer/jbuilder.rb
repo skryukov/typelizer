@@ -26,8 +26,16 @@ module Typelizer
     # Ruby 3 packs them as a positional Hash and `_extract_method_values`
     # raises. This module strips typelizer-reserved kwargs before forwarding to
     # upstream `set!`. Prepended onto `JbuilderTemplate` via the railtie
-    # whenever jbuilder is present — independent of whether the plugin is
+    # whenever jbuilder is loaded — independent of whether the plugin is
     # enabled — so annotated templates never crash a render.
+    #
+    # Stripping only ever touches kwargs that accompany a real positional
+    # value or block — the only annotation grammar the walker supports, and
+    # forms plain jbuilder crashes on anyway (so no working app can lose
+    # data). A braceless hash with NO value (`json.settings theme: "dark"`)
+    # is jbuilder's plain nested-object form: it's re-packed as the
+    # positional value untouched, even when a key happens to be named
+    # `typelize` or `inertia`.
     #
     # Each gem strips its own render-inert vocabulary (`typelize:`); the
     # render-ACTIVE `inertia:` kwarg (owned by jbuilder-inertia) is stripped
@@ -88,10 +96,29 @@ module Typelizer
         super
       end
 
+      # jbuilder keeps `method_missing` private (`private :method_missing`
+      # after aliasing it to `set!`); redefining it public here would leak it
+      # into `public_instance_methods` and make `json.method_missing(...)`
+      # publicly callable — keep upstream's visibility.
+      private :method_missing, :respond_to_missing?
+
       def set!(name, *args, **kwargs, &block)
         # Hot path: a bare `json.foo value` carries no kwargs at all — skip
         # straight to upstream `set!` (this runs once per json.* call).
         return super(name, *args, &block) if kwargs.empty?
+
+        # A braceless trailing hash with NO accompanying value or block is not
+        # an annotation — it IS the value (`json.settings theme: "dark"`),
+        # which plain jbuilder (no `**kwargs` anywhere) receives positionally
+        # and renders as a nested object. Annotations only ride along with a
+        # real value or block, so re-pack the hash as the positional value
+        # untouched: stripping here would silently corrupt domain fields that
+        # happen to be named `typelize`/`inertia`. Exception: when a foreign
+        # owner's patch is live and claims a key, forward as kwargs so the
+        # owner decides.
+        if args.empty? && block.nil?
+          return super(name, kwargs) unless _typelizer_foreign_claims?(kwargs)
+        end
 
         _typelizer_strip_kwargs!(kwargs)
 
@@ -108,15 +135,19 @@ module Typelizer
       # The non-`set!` emitters need the same protection: jbuilder's
       # `extract!`/`array!`/`call` declare no `**kwargs`, so a `typelize:`
       # annotation would pack into the positional list and crash. Same
-      # strip-then-omit-if-empty rule as `set!`. (The walker ignores
-      # `typelize:` here — it has no per-field meaning on these.)
-      def extract!(object, *attributes, **kwargs)
-        return super(object, *attributes) if kwargs.empty?
+      # sole-hash re-pack and strip-then-omit-if-empty rules as `set!`. (The
+      # walker ignores `typelize:` here — it has no per-field meaning on
+      # these.) `*args` instead of upstream's `(object, *attributes)` so a
+      # vanilla sole-hash call (`json.extract!(a: 1)` — the hash is the
+      # object) doesn't raise ArgumentError after Ruby splits it into kwargs.
+      def extract!(*args, **kwargs)
+        return super(*args) if kwargs.empty?
+        return super(kwargs) if args.empty?
 
         _typelizer_strip_kwargs!(kwargs)
 
         if kwargs.empty?
-          super(object, *attributes)
+          super(*args)
         else
           super
         end
@@ -124,6 +155,7 @@ module Typelizer
 
       def array!(*args, **kwargs, &block)
         return super(*args, &block) if kwargs.empty?
+        return super(kwargs) if args.empty? && block.nil?
 
         _typelizer_strip_kwargs!(kwargs)
 
@@ -134,19 +166,29 @@ module Typelizer
         end
       end
 
-      def call(object, *attributes, **kwargs, &block)
-        return super(object, *attributes, &block) if kwargs.empty?
+      def call(*args, **kwargs, &block)
+        return super(*args, &block) if kwargs.empty?
+        return super(kwargs) if args.empty? && block.nil?
 
         _typelizer_strip_kwargs!(kwargs)
 
         if kwargs.empty?
-          super(object, *attributes, &block)
+          super(*args, &block)
         else
           super
         end
       end
 
       private
+
+      # True when a live foreign patch (e.g. jbuilder-inertia's) owns one of
+      # the hash's keys — the sole-hash re-pack must not hide the kwargs from
+      # the owner further down the prepend chain.
+      def _typelizer_foreign_claims?(kwargs)
+        FOREIGN_KWARGS.each_key.any? do |kwarg|
+          kwargs.key?(kwarg) && SetExt.foreign_runtime_present?(kwarg, self)
+        end
+      end
 
       # Strip before any other logic so behavior is identical under either
       # gem's prepend order.

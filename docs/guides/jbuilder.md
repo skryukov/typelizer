@@ -160,11 +160,13 @@ json.tags ["a"], typelize: "string[]"        # array
 json.scores [1], typelize: "number?[]"       # optional array
 
 # Inline objects, Record<>, tuples, unions
-json.metadata typelize: "{ name: string; visitorId: string | null }"
-json.lookup typelize: "Record<string, number | null>"
-json.pair typelize: "[string | null, number]"
-json.result typelize: "{ ok: boolean } | { error: string }"
+json.metadata @metadata, typelize: "{ name: string; visitorId: string | null }"
+json.lookup @lookup, typelize: "Record<string, number | null>"
+json.pair @pair, typelize: "[string | null, number]"
+json.result @result, typelize: "{ ok: boolean } | { error: string }"
 ```
+
+An annotation must accompany a value or a block. A bare `json.metadata typelize: "..."` is not an annotation at render time — jbuilder receives the braceless hash as the property's *value* and renders `{"metadata":{"typelize":"..."}}` — so the walker warns and types it `unknown` instead of asserting a shape that never renders. (This also means a domain field that happens to be named `typelize` or `inertia` inside a plain hash value is never stripped from your JSON.)
 
 The `typelize:` kwarg always wins — it's scoped to that exact property at that exact nesting level, so a nested `json.stats { json.total @t, typelize: "number" }` never affects a top-level `total`. Use it when you need to pin a shape that the walker can't infer.
 

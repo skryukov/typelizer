@@ -32,10 +32,15 @@ RSpec.describe "Jbuilder API canary" do
   # This deliberately does NOT use `public_instance_methods(false)`: that
   # would miss a method a future jbuilder contributes via an included module,
   # which is exactly the kind of release this canary must survive. The
-  # property path itself (`method_missing`) is private, so it stays excluded.
+  # property path itself (`method_missing`) is private in both jbuilder and
+  # typelizer's prepended `SetExt` (which the render-safety specs enforce),
+  # but it is subtracted explicitly anyway: whether it leaks into the public
+  # surface depends on which patches happen to be prepended when this file
+  # runs, and dispatch-wise it IS `set!` — already an arm.
   let(:jbuilder_dsl_methods) do
     ((Jbuilder.public_instance_methods + JbuilderTemplate.public_instance_methods) -
-      BasicObject.public_instance_methods).uniq
+      BasicObject.public_instance_methods -
+      [:method_missing, :respond_to_missing?]).uniq
   end
 
   # The method names `extract_one` dispatches on, parsed from the walker.

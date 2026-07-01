@@ -178,6 +178,53 @@ RSpec.describe "Jbuilder / jbuilder-inertia contract" do
       controller.renderer
     end
 
+    describe "sole-hash values (no positional value, no block)" do
+      # `json.settings theme: "dark"` is jbuilder's plain nested-object form —
+      # Ruby splits the braceless hash into kwargs because of SetExt's
+      # signatures, but it is NOT an annotation. It must render untouched even
+      # when a key collides with the reserved vocabulary (a domain field
+      # legitimately named `typelize` or `inertia`).
+      let(:template_class) do
+        Class.new(::JbuilderTemplate) { prepend Typelizer::Jbuilder::SetExt }
+      end
+
+      it "renders a braceless hash containing reserved-looking keys verbatim, with no warning" do
+        logs = with_capture_logger do
+          template = template_class.new(nil)
+          template.settings(theme: "dark", typelize: true)
+          template.body(inertia: 3.5, mass: 10)
+
+          expect(template.attributes!).to eq(
+            "settings" => {theme: "dark", typelize: true},
+            "body" => {inertia: 3.5, mass: 10}
+          )
+        end
+
+        expect(logs).to be_empty
+      end
+
+      it "keeps stripping annotations that accompany a real value or block" do
+        template = template_class.new(nil)
+        template.title("Hello", typelize: "string")
+        template.author(typelize: "{ name: string }") { template.name("x") }
+
+        expect(template.attributes!).to eq("title" => "Hello", "author" => {"name" => "x"})
+      end
+
+      it "restores vanilla parity for sole-hash extract!/array!/call forms" do
+        template = template_class.new(nil)
+        # Vanilla jbuilder receives these hashes positionally; the SetExt
+        # signatures must re-pack them instead of raising ArgumentError.
+        expect { template.extract!(a: 1) }.not_to raise_error
+        expect(template.array!(a: 1)).to be_a(Array)
+      end
+
+      it "keeps method_missing and respond_to_missing? private (upstream visibility)" do
+        expect(template_class.public_instance_methods)
+          .not_to include(:method_missing, :respond_to_missing?)
+      end
+    end
+
     context "with no JbuilderInertia loaded" do
       it "strips inertia:, renders clean JSON, and warns exactly once" do
         json = nil

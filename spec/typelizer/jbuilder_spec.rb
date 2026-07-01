@@ -519,6 +519,26 @@ RSpec.describe Typelizer::Jbuilder do
         expect(output).not_to include(%({id: "number"}))
       end
 
+      it "warns and emits unknown for a value-less typelize: (its hash renders as the value)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.metadata typelize: "Record<string, string>"
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = nil
+        logs = with_capture_logger do
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("`typelize:` without a value or block")
+        expect(logs).to include("things/show.json.jbuilder:1")
+        # The generic post-inference unknown warning is suppressed — one
+        # warning per construct, not two.
+        expect(logs).not_to include("could not infer a type for `metadata`")
+        expect(output).to include("metadata: unknown")
+        expect(output).not_to include("Record<string, string>")
+      end
+
       it "warns when json.array! with a block is nested inside another block" do
         write_template("things/show.json.jbuilder", <<~RUBY)
           json.wrapper do

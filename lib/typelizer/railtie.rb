@@ -27,7 +27,11 @@ module Typelizer
     # (see their docs in jbuilder.rb).
     initializer "typelizer.jbuilder_render_safety" do
       ActiveSupport.on_load(:action_view) do
-        # The require itself answers "is jbuilder available?" definitively.
+        # Keyed on jbuilder being LOADED, not merely installed: an app with
+        # `gem "jbuilder", require: false` that never requires it must not
+        # have it force-loaded (and can't render jbuilder templates anyway).
+        next unless defined?(::Jbuilder)
+
         begin
           require "jbuilder/jbuilder_template"
         rescue LoadError
