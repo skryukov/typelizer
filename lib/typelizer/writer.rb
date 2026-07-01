@@ -104,8 +104,14 @@ module Typelizer
 
       # Dedup across cycles: generation re-runs on every request/file change,
       # and re-warning about the same unchanged duplicate set on each cycle
-      # is noise. Re-warn only when the set of colliding names changes.
+      # is noise. Re-warn only when the set of colliding names changes. An
+      # EMPTY set never touches the memo: two writers sharing an output_dir
+      # would otherwise ping-pong (the clean writer clearing the other's
+      # marker every cycle). Trade-off: a duplicate that is fixed and later
+      # reintroduced identically doesn't re-warn.
       signature = duplicate_groups.keys.sort
+      return if signature.empty?
+
       memo_key = config.output_dir.to_s
       return if self.class.warned_duplicate_exports[memo_key] == signature
 

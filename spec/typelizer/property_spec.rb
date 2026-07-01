@@ -559,6 +559,31 @@ RSpec.describe Typelizer::Property do
       expect(asserted.fingerprint).to eq(inferred.fingerprint)
       expect(asserted).to eql(inferred)
     end
+
+    it "excludes inference_locked (it informs inference, not output)" do
+      locked = described_class.new(name: "field", type: "string", inference_locked: true)
+      plain = described_class.new(name: "field", type: "string")
+
+      expect(locked.fingerprint).to eq(plain.fingerprint)
+    end
+
+    it "keeps identifier names byte-identical whether String or Symbol" do
+      string_named = described_class.new(name: "field", type: "string")
+      expect(string_named.fingerprint).to include('[:name, "field"]')
+
+      symbol_named = described_class.new(name: :field, type: "string")
+      expect(symbol_named.fingerprint).to include("[:name, :field]")
+    end
+
+    it "changes for a non-identifier name exactly like its rendering did" do
+      prop = described_class.new(name: "kebab-key", type: "string")
+
+      # `render` quotes the key, so a pre-existing unquoted (invalid-TS)
+      # file must fail the digest check and be rewritten once.
+      expect(prop.render).to eq("'kebab-key': string")
+      expect(prop.fingerprint).to include("'kebab-key'")
+      expect(prop.fingerprint).not_to include('[:name, "kebab-key"]')
+    end
   end
 
   describe "determinism" do

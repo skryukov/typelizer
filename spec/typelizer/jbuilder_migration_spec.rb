@@ -222,6 +222,31 @@ RSpec.describe "Jbuilder migration ergonomics" do
       expect(third).to include('duplicate exported type "AlbaUser"')
     end
 
+    it "does not let a duplicate-free writer sharing the output_dir reset the warn-once memo" do
+      # Configuration forbids two REGISTERED writers on one output_dir; the
+      # shared-dir case arises with direct Writer construction, so exercise
+      # the memo at that level.
+      shared_dir = scratch_dir.join("pingpong_types").to_s
+      config = instance_double(Typelizer::Config, output_dir: shared_dir)
+      dup_writer = Typelizer::Writer.new(config)
+      clean_writer = Typelizer::Writer.new(config)
+
+      iface = ->(name, src) { instance_double(Typelizer::Interface, name: name, source_description: src) }
+      duplicates = [iface.call("AlbaPost", "a.rb"), iface.call("AlbaPost", "b.rb")]
+
+      first = with_capture_logger { dup_writer.send(:warn_duplicate_exports, duplicates) }
+      expect(first).to include('duplicate exported type "AlbaPost"')
+
+      # A clean pass over the same output_dir must not clear the memo…
+      between = with_capture_logger { clean_writer.send(:warn_duplicate_exports, [iface.call("Solo", "s.rb")]) }
+      expect(between).not_to include("duplicate exported type")
+
+      # …so the unchanged duplicate set stays warned-once instead of
+      # ping-ponging back every cycle.
+      again = with_capture_logger { dup_writer.send(:warn_duplicate_exports, duplicates) }
+      expect(again).not_to include("duplicate exported type")
+    end
+
     it "does not warn when the same-named types live in separate writers (the supported migration setup)" do
       alba_out = scratch_dir.join("alba_types")
       jbuilder_out = scratch_dir.join("jbuilder_types")

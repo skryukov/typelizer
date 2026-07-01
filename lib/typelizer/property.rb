@@ -65,8 +65,16 @@ module Typelizer
       # additional_types is excluded from to_h to avoid changing fingerprints
       # for properties that don't use it; when present, its rendered names are
       # merged back in (it affects generated output).
+      # A non-identifier name (quoted in the rendered TS by `js_key`) changes
+      # the fingerprint the same one time its rendering changed — otherwise
+      # the digest short-circuit in Writer#write_file would preserve a stale
+      # unquoted (invalid-TS) file forever. Identifier names keep their
+      # ORIGINAL object (String or Symbol) so existing digests stay
+      # byte-identical.
+      quoted_name = js_key(name.to_s, false)
       hash = to_h.except(:column_type, :additional_types, :user_asserted, :inference_locked)
         .merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
+      hash = hash.merge(name: quoted_name) unless quoted_name == name.to_s
       if additional_types&.any?
         hash = hash.merge(additional_types: additional_types.map { |t| render_member(t) })
       end

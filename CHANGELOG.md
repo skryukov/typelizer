@@ -56,7 +56,13 @@ and this project adheres to [Semantic Versioning].
 
 - Every generation cycle now runs behind a single process-wide reentrant lock (`GenerationLock`), shared by the request middleware, rake tasks, and Listen-triggered regeneration, so concurrent triggers serialize instead of interleaving. ([@skryukov])
 
-- **One-time digest churn**: interface fingerprints now include the root-array flag, and internal self-type-name resolution was hardened for serializers whose names don't end in `Serializer`/`Resource`. Every generated file's digest header changes once; run `rails typelizer:types:refresh` after upgrading to rewrite them in one sweep. Output content is unchanged for existing serializers. ([@skryukov])
+- **No digest churn for existing serializers**: interface fingerprints gain a root-array component only for root-array (jbuilder) templates, and internal self-type-name resolution was hardened for serializers whose names don't end in `Serializer`/`Resource` — existing generated files keep byte-identical digests and content on upgrade, with one exception below. ([@skryukov])
+
+- Property names that aren't valid JS identifiers (e.g. an attribute literally named `kebab-key`) now render quoted (`'kebab-key': string;`) instead of emitting invalid TypeScript, and their fingerprints change accordingly — files containing such keys (previously broken TS) are rewritten once on the next generation. Normal identifier names are unaffected. ([@skryukov])
+
+- `typelize` union strings with a trailing `?` on the last member (e.g. `typelize "Foo | Bar?"`) now consistently mean an *optional property* of the union type (`foo?: Foo | Bar`), matching the single-type shortcut (`"Bar?"`), instead of emitting the invalid TS `foo: Foo | Bar?`. Affected annotations are rewritten once on the next generation. ([@skryukov])
+
+- `Typelizer::Generator#call` now materializes every writer's interfaces before writing any files (so a failing serializer in one writer no longer leaves another writer partially written first) and returns writer batches instead of a writers hash. ([@skryukov])
 
 ### Fixed
 

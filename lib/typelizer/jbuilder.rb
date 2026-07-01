@@ -322,13 +322,16 @@ module Typelizer
       # without a restart. No-op without discovery roots: production never
       # discovers, and explicit `discover` registrations are left untouched.
       def refresh!
-        return if @refresh_suppressed
         return unless enabled?
 
         roots = Array(Typelizer.configuration.jbuilder_views).map(&:to_s)
         return if roots.empty?
 
         GenerationLock.synchronize do
+          # Checked under the lock so a suppression started by another
+          # caller is never raced past.
+          return if refresh_suppressed?
+
           reset!
           roots.each { |root| discover(root) }
         end
@@ -336,14 +339,20 @@ module Typelizer
 
       # One discovery refresh shared by a whole multi-writer pass: `refresh!`
       # once up front, then suppress the per-writer refresh for the block so
-      # `Generator#call` does a single reset!+glob+reparse. Race-free because
-      # callers hold the reentrant GenerationLock throughout.
+      # `Generator#call` does a single reset!+glob+reparse. Depth-counted
+      # (not a boolean) so a nested `refresh_once` can't clear an outer
+      # pass's suppression mid-flight; race-free because the reentrant
+      # GenerationLock is held throughout.
       def refresh_once
-        refresh!
-        @refresh_suppressed = true
-        yield
-      ensure
-        @refresh_suppressed = false
+        GenerationLock.synchronize do
+          refresh!
+          @refresh_depth = refresh_depth + 1
+          begin
+            yield
+          ensure
+            @refresh_depth -= 1
+          end
+        end
       end
 
       # Clears only per-discovery state: the path→class registry, the
@@ -382,6 +391,14 @@ module Typelizer
       # entry). Order-preserving dedup: first registration wins the slot.
       def track_views_root(views_root)
         views_roots << views_root unless views_roots.include?(views_root)
+      end
+
+      def refresh_depth
+        @refresh_depth ||= 0
+      end
+
+      def refresh_suppressed?
+        refresh_depth > 0
       end
 
       # The path relative to its views root, or nil when outside it.
