@@ -433,6 +433,110 @@ RSpec.describe Typelizer::Jbuilder do
       Typelizer.logger = original
     end
 
+    describe "builder rebinding via it/_1/child! params (re-review round 3)" do
+      it "recognizes `it` as the builder inside a parameterless object block" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.author do
+            it.name "x"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("author: {")
+        expect(output).to include("name: string")
+      end
+
+      it "recognizes `_1` as the builder inside a parameterless object block" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.author do
+            _1.name "x"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("name: string")
+      end
+
+      it "recognizes a `json.child!` block param as the builder (child! yields self)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.comments do
+            json.child! do |j|
+              j.content "hello"
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("comments: Array<")
+        expect(output).to include("content: string")
+      end
+
+      it "shadows an outer builder alias when an array block reuses its name (no phantom props)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.stats do |json|
+            json.items @records do |json|
+              json.label "x"
+            end
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        # At runtime the inner param is each element of @records, so
+        # `json.label` never reaches the builder — typing it would be a
+        # phantom prop.
+        expect(output).not_to include("label")
+        expect(logs).to include("shadows the JSON builder")
+      end
+
+      it "warns when an array block param is named `json` (element calls render nothing)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items @records do |json|
+            json.label "x"
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).not_to include("label")
+        expect(logs).to include("shadows the JSON builder")
+      end
+
+      it "shadows an outer `it` alias inside a nested array block" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.stats do
+            it.items @records do
+              it.label "x"
+            end
+          end
+        RUBY
+
+        output = nil
+        with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        # The inner `it` is the collection element, not the builder.
+        expect(output).to include("items: Array<")
+        expect(output).not_to include("label")
+      end
+    end
+
     describe "duplicate-key re-set semantics (re-review round 3)" do
       it "last unconditional write wins for scalars (jbuilder replaces on re-set)" do
         write_template("things/show.json.jbuilder", <<~RUBY)

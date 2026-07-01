@@ -668,11 +668,11 @@ module Typelizer
           # whether the block declares a parameter — see jbuilder's `_set`.
           # `args` excludes the key for `json.set! "k", value do ... end`.
           multi = args.any?
-          # An object block (no value) is yielded the builder itself, so a
-          # `do |json| ... end` param rebinds it to a local; register that alias
-          # so the body's `<param>.x` calls are recognized. Array blocks are
-          # yielded the element instead — no alias.
-          with_json_alias(multi ? nil : block_builder_alias(node.block)) do
+          # An object block (no value) is yielded the builder itself — its
+          # param (or `it`/`_1`) aliases the builder. Array blocks are yielded
+          # the ELEMENT — their param shadows any same-named outer alias.
+          warn_shadowed_builder_param(node) if multi
+          with_block_scope(node.block, yields_builder: !multi) do
             children, non_children = partition_child_bangs(node.block)
             if children.any?
               next handle_child_array(node, name: name, optional: optional, children: children, rest: non_children)
@@ -706,7 +706,11 @@ module Typelizer
           end
 
           branch_props = children.map do |child|
-            child.block.is_a?(Prism::BlockNode) ? shape_body(child.block) : []
+            next [] unless child.block.is_a?(Prism::BlockNode)
+
+            # `json.child!` yields self, so its block param (or `it`/`_1`)
+            # aliases the builder like an object block's.
+            with_block_scope(child.block, yields_builder: true) { shape_body(child.block) }
           end
           merged = merge_branches(branch_props, fully_covered: true)
           build_property(name, type: Shape.new(properties: merged), optional: optional, multi: true)
@@ -903,7 +907,9 @@ module Typelizer
               log_warning(node, "`json.#{node.name}` with a block inside another block is typed as an " \
                 "object, not an array — use `typelize:` to pin an array type")
             end
-            shape_body(node.block)
+            # `array!`/`call` blocks yield each ELEMENT, never the builder.
+            warn_shadowed_builder_param(node)
+            with_block_scope(node.block, yields_builder: false) { shape_body(node.block) }
           elsif keyword_args(node).key?(:partial)
             handle_array_partial(node, keyword_args(node)[:partial])
           elsif (props = collection_attr_shortcut(positional_args(node)))
@@ -1046,18 +1052,57 @@ module Typelizer
           @nested = prev
         end
 
-        # Registers a local name as an alias for the json builder for the
-        # duration of the block (nestable via a stack). See `json_call?`.
-        def with_json_alias(name)
-          (@json_aliases ||= []).push(name) if name
+        # Lexical builder-name scopes, kept as a stack of frames. A frame
+        # either ALIASES a local name to the builder (object/child! blocks —
+        # jbuilder yields self) or SHADOWS a name (element-yielding array
+        # blocks — the param is the collection element, not the builder). The
+        # innermost frame for a name wins, so an inner array block whose
+        # param reuses an outer alias correctly hides it. See `json_call?`.
+        def with_block_scope(block_node, yields_builder:)
+          frames = block_scope_frames(block_node, yields_builder: yields_builder)
+          stack = (@json_aliases ||= [])
+          frames.each { |frame| stack.push(frame) }
           yield
         ensure
-          @json_aliases.pop if name
+          frames.size.times { stack.pop }
         end
 
-        # The block parameter jbuilder binds the builder to in an object block
-        # (`json.foo do |json| ... end`); nil when the block takes no simple
-        # positional parameter.
+        def block_scope_frames(block_node, yields_builder:)
+          kind = yields_builder ? :alias : :shadow
+          if (param = block_builder_alias(block_node))
+            [{name: param, kind: kind}]
+          elsif block_node.is_a?(Prism::BlockNode) && implicit_params?(block_node.parameters)
+            # No named parameters: `it`/`_1` refer to the yielded value — the
+            # builder in object blocks, the element in array blocks. (Prism
+            # represents their use as ItParametersNode/NumberedParametersNode.)
+            [{name: :it, kind: kind}, {name: :_1, kind: kind}]
+          else
+            []
+          end
+        end
+
+        def implicit_params?(params)
+          params.nil? ||
+            (defined?(Prism::ItParametersNode) && params.is_a?(Prism::ItParametersNode)) ||
+            params.is_a?(Prism::NumberedParametersNode)
+        end
+
+        # An element-yielding block whose parameter reuses the builder's name
+        # (or an active alias) rebinds it to the ELEMENT: `json.<x>` calls
+        # inside hit the element, not the builder, so nothing they set is
+        # rendered. Warn; shadowing types whatever real builder calls remain.
+        def warn_shadowed_builder_param(node)
+          param = block_builder_alias(node.block)
+          return if param.nil?
+          return unless param == :json || json_alias?(param)
+
+          log_warning(node, "the block parameter `#{param}` shadows the JSON builder inside this " \
+            "collection block (jbuilder yields the collection element here) — properties set " \
+            "on it are not rendered; rename the parameter")
+        end
+
+        # The block parameter jbuilder binds the yielded value to; nil when
+        # the block takes no simple positional parameter.
         def block_builder_alias(block_node)
           params = block_node.parameters
           return nil unless params.is_a?(Prism::BlockParametersNode)
@@ -1098,19 +1143,33 @@ module Typelizer
         end
 
         # A `json.<name> ...` call. The receiver is normally the bare `json`
-        # method; inside an object block jbuilder yields the builder to the
-        # block param, rebinding it to a local (`do |json| json.name ... end`),
-        # so a local read of a registered builder alias counts too.
+        # method; inside an object block jbuilder yields the builder itself,
+        # so a block param (`do |json| ...`), `it`, or `_1` rebinds it — a
+        # read of a name whose innermost scope frame is an ALIAS counts too.
         def json_call?(node)
           return false unless node.is_a?(Prism::CallNode)
 
           receiver = node.receiver
-          (receiver.is_a?(Prism::CallNode) && receiver.name == :json && receiver.receiver.nil?) ||
-            (receiver.is_a?(Prism::LocalVariableReadNode) && json_alias?(receiver.name))
+          case receiver
+          when Prism::CallNode
+            (receiver.name == :json && receiver.receiver.nil?) ||
+              # Older prism grammars parse a parameterless block's `it` as a
+              # bare method call rather than ItLocalVariableReadNode.
+              (receiver.name == :it && receiver.receiver.nil? && receiver.arguments.nil? && json_alias?(:it))
+          when Prism::LocalVariableReadNode
+            json_alias?(receiver.name)
+          else
+            it_receiver?(receiver) && json_alias?(:it)
+          end
+        end
+
+        def it_receiver?(node)
+          defined?(Prism::ItLocalVariableReadNode) && node.is_a?(Prism::ItLocalVariableReadNode)
         end
 
         def json_alias?(name)
-          @json_aliases&.include?(name)
+          frame = @json_aliases&.reverse_each&.find { |f| f[:name] == name }
+          !!frame && frame[:kind] == :alias
         end
 
         def contains_json_call?(node)
