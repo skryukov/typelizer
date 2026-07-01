@@ -22,8 +22,23 @@ module Typelizer
         # Per-cycle dedup for empty-partial warnings, keyed by
         # [path, line, partial name]. Same rationale as `@warned_unknowns`.
         @warned_empty_partials = Set.new
+        # Per-cycle dedup for syntax-error warnings, keyed by
+        # [path, line, message].
+        @warned_syntax_errors = Set.new
         class << self
-          attr_reader :parse_cache, :warned_unknowns, :walks_in_progress, :warned_empty_partials
+          attr_reader :parse_cache, :warned_unknowns, :walks_in_progress, :warned_empty_partials, :warned_syntax_errors
+
+          def parsed_tree(path)
+            parse_entry(path).fetch(:tree)
+          end
+
+          # Prism recovers from syntax errors with a PLAUSIBLE-but-wrong tree
+          # (e.g. a missing `end` folds trailing statements under the
+          # unclosed block) — callers must check these before trusting the
+          # tree, or every emitted type is a silent lie.
+          def syntax_errors(path)
+            parse_entry(path).fetch(:errors)
+          end
 
           # Digest-keyed parse cache. Within a cycle reuse is safe
           # (`reset_cache!` clears it); across cycles the digest
@@ -32,7 +47,7 @@ module Typelizer
           # parsed from that one string (no read/parse race); an unreadable
           # template raises a named `Typelizer::Error` (`metadata_for`
           # swallows it, the property walk re-raises).
-          def parsed_tree(path)
+          def parse_entry(path)
             content = begin
               File.read(path)
             rescue SystemCallError => e
@@ -42,11 +57,10 @@ module Typelizer
 
             digest = Digest::SHA256.hexdigest(content)
             entry = parse_cache[path]
-            return entry[:tree] if entry && entry[:digest] == digest
+            return entry if entry && entry[:digest] == digest
 
-            tree = Prism.parse(content).value
-            parse_cache[path] = {digest: digest, tree: tree}
-            tree
+            result = Prism.parse(content)
+            parse_cache[path] = {digest: digest, tree: result.value, errors: result.errors}
           end
 
           # The single source of truth for "the walker couldn't type this":
@@ -67,6 +81,10 @@ module Typelizer
             return result unless File.exist?(path)
 
             tree = parsed_tree(path)
+            # A syntax-errored template warns (once) via the property walk;
+            # metadata from a recovered tree isn't trustworthy either.
+            return result if syntax_errors(path).any?
+
             tree.statements.body.each do |node|
               # Scan every top-level bare call, not just the leading run: a
               # `typelize_as`/`typelize_from` after a `json.*` line (which has a
@@ -91,6 +109,7 @@ module Typelizer
             @warned_unknowns = Set.new
             @walks_in_progress = Set.new
             @warned_empty_partials = Set.new
+            @warned_syntax_errors = Set.new
           end
 
           private
@@ -227,21 +246,45 @@ module Typelizer
           @parsed ||= begin
             self.class.walks_in_progress.add(@path)
             begin
-              stmts = self.class.parsed_tree(@path).statements.body
-              root_is_array = detect_root_array(stmts)
-              {
-                root_is_array: root_is_array,
-                root_array_element: root_is_array ? detect_root_array_element(stmts) : nil,
-                properties: extract(stmts, optional: false),
-                # Populated as a side effect of `extract` above (see
-                # `note_unknown_candidate`); captured here so `unknown_candidates`
-                # reads it through `parsed` like every other derived value.
-                unknown_lines: @unknown_lines
-              }
+              if (error = self.class.syntax_errors(@path).first)
+                # Prism's recovered tree is plausible-but-wrong (a missing
+                # `end` folds trailing props under the unclosed block) —
+                # walking it would emit silently wrong types. Warn and emit
+                # nothing instead.
+                warn_syntax_error(error)
+                {root_is_array: false, root_array_element: nil, properties: [], unknown_lines: {}}
+              else
+                stmts = self.class.parsed_tree(@path).statements.body
+                root_is_array = detect_root_array(stmts)
+                {
+                  root_is_array: root_is_array,
+                  root_array_element: root_is_array ? detect_root_array_element(stmts) : nil,
+                  properties: extract(stmts, optional: false),
+                  # Populated as a side effect of `extract` above (see
+                  # `note_unknown_candidate`); captured here so `unknown_candidates`
+                  # reads it through `parsed` like every other derived value.
+                  unknown_lines: @unknown_lines
+                }
+              end
             ensure
               self.class.walks_in_progress.delete(@path)
             end
           end
+        end
+
+        # Once per cycle per error site (each writer re-walks the template
+        # through a fresh Walker instance).
+        def warn_syntax_error(error)
+          line = error.location.start_line
+          key = [@path, line, error.message]
+          warned = self.class.warned_syntax_errors
+          return if warned.include?(key)
+
+          warned << key
+          Typelizer.logger.warn(
+            "Typelizer::Jbuilder: #{@path}:#{line}: template has a Ruby syntax error " \
+            "(#{error.message}); skipping type generation for it — no properties emitted"
+          )
         end
 
         # Only top-level statements are inspected (v1), but cache wrappers are

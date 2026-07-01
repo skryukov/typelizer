@@ -545,6 +545,31 @@ RSpec.describe Typelizer::Jbuilder do
         expect(logs).not_to include("unbalanced")
       end
 
+      it "warns and emits nothing for a template with a Ruby syntax error (recovered AST lies)" do
+        # The missing `end` makes Prism recover by folding `always_present`
+        # under the unclosed `if` — walking that tree would silently type it
+        # optional.
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @detailed
+            json.details "x"
+          json.always_present true
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+          # Second render in the same cycle: the warning stays deduped.
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("syntax error")
+        expect(logs).to include("things/show.json.jbuilder")
+        expect(logs.scan("syntax error").size).to eq(1)
+        expect(output).not_to include("always_present")
+        expect(output).not_to include("details")
+      end
+
       it "warns once per nesting level for same-named unknowns, each with its own line" do
         write_template("things/show.json.jbuilder", <<~RUBY)
           json.foo mystery
