@@ -37,10 +37,11 @@ module Typelizer
       end
     end
 
-    # Per-serializer name override declared via `typelize_as "Foo"` — a
-    # general DSL method available in every serializer class; jbuilder
-    # templates declare it too (read statically by the walker at discovery
-    # time and bound to the generated template class).
+    # Per-serializer name override declared via `typelize_as "Foo"`, which
+    # defines `_typelizer_type_name` on the class. jbuilder templates support
+    # `typelize_as` too, but bind it as the generated `Templates::` constant
+    # name (resolved through the template's own `serializer_name_mapper`), so
+    # they resolve their name below instead of through this override.
     def type_name_override
       return nil unless serializer.respond_to?(:_typelizer_type_name)
       serializer._typelizer_type_name

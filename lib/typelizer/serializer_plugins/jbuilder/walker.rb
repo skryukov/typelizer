@@ -302,14 +302,16 @@ module Typelizer
         # unconditional `json.foo` plus a conditional re-emit, or an own prop
         # alongside a merged partial's) into one TS key. Same widening as
         # `merge_branches`: required if any occurrence is unconditional,
-        # nullability widens, type is first-wins unless `typelize:`-asserted.
+        # nullability widens, type is first-non-null-wins unless
+        # `typelize:`-asserted (a bare `nil` contributes nullability, not type).
         def merge_same_level(props)
           return props if props.map { |p| p.name.to_s }.uniq.size == props.size
 
           props.group_by { |p| p.name.to_s }.values.map do |occurrences|
             next occurrences.first if occurrences.size == 1
 
-            base = occurrences.find(&:user_asserted) || occurrences.first
+            base = occurrences.find(&:user_asserted) ||
+              occurrences.find { |p| !null_type?(p) } || occurrences.first
             base.with(
               optional: occurrences.all?(&:optional),
               nullable: widened_nullable(base, occurrences)
@@ -430,7 +432,7 @@ module Typelizer
           end
 
           if node.block.is_a?(Prism::BlockNode)
-            return handle_prop_with_block(node, name: name, optional: optional)
+            return handle_prop_with_block(node, name: name, optional: optional, args: args)
           end
 
           if (partial = kwargs[:partial])
@@ -546,21 +548,31 @@ module Typelizer
         # trails the intersection as an inline `Shape`. A block with no
         # nameable partials stays a plain `Shape` so nested model inference
         # keeps working (`infer_nested_property_types`).
-        def handle_prop_with_block(node, name:, optional:)
-          children, non_children = partition_child_bangs(node.block)
-          if children.any?
-            return handle_child_array(node, name: name, optional: optional, children: children, rest: non_children)
-          end
+        def handle_prop_with_block(node, name:, optional:, args: positional_args(node))
+          # jbuilder renders an array iff a positional collection VALUE
+          # accompanies the block (`json.foo @xs do ... end`), regardless of
+          # whether the block declares a parameter — see jbuilder's `_set`.
+          # `args` excludes the key for `json.set! "k", value do ... end`.
+          multi = args.any?
+          # An object block (no value) is yielded the builder itself, so a
+          # `do |json| ... end` param rebinds it to a local; register that alias
+          # so the body's `<param>.x` calls are recognized. Array blocks are
+          # yielded the element instead — no alias.
+          with_json_alias(multi ? nil : block_builder_alias(node.block)) do
+            children, non_children = partition_child_bangs(node.block)
+            if children.any?
+              next handle_child_array(node, name: name, optional: optional, children: children, rest: non_children)
+            end
 
-          multi = !node.block.parameters.nil?
-          interfaces, rest = partition_composed_partials(node.block, prop_name: name)
-          if interfaces.any?
-            additional = interfaces.drop(1)
-            rest_props = with_nested { extract(rest, optional: false) }
-            additional += [Shape.new(properties: rest_props)] if rest_props.any?
-            return build_property(name, type: interfaces.first, additional_types: additional, optional: optional, multi: multi)
+            interfaces, rest = partition_composed_partials(node.block, prop_name: name)
+            if interfaces.any?
+              additional = interfaces.drop(1)
+              rest_props = with_nested { extract(rest, optional: false) }
+              additional += [Shape.new(properties: rest_props)] if rest_props.any?
+              next build_property(name, type: interfaces.first, additional_types: additional, optional: optional, multi: multi)
+            end
+            build_property(name, type: Shape.new(properties: shape_body(node.block)), optional: optional, multi: multi)
           end
-          build_property(name, type: Shape.new(properties: shape_body(node.block)), optional: optional, multi: multi)
         end
 
         # Splits a block body into [`json.child!` calls, other stmts].
@@ -748,9 +760,10 @@ module Typelizer
         def handle_extract(node, optional:)
           args = positional_args(node)
           # `json.extract! obj, *helper_attrs` (or any non-symbol attribute
-          # argument) — the dynamic part is invisible statically. One warning
+          # argument), or a splat in the object slot itself (`json.extract!
+          # *attrs`) — the dynamic part is invisible statically. One warning
           # per call site; the literal symbols still extract as usual.
-          if args.drop(1).any? { |a| !a.is_a?(Prism::SymbolNode) }
+          if args.first.is_a?(Prism::SplatNode) || args.drop(1).any? { |a| !a.is_a?(Prism::SymbolNode) }
             log_warning(node, "`json.#{node.name}` with a dynamic attribute list (splat or non-literal " \
               "argument) cannot be statically typed; only literal attributes emitted — " \
               "use `typelize:` to pin the rest")
@@ -850,7 +863,8 @@ module Typelizer
         # Merges same-name props across branches: nullability widens
         # (`Foo` + `Foo | null` → `Foo | null`); a prop is optional unless
         # every branch of a fully-covered chain emits it (or any branch marked
-        # it optional). Type ambiguity isn't unioned — first branch wins,
+        # it optional). Type ambiguity isn't unioned — the first non-`null`
+        # branch wins (a bare `nil` branch contributes only nullability),
         # except a `typelize:` assertion in any branch wins and carries
         # `user_asserted` through so model inference can't clobber it.
         def merge_branches(branch_props, fully_covered:)
@@ -859,7 +873,8 @@ module Typelizer
           names.map do |name|
             occurrences = indexed.map { |idx| idx[name] }
             present = occurrences.compact
-            base = present.find(&:user_asserted) || present.first
+            base = present.find(&:user_asserted) ||
+              present.find { |p| !null_type?(p) } || present.first
             optional = present.any?(&:optional) || !(fully_covered && occurrences.all?)
             base.with(optional: optional, nullable: widened_nullable(base, present))
           end
@@ -911,6 +926,26 @@ module Typelizer
           @nested = prev
         end
 
+        # Registers a local name as an alias for the json builder for the
+        # duration of the block (nestable via a stack). See `json_call?`.
+        def with_json_alias(name)
+          (@json_aliases ||= []).push(name) if name
+          yield
+        ensure
+          @json_aliases.pop if name
+        end
+
+        # The block parameter jbuilder binds the builder to in an object block
+        # (`json.foo do |json| ... end`); nil when the block takes no simple
+        # positional parameter.
+        def block_builder_alias(block_node)
+          params = block_node.parameters
+          return nil unless params.is_a?(Prism::BlockParametersNode)
+
+          first = params.parameters&.requireds&.first
+          first.name if first.is_a?(Prism::RequiredParameterNode)
+        end
+
         def warn_skipped(node, construct)
           log_warning(node, "#{construct} cannot be statically typed; no property emitted — " \
             "use `typelize:` to pin a type")
@@ -942,11 +977,20 @@ module Typelizer
           nil
         end
 
+        # A `json.<name> ...` call. The receiver is normally the bare `json`
+        # method; inside an object block jbuilder yields the builder to the
+        # block param, rebinding it to a local (`do |json| json.name ... end`),
+        # so a local read of a registered builder alias counts too.
         def json_call?(node)
-          node.is_a?(Prism::CallNode) &&
-            node.receiver.is_a?(Prism::CallNode) &&
-            node.receiver.name == :json &&
-            node.receiver.receiver.nil?
+          return false unless node.is_a?(Prism::CallNode)
+
+          receiver = node.receiver
+          (receiver.is_a?(Prism::CallNode) && receiver.name == :json && receiver.receiver.nil?) ||
+            (receiver.is_a?(Prism::LocalVariableReadNode) && json_alias?(receiver.name))
+        end
+
+        def json_alias?(name)
+          @json_aliases&.include?(name)
         end
 
         def contains_json_call?(node)

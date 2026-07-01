@@ -691,6 +691,103 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "block array-vs-object semantics and null-branch merging (regression)" do
+      it "keeps the typed branch when a bare `nil` branch is listed first (if/else)" do
+        # Regression: the type-supplying base was `present.first`, so a leading
+        # `nil` branch collapsed the merged type to `null`, dropping `boolean`.
+        write_template("misc/flags.json.jbuilder", <<~RUBY)
+          if @admin
+            json.flag nil
+          else
+            json.flag true
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::MiscFlags)
+
+        expect(output).to include("flag: boolean | null")
+      end
+
+      it "keeps the typed value when a bare `nil` precedes a typed re-emit (same level)" do
+        # The `json.avatar_url nil; json.avatar_url ... if ...` placeholder idiom.
+        write_template("misc/reemit.json.jbuilder", <<~RUBY)
+          json.flag nil
+          json.flag true if @cond
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::MiscReemit)
+
+        expect(output).to include("flag: boolean | null")
+      end
+
+      it "walks nested props when the block rebinds the json builder (`do |json|`)" do
+        # Regression: `json.<x> do |json| ... end` rebinds the builder to a
+        # local, so `json.name` had a LocalVariableRead receiver and was
+        # silently dropped (as `Array<{}>`) with no warning.
+        write_template("misc/rebind.json.jbuilder", <<~RUBY)
+          json.author do |json|
+            json.name a.name
+            json.email a.email
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::MiscRebind)
+
+        expect(output).to include("author: {")
+        expect(output).to include("name:")
+        expect(output).to include("email:")
+        expect(output).not_to include("author: Array")
+      end
+
+      it "types an object block that declares a block parameter as an object" do
+        # jbuilder renders an object here (no positional value); the block param
+        # must not flip it to an array.
+        write_template("misc/wrap.json.jbuilder", <<~RUBY)
+          json.author do |a|
+            json.name a.name
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::MiscWrap)
+
+        expect(output).to include("author: {")
+        expect(output).not_to include("author: Array")
+      end
+
+      it "types a block with a positional collection value as an array (param-less)" do
+        # jbuilder renders an array iff a positional value accompanies the
+        # block, regardless of whether the block declares a parameter.
+        write_template("misc/list.json.jbuilder", <<~RUBY)
+          json.items @items do
+            json.ok true
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::MiscList)
+
+        expect(output).to include("items: Array<{")
+        expect(output).to include("ok: boolean")
+      end
+
+      it "warns (not silently drops) on `json.extract!` with a splat object argument" do
+        write_template("misc/dyn.json.jbuilder", <<~RUBY)
+          json.extract! *attrs
+        RUBY
+
+        warnings = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscDyn)
+        end
+
+        expect(warnings).to include("dynamic attribute list")
+      end
+    end
+
     describe "`json.child!` array elements" do
       it "types a block of child! calls as an array, widening keys missing from some children (manifest shape)" do
         write_template("manifests/show.json.jbuilder", <<~RUBY)
