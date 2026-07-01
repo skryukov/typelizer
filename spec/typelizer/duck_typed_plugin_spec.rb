@@ -37,4 +37,27 @@ RSpec.describe "Duck-typed serializer plugins" do
     expect(interface.wrapped?).to be_falsey
     expect { interface.fingerprint }.not_to raise_error
   end
+
+  it "honors root_is_array/root_array_element when a duck plugin DOES implement them" do
+    array_plugin_class = Class.new(duck_plugin_class) do
+      def root_is_array
+        true
+      end
+
+      def root_array_element
+        nil
+      end
+    end
+
+    context = Typelizer::WriterContext.new(writer_name: nil)
+    interface = Typelizer::Interface.new(serializer: Alba::PostSerializer, context: context)
+    plugin = array_plugin_class.new(serializer: Alba::PostSerializer, config: interface.config, context: context)
+    allow(interface).to receive(:serializer_plugin).and_return(plugin)
+
+    expect(interface.root_is_array).to be(true)
+    expect(interface.wrapped?).to be_truthy
+    output = Typelizer::Renderer.call("interface.ts.erb", interface: interface)
+    expect(output).to include("Array<")
+    expect(output).to include("id: number")
+  end
 end

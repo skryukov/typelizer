@@ -179,15 +179,25 @@ RSpec.describe Typelizer::Jbuilder do
       write_template("teacher/_earnings.json.jbuilder", <<~ERB)
         json.total_cents total, typelize: "number"
       ERB
+      write_template("teacher/_news.json.jbuilder", <<~ERB)
+        json.headline item, typelize: "string"
+      ERB
+      write_template("teacher/_settings.json.jbuilder", <<~ERB)
+        json.theme prefs, typelize: "string"
+      ERB
       write_template("teacher/payouts/index.json.jbuilder", <<~ERB)
         json.earnings @earnings, partial: "teacher/earnings", as: :total
+        json.news @news, partial: "teacher/news", as: :item
+        json.settings @settings, partial: "teacher/settings", as: :prefs
       ERB
 
       Typelizer::Jbuilder.discover(views_root)
       output = render_interface(Typelizer::Jbuilder::Templates::TeacherPayoutsIndex)
 
       expect(output).to include("earnings: TeacherEarnings")
-      expect(output).not_to match(/Array<TeacherEarnings>/)
+      expect(output).to include("news: TeacherNews")
+      expect(output).to include("settings: TeacherSettings")
+      expect(output).not_to include("Array<")
     end
 
     it "intersects named partials with a trailing inline shape for mixed blocks" do
@@ -431,6 +441,117 @@ RSpec.describe Typelizer::Jbuilder do
       io.string
     ensure
       Typelizer.logger = original
+    end
+
+    describe "coverage hardening (re-review round 3)" do
+      it "types a singular-named prop backed by a relation-builder call as an array" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.result @posts.where(published: true), :id, :title
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        # `where` marks the value as a collection even though "result" is
+        # singular — flipping to a plain object would be a silent wrong type.
+        expect(output).to include("result: Array<")
+        expect(output).to include("id: number")
+      end
+
+      it "emits NO warnings for a template using only supported constructs" do
+        write_template("users/_user.json.jbuilder", <<~RUBY)
+          json.name user.name, typelize: "string"
+        RUBY
+        write_template("users/index.json.jbuilder", <<~RUBY)
+          json.partial! partial: "users/user", collection: @users, as: :user
+        RUBY
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          json.id 1
+          json.profile do
+            json.bio "text"
+          end
+          if @admin
+            json.notes "x"
+          end
+          json.extract! person, :person_id
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::UsersIndex)
+          render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+        end
+
+        # A false-positive warning here would fail user builds under
+        # config.strict — clean templates must stay silent.
+        expect(logs).to eq("")
+      end
+
+      it "passes cache_if! contents through without widening or warning" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.cache_if! @cond, "key" do
+            json.name "x"
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("name: string")
+        expect(output).not_to include("name?:")
+        expect(logs).to eq("")
+      end
+
+      it "types `json.set!` with a literal key, a value, AND a block as an array" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.set! "records", @records do |record|
+            json.label "x"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("records: Array<")
+        expect(output).to include("label: string")
+      end
+
+      it "widens all keys optional when a blockless child! contributes an empty element" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.comments do
+            json.child! do
+              json.body "x"
+            end
+            json.child!
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("comments: Array<")
+        expect(output).to include("body?: string")
+      end
+
+      it "still extracts literal attributes when key_format! is present (warning fires once)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.key_format! camelize: :lower
+          json.extract! person, :id
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("key_format!")
+        expect(logs.scan("key_format!").size).to eq(1)
+        expect(output).to include("id: number")
+      end
     end
 
     describe "literal types vs model inference (re-review round 3)" do
@@ -1350,6 +1471,7 @@ RSpec.describe Typelizer::Jbuilder do
         expect(logs).to include("misc/show.json.jbuilder:2")
         expect(logs).to include("json.merge!")
         expect(logs).to include("typelize:")
+        expect(logs.scan("json.merge!").size).to eq(1)
         expect(output).to include("ok: boolean")
         expect(output).not_to include("merge")
       end
@@ -1367,6 +1489,7 @@ RSpec.describe Typelizer::Jbuilder do
         expect(logs).to include("misc/show.json.jbuilder:1")
         expect(logs).to include("json.set!")
         expect(logs).to include("typelize:")
+        expect(logs.scan("json.set!").size).to eq(1)
       end
 
       it "warns when a `json.partial!` cannot be resolved instead of dropping silently" do
@@ -1381,6 +1504,7 @@ RSpec.describe Typelizer::Jbuilder do
 
         expect(logs).to include("misc/show.json.jbuilder:1")
         expect(logs).to include("missing/thing")
+        expect(logs.scan("missing/thing").size).to eq(1)
       end
 
       it "warns when a collection `partial!` appears inside a block (typed as object, not array)" do
@@ -1419,8 +1543,26 @@ RSpec.describe Typelizer::Jbuilder do
         end
 
         expect(logs).to include("misc/show.json.jbuilder")
-        expect(logs).to include("array!")
-        expect(logs).to match(/object/)
+        expect(logs).to include("conditional root arrays are not supported")
+        expect(logs.scan("conditional root arrays").size).to eq(1)
+      end
+
+      it "warns when a root collection `partial!` hides inside a conditional" do
+        write_template("users/_user.json.jbuilder", <<~RUBY)
+          json.name user.name, typelize: "string"
+        RUBY
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          if @flag
+            json.partial! partial: "users/user", collection: @users, as: :user
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+        end
+
+        expect(logs).to include("conditional root arrays are not supported")
       end
 
       it "routes metadata read failures through the configured logger, not Kernel#warn" do

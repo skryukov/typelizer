@@ -33,6 +33,13 @@ RSpec.describe "Jbuilder discovery lifecycle" do
     Typelizer::Jbuilder.reset!
     FileUtils.rm_rf(views_root)
     FileUtils.rm_rf(output_dir)
+    # Full-cycle examples (`Typelizer::Generator.call`) also run the DEFAULT
+    # and fixture writers, which write into the dummy app — clean them up so
+    # a failing run doesn't leave untracked files under spec/app.
+    FileUtils.rm_rf(Typelizer::Config.default_output_dir)
+    [CamelCaseWriterFixture, EnumRuntimeWriterFixture, EnumRuntimeVerbatimWriterFixture].each do |fixture|
+      FileUtils.rm_rf(fixture.output_dir)
+    end
   end
 
   def write_template(relative_path, body)
