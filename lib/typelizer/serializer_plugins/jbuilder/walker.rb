@@ -331,23 +331,88 @@ module Typelizer
 
         # Collapses same-name properties emitted at one level (an
         # unconditional `json.foo` plus a conditional re-emit, or an own prop
-        # alongside a merged partial's) into one TS key. Same widening as
-        # `merge_branches`: required if any occurrence is unconditional,
-        # nullability widens, type is first-non-null-wins unless
-        # `typelize:`-asserted (a bare `nil` contributes nullability, not type).
+        # alongside a merged partial's) into one TS key, following jbuilder's
+        # re-set semantics in statement order:
+        #
+        # - a later UNCONDITIONAL write replaces the value (last-wins:
+        #   `json.status 1` then `json.status "active"` renders the string —
+        #   including an own prop overriding a merged partial's)
+        # - two object blocks DEEP-MERGE per key (jbuilder's `_merge_block`)
+        # - a later CONDITIONAL write may or may not run, so it unions with
+        #   what's there; a conditional bare `nil` contributes nullability
+        # - a `typelize:` assertion anywhere pins the type outright
         def merge_same_level(props)
           return props if props.map { |p| p.name.to_s }.uniq.size == props.size
 
           props.group_by { |p| p.name.to_s }.values.map do |occurrences|
             next occurrences.first if occurrences.size == 1
 
-            base = occurrences.find(&:user_asserted) ||
-              occurrences.find { |p| !null_type?(p) } || occurrences.first
-            base.with(
-              optional: occurrences.all?(&:optional),
-              nullable: widened_nullable(base, occurrences)
+            merged = occurrences.reduce { |acc, incoming| merge_reset(acc, incoming) }
+            if (asserted = occurrences.find(&:user_asserted))
+              merged = asserted.with(
+                optional: merged.optional,
+                nullable: asserted.nullable || merged.nullable
+              )
+            end
+            merged
+          end
+        end
+
+        # One re-set step: `acc` is the type accumulated so far, `incoming`
+        # the next same-name write in statement order.
+        def merge_reset(acc, incoming)
+          if !incoming.optional
+            # Unconditional: this write always happens at runtime — it
+            # replaces a scalar or deep-merges into an existing object.
+            if shape_pair?(acc, incoming)
+              incoming.with(
+                type: deep_merge_shapes(acc.type, incoming.type, incoming_optional: false),
+                optional: false
+              )
+            else
+              incoming.with(optional: false)
+            end
+          elsif shape_pair?(acc, incoming)
+            acc.with(
+              type: deep_merge_shapes(acc.type, incoming.type, incoming_optional: true),
+              nullable: acc.nullable || incoming.nullable
+            )
+          elsif null_type?(incoming)
+            # A conditional bare `nil` contributes nullability, not type.
+            acc.with(nullable: true)
+          elsif null_type?(acc)
+            # Unconditional `nil` then a conditional real write: null | <real>.
+            incoming.with(optional: acc.optional, nullable: true)
+          else
+            acc.with(
+              type: union_types(acc, incoming),
+              nullable: acc.nullable || incoming.nullable
             )
           end
+        end
+
+        # Deep-merge only applies to two OBJECT blocks; array blocks
+        # (`multi`) are replaced whole by jbuilder's `_set_value`.
+        def shape_pair?(a, b)
+          a.type.is_a?(Shape) && b.type.is_a?(Shape) && !a.multi && !b.multi
+        end
+
+        # jbuilder `_merge_block`: keys merge recursively — a later write to
+        # an existing key follows the same re-set rules; keys arriving from a
+        # CONDITIONAL later block count as conditional writes.
+        def deep_merge_shapes(earlier, later, incoming_optional:)
+          merged = earlier.properties.each_with_object({}) { |p, h| h[p.name.to_s] = p }
+          later.properties.each do |prop|
+            key = prop.name.to_s
+            prop = prop.with(optional: true) if incoming_optional
+            merged[key] = merged.key?(key) ? merge_reset(merged[key], prop) : prop
+          end
+          Shape.new(properties: merged.values)
+        end
+
+        def union_types(acc, incoming)
+          types = (Array(acc.type) + Array(incoming.type)).uniq
+          (types.size == 1) ? types.first : types
         end
 
         # Control-flow forms the walker doesn't model: bodies aren't walked

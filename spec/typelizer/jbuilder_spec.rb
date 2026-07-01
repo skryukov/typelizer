@@ -433,6 +433,88 @@ RSpec.describe Typelizer::Jbuilder do
       Typelizer.logger = original
     end
 
+    describe "duplicate-key re-set semantics (re-review round 3)" do
+      it "last unconditional write wins for scalars (jbuilder replaces on re-set)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.status 1
+          json.status "active"
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("status: string")
+        expect(output).not_to include("number")
+      end
+
+      it "an own prop after a merged partial overrides the partial's type" do
+        write_template("things/_thing.json.jbuilder", <<~RUBY)
+          json.status 1
+        RUBY
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.partial! "things/thing"
+          json.status "active"
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("status: string")
+      end
+
+      it "deep-merges two object blocks for the same key (jbuilder _merge_block)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.author do
+            json.name "x"
+          end
+          json.author do
+            json.age 1
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("name: string")
+        expect(output).to include("age: number")
+      end
+
+      it "marks keys arriving from a conditional block re-merge as optional" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.author do
+            json.name "x"
+          end
+          if @admin
+            json.author do
+              json.notes "internal"
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("name: string")
+        expect(output).to include("notes?: string")
+        expect(output).to include("author: {")
+      end
+
+      it "unions a conditional scalar re-write with the unconditional type" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.value "s"
+          if @numeric
+            json.value 1
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to match(/value: (string \| number|number \| string)/)
+        expect(output).not_to include("value?:")
+      end
+    end
+
     describe "root array detection (re-review round 3)" do
       it "types `json.(collection) { |el| ... }` as a root array (jbuilder's call form)" do
         write_template("people/index.json.jbuilder", <<~RUBY)
