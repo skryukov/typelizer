@@ -42,7 +42,7 @@ module Typelizer
 
       def property_schema(property, openapi_version: "3.0", type_mapping: Typelizer.configuration.type_mapping)
         if property.type.is_a?(Array)
-          return union_schema(property, openapi_version: openapi_version)
+          return union_schema(property, openapi_version: openapi_version, type_mapping: type_mapping)
         end
 
         definition = base_type(property, openapi_version: openapi_version, type_mapping: type_mapping)
@@ -74,7 +74,7 @@ module Typelizer
         elsif element.respond_to?(:properties) && element.respond_to?(:inline?) && element.inline?
           schema_for(element, openapi_version: openapi_version)
         else
-          union_member_schema(element)
+          union_member_schema(element, openapi_version: openapi_version, type_mapping: type_mapping)
         end
       end
 
@@ -106,11 +106,11 @@ module Typelizer
         definition
       end
 
-      def union_schema(property, openapi_version:)
+      def union_schema(property, openapi_version:, type_mapping:)
         definition = if property.type.all? { |part| string_literal?(part) }
           {type: :string, enum: property.type.map { |part| unquote_string_literal(part) }}
         else
-          {anyOf: property.type.map { |part| union_member_schema(part) }}
+          {anyOf: property.type.map { |part| union_member_schema(part, openapi_version: openapi_version, type_mapping: type_mapping) }}
         end
 
         unless property.multi
@@ -121,9 +121,26 @@ module Typelizer
         wrap_multi(definition, property, openapi_version: openapi_version)
       end
 
-      def union_member_schema(type)
-        if type.respond_to?(:properties)
-          {"$ref" => "#/components/schemas/#{type.name}"}
+      # One member of a fold-produced union (also reused for array elements
+      # and named root-array elements): an inline Shape becomes an object
+      # schema built from its properties, the walker's lazy array wrapper
+      # (responds to #element) becomes an array schema recursing on its
+      # element, an Interface-like (responds to #properties AND #name)
+      # $refs — or inlines — its own schema, and plain String/Symbol types
+      # map the way bare types do elsewhere in this writer.
+      def union_member_schema(type, openapi_version:, type_mapping:)
+        if type.is_a?(Shape)
+          object_schema(type.properties, openapi_version: openapi_version, type_mapping: type_mapping)
+        elsif array_wrapper?(type)
+          {type: :array, items: array_element_schema(type.element, openapi_version: openapi_version, type_mapping: type_mapping)}
+        elsif type.respond_to?(:properties)
+          if type.respond_to?(:inline?) && type.inline?
+            schema_for(type, openapi_version: openapi_version)
+          else
+            {"$ref" => "#/components/schemas/#{type.name}"}
+          end
+        elsif string_literal?(type)
+          {type: :string, enum: [unquote_string_literal(type)]}
         else
           sym = type.to_sym
           if OPENAPI_TYPES.include?(sym)
@@ -134,6 +151,23 @@ module Typelizer
             {"$ref" => "#/components/schemas/#{type}"}
           end
         end
+      end
+
+      # The walker's lazy ArrayOf wrapper, matched by duck (it lives in a
+      # lazily-loaded plugin file, so no constant reference from here).
+      def array_wrapper?(type)
+        type.respond_to?(:element) && type.respond_to?(:map_element_shape)
+      end
+
+      # An ArrayOf element is a single member or an Array of union members
+      # (`Array<A | B>`); a nil member renders as TS `unknown`, which maps to
+      # a plain object schema like other TS-only types.
+      def array_element_schema(element, openapi_version:, type_mapping:)
+        members = element.is_a?(Array) ? element : [element]
+        schemas = members.map do |member|
+          member.nil? ? {type: :object} : union_member_schema(member, openapi_version: openapi_version, type_mapping: type_mapping)
+        end
+        (schemas.size == 1) ? schemas.first : {anyOf: schemas}
       end
 
       def wrap_traits(definition, property, openapi_version:)
@@ -192,6 +226,11 @@ module Typelizer
         # Shape check must precede respond_to?(:properties) — Shape also responds to :properties.
         if property.type.is_a?(Shape)
           object_schema(property.type.properties, openapi_version: openapi_version, type_mapping: type_mapping)
+        elsif array_wrapper?(property.type)
+          # A direct ArrayOf type (e.g. child! inside a collection block →
+          # Array<Array<...>> with the outer array on `multi`): emit the
+          # nested array schema instead of collapsing to a bare object.
+          {type: :array, items: array_element_schema(property.type.element, openapi_version: openapi_version, type_mapping: type_mapping)}
         elsif property.type.respond_to?(:properties)
           if property.type.respond_to?(:inline?) && property.type.inline?
             schema_for(property.type, openapi_version: openapi_version)
