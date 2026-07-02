@@ -870,7 +870,8 @@ module Typelizer
             with_block_scope(node.block, yields_builder: !multi) do
               children, non_children = partition_child_bangs(node.block)
               if children.any?
-                next handle_child_array(node, name: name, optional: optional, children: children, rest: non_children)
+                next handle_child_array(node, name: name, optional: optional, children: children,
+                  rest: non_children, collection_value: multi)
               end
 
               interfaces, rest = partition_composed_partials(node.block, prop_name: name)
@@ -895,7 +896,7 @@ module Typelizer
         # child's shape with full-coverage `merge_branches` semantics. Named
         # props mixed into the same block can't be expressed on one TS key, so
         # they're dropped with a warning and only the elements are typed.
-        def handle_child_array(node, name:, optional:, children:, rest:)
+        def handle_child_array(node, name:, optional:, children:, rest:, collection_value: false)
           if rest.any?
             log_warning(node, "mixing `json.child!` with named properties is not statically typeable; " \
               "typing the array elements only — use `typelize:` to pin the full type")
@@ -909,7 +910,12 @@ module Typelizer
             with_block_scope(child.block, yields_builder: true) { shape_body(child.block) }
           end
           merged = merge_branches(branch_props, fully_covered: true)
-          build_property(name, type: Shape.new(properties: merged), optional: optional, multi: true)
+          element = Shape.new(properties: merged)
+          # A collection VALUE (`json.comments @comments do |c| json.child! …`)
+          # renders one scope per element, and `child!` turns EACH scope into
+          # an array — array of arrays at runtime, `Array<Array<…>>` here.
+          element = ArrayOf.new(element) if collection_value
+          build_property(name, type: element, optional: optional, multi: true)
         end
 
         # Splits a block into [named partial interfaces, other stmts]. Only a
@@ -1046,9 +1052,17 @@ module Typelizer
             return []
           end
 
-          if @nested && kwargs.key?(:collection)
-            log_warning(node, "`json.partial!` with `collection:` inside a block is typed as a merged object, " \
-              "not an array — use `json.<name> @collection, partial: \"...\", as: ...` or `typelize:`")
+          if kwargs.key?(:collection)
+            if @nested
+              log_warning(node, "`json.partial!` with `collection:` inside a block is typed as a merged object, " \
+                "not an array — use `json.<name> @collection, partial: \"...\", as: ...` or `typelize:`")
+            elsif @root_conditional
+              # A conditional root collection partial — already warned by
+              # `warn_on_conditional_root_array`; merging the partial's props
+              # into the root object would fabricate a root shape that never
+              # renders.
+              return []
+            end
           end
 
           partial_class = @partial_resolver.call(partial_name)
@@ -1102,6 +1116,11 @@ module Typelizer
             if @nested
               log_warning(node, "`json.#{node.name}` with a block inside another block is typed as an " \
                 "object, not an array — use `typelize:` to pin an array type")
+            elsif @root_conditional
+              # A conditional root array — already warned; its element props
+              # describe array ELEMENTS, so walking them into the root object
+              # shape would fabricate a root type that never renders.
+              return []
             end
             # `array!`/`call` blocks yield each ELEMENT, never the builder.
             warn_shadowed_builder_param(node)
@@ -1116,6 +1135,10 @@ module Typelizer
             if @nested
               log_warning(node, "`json.array!` without a block emits its attributes as an object shape, " \
                 "not an array — use the block form or `typelize:` to pin an array type")
+            elsif @root_conditional
+              # Same as the block form above: conditional root array — the
+              # attribute shape belongs to elements, not the root object.
+              return []
             end
             props
           else
@@ -1148,8 +1171,20 @@ module Typelizer
         # covered chain emits it).
         def handle_conditional(node)
           branches, fully_covered = collect_branches(node)
-          branch_props = branches.map { |body| extract(body, optional: false) }
+          branch_props = branches.map { |body| with_root_conditional { extract(body, optional: false) } }
           merge_branches(branch_props, fully_covered: fully_covered)
+        end
+
+        # Marks that the walk is inside a top-level conditional: a root-array
+        # form found there was already warned about
+        # (`warn_on_conditional_root_array`) and its element props must not
+        # leak into the root object shape (see `handle_array_bang`).
+        def with_root_conditional
+          prev = @root_conditional
+          @root_conditional = true unless @nested
+          yield
+        ensure
+          @root_conditional = prev
         end
 
         def collect_branches(node)
@@ -1287,17 +1322,33 @@ module Typelizer
         end
 
         # An element-yielding block whose parameter reuses the builder's name
-        # (or an active alias) rebinds it to the ELEMENT: `json.<x>` calls
-        # inside hit the element, not the builder, so nothing they set is
-        # rendered. Warn; shadowing types whatever real builder calls remain.
+        # (or an active alias) rebinds it to the ELEMENT. Only writing
+        # THROUGH that name as if it were the builder (`a.title "x"`,
+        # `a.items do ... end`) misleads — those properties are set on the
+        # element and never rendered. Read-only uses (`json.title a`,
+        # `json.x a.title`) are legitimate element access and must not warn:
+        # a false positive here fails strict builds on correct code.
         def warn_shadowed_builder_param(node)
           param = block_builder_alias(node.block)
           return if param.nil?
           return unless param == :json || json_alias?(param)
+          return unless builder_write_through?(node.block.body, param)
 
           log_warning(node, "the block parameter `#{param}` shadows the JSON builder inside this " \
             "collection block (jbuilder yields the collection element here) — properties set " \
             "on it are not rendered; rename the parameter")
+        end
+
+        # A set!-style call through `name`: a method call whose receiver is
+        # the shadowing local and that passes a value or block.
+        def builder_write_through?(node, name)
+          return false if node.nil?
+
+          if node.is_a?(Prism::CallNode) && node.receiver.is_a?(Prism::LocalVariableReadNode) &&
+              node.receiver.name == name && (node.arguments&.arguments&.any? || node.block)
+            return true
+          end
+          node.compact_child_nodes.any? { |child| builder_write_through?(child, name) }
         end
 
         # The block parameter jbuilder binds the yielded value to; nil when

@@ -327,10 +327,11 @@ Generates:
 }
 ```
 
-Two caveats:
+Three caveats:
 
 - **Mixed content**: putting `json.child!` calls and named properties in one block renders both into the same value at runtime — a shape TypeScript can't express on one key. The walker types the array elements only, drops the named properties from the type, and warns; use `typelize:` to pin the full type.
 - **No enclosing property**: `json.child!` outside a `json.<name>` block (e.g. at the template root) cannot be statically typed and is skipped with a warning.
+- **Inside a collection-value block** (`json.comments @comments do |c| json.child! ... end`): jbuilder renders one scope per collection element and `child!` turns each scope into an array, so the property types as `Array<Array<{...}>>` — matching the array-of-arrays the runtime produces.
 
 ### Literal `json.set!` keys
 

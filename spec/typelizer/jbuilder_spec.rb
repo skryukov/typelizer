@@ -812,6 +812,47 @@ RSpec.describe Typelizer::Jbuilder do
         expect(output).to include("items: Array<")
         expect(output).not_to include("label")
       end
+
+      it "does not warn when the shadowing param is only READ (legitimate element access)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.author do |a|
+            json.posts @posts do |a|
+              json.title a, typelize: "string"
+            end
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        # The template renders and types correctly — a warning here is a
+        # false positive that fails strict builds on correct code.
+        expect(logs).not_to include("shadows")
+        expect(output).to include("title: string")
+      end
+
+      it "still warns when the shadowing param is written through as a builder" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.author do |a|
+            json.posts @posts do |a|
+              a.title "x"
+            end
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        # `a` is the collection element here; `a.title "x"` renders nothing.
+        expect(logs).to include("shadows the JSON builder")
+        expect(output).not_to include("title")
+      end
     end
 
     describe "duplicate-key re-set semantics (re-review round 3)" do
@@ -1201,6 +1242,50 @@ RSpec.describe Typelizer::Jbuilder do
         end
 
         expect(logs).to include("conditional root arrays are not supported")
+      end
+
+      it "drops a conditional root array's element props instead of leaking them into the root shape" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @flag
+            json.array! @xs do |x|
+              json.element_field x, typelize: "number"
+            end
+          else
+            json.total 5
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("conditional root arrays are not supported")
+        # `element_field` describes array ELEMENTS of the warned-about branch;
+        # the else branch's props survive as usual.
+        expect(output).not_to include("element_field")
+        expect(output).to include("total?: number")
+      end
+
+      it "drops a conditional root collection partial's props instead of merging them into the root shape" do
+        write_template("users/_user.json.jbuilder", <<~RUBY)
+          json.name user.name, typelize: "string"
+        RUBY
+        write_template("users/index.json.jbuilder", <<~RUBY)
+          if @full
+            json.partial! partial: "users/user", collection: @users, as: :user
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::UsersIndex)
+        end
+
+        expect(logs).to include("conditional root arrays are not supported")
+        expect(output).not_to match(/name\??:/)
       end
     end
 
@@ -1656,6 +1741,24 @@ RSpec.describe Typelizer::Jbuilder do
         expect(output).to include("things: Array<{")
         expect(output).to include("id: number;")
         expect(output).not_to include("total")
+      end
+
+      it "types child! inside a collection-value block as an array of arrays" do
+        write_template("misc/show.json.jbuilder", <<~RUBY)
+          json.comments @comments do |c|
+            json.child! do
+              json.body c, typelize: "string"
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::MiscShow)
+
+        # jbuilder renders one scope per collection element and `child!`
+        # turns EACH scope into an array — [[{body}], [{body}]] at runtime.
+        expect(output).to include("comments: Array<Array<{")
+        expect(output).to include("body: string")
       end
 
       it "warns and skips child! at the template root" do
