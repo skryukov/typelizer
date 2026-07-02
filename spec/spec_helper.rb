@@ -12,24 +12,52 @@ require File.expand_path("app/config/environment", __dir__)
 # leaked setting shifts output fingerprints and breaks snapshot specs in an
 # order-dependent way. Restoring the whole state avoids whack-a-mole per-key
 # restoration.
+#
+# The snapshot is deep: nested arrays/hashes and the memoized RouteConfig
+# struct are cloned, so in-place mutation of a captured collection cannot
+# corrupt the snapshot. Frozen values (e.g. the frozen per-writer Configs)
+# are shared as-is — they cannot be mutated in place.
 module TypelizerConfigurationState
   STATE_IVARS = %i[
     @dirs
     @listen
+    @jbuilder_views
+    @jbuilder_enabled
     @writers
     @global_settings
     @writer_output_dirs
     @used_output_dirs
+    @routes
   ].freeze
 
   module_function
 
   def snapshot(configuration = Typelizer.configuration)
-    STATE_IVARS.to_h { |ivar| [ivar, configuration.instance_variable_get(ivar).dup] }
+    STATE_IVARS.to_h { |ivar| [ivar, deep_dup(configuration.instance_variable_get(ivar))] }
   end
 
   def restore(snapshot, configuration = Typelizer.configuration)
-    snapshot.each { |ivar, value| configuration.instance_variable_set(ivar, value.dup) }
+    snapshot.each { |ivar, value| configuration.instance_variable_set(ivar, deep_dup(value)) }
+  end
+
+  # Deep-dups mutable collections; shares frozen values (nil, booleans,
+  # symbols, frozen Configs) since they cannot be mutated in place. Struct
+  # members (RouteConfig) are cloned via raw slot access so overridden
+  # getters (RouteConfig#output_dir's computed fallback) don't bake derived
+  # values into the snapshot.
+  def deep_dup(value)
+    return value if value.frozen?
+
+    case value
+    when Hash then value.to_h { |k, v| [k, deep_dup(v)] }
+    when Array then value.map { |v| deep_dup(v) }
+    when Set then Set.new(value.map { |v| deep_dup(v) })
+    when Struct
+      value.dup.tap do |copy|
+        copy.members.each { |member| copy[member] = deep_dup(copy[member]) }
+      end
+    else value.dup
+    end
   end
 end
 
