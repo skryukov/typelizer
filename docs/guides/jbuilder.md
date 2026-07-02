@@ -126,12 +126,12 @@ For each `json.xxx` call, the effective resolution order is:
 1. **`typelize:` kwarg** — always wins. The property is marked user-asserted; model inference never overrides it.
 2. **Block** — produces a nested inline shape (or a named intersection for composed partials, see below).
 3. **`partial:` kwarg** — imports the partial's interface as a named type.
-4. **Walker guess** — literal values (`json.count 0` → `number`), `Time.*` calls (→ `string`), then name heuristics: `_id`/`id` → `number`, `_at`/`_on` → `string`, `_count`/`_total`/`total`/`page` → `number`, `is_`/`has_`/`can_`/`should_`/`was_` prefixes → `boolean`. Anything else → `unknown`.
-5. **Model inference** — when the template is bound to an ActiveRecord model (`typelize_from`), columns, associations, delegates, and attribute types are resolved through the same pipeline class-based serializers use. **Model inference overwrites the walker's guess**, including literal-derived types (see below).
+4. **Walker guess** — literal values (`json.count 0` → `number`), `Time.*` calls (→ `string`), then name heuristics: `_id`/`id` → `number`, `_at`/`_on` → `string`, `_count`/`_total`/`total`/`page` → `number`, `is_`/`has_`/`can_`/`should_`/`was_` prefixes → `boolean`. Anything else → `unknown`. Explicit nil signals in the value widen the guess with `| null`: safe navigation anywhere in the chain (`@post&.created_at`), `.try(:attr)`, `.presence`, and `a && b` (a nil left side leaks through). `a || fallback` types from the *fallback* — nil never survives an `||`, so `@x.title || "Untitled"` is `string`, not `string | null`.
+5. **Model inference** — when the template is bound to an ActiveRecord model (`typelize_from`), columns, associations, delegates, and attribute types are resolved through the same pipeline class-based serializers use. Model inference fills in name-heuristic guesses and `unknown`s — it never overrides a literal-derived type (see below).
 6. Still `unknown` after all of the above → emitted as `unknown` with a development warning (see [Unknown fallback](#unknown-fallback)).
 
-::: warning Model beats literal
-With a model binding, a matching column wins over the literal you wrote. `json.deleted true` against a *nullable string* `deleted` column generates `deleted: string | null`, not `boolean`. This keeps generated types honest about what the database can actually contain — use `typelize:` to assert otherwise.
+::: warning Literal beats model
+A type read off a literal you wrote wins over a same-named column: `json.deleted true` against a *nullable string* `deleted` column generates `deleted: boolean` — the template demonstrably renders a boolean, so the column type stays out of it. Name-heuristic guesses are different: `json.deleted record.deleted` *does* get resolved to the column's `string | null`. Use `typelize:` when neither is what you want.
 :::
 
 ## Extracting attributes
@@ -457,7 +457,21 @@ json.array! @portals, partial: "portals/portal", as: :portal
 
 A dynamic `partial:` value keeps the dynamic-reference warning (the root stays an object); an unresolvable or empty partial warns and degrades to `Array<unknown>`.
 
-A blockless root `json.array! @xs, :attrs` types as a root array of the attribute shape, and `json.(collection) { |el| ... }` (jbuilder's `call` form) is detected like `array!` — root-array detection also sees through `cache!`/`cache_if!`/`cache_root!` wrappers. One form can't participate and logs a warning instead of silently mistyping: a root array nested inside a conditional (the root stays an object).
+A blockless root `json.array! @xs, :attrs` types as a root array of the attribute shape, and `json.(collection) { |el| ... }` (jbuilder's `call` form) is detected like `array!` — root-array detection also sees through `cache!`/`cache_if!`/`cache_root!` wrappers. One form can't participate and logs a warning instead of silently mistyping: a root array nested inside a conditional in an otherwise *object* template (the root stays an object).
+
+A **second** root `json.array!` (conditional or not) in a template whose root already is an array CONCATENATES at render (`_merge_values(Array, Array)`) — elements of every form's shape appear in one array. The element type would be a union, which a flat property list can't express, so every merged element key widens to optional:
+
+```ruby
+json.array! @posts do |post|
+  json.id post.id
+end
+if @include_drafts
+  json.array! @drafts do |draft|
+    json.draft_title draft.title, typelize: "string"
+  end
+end
+# → type PostsIndexData = { id?: number; draft_title?: string }
+```
 
 ## Conditional fields
 
@@ -513,18 +527,21 @@ Generates:
 
 Chains without a final `else` fall back to optional, since one condition combination can skip every branch.
 
+An object block whose body might write nothing is optional too: jbuilder omits a key whose block scope rendered blank, so `json.settings do json.theme @t if @custom end` renders `{}` — no `settings` key at all — when the condition is false. The property widens to `settings?:`, and the omission cascades through enclosing blocks whose only content is such a block. A body that's guaranteed to write (an unconditional property, or an `if/else` writing in every branch) stays required, and collection-value blocks are exempt — they render `[]`, keeping the key.
+
 When branches disagree, same-name properties are merged with these rules:
 
 - **Nullability widens.** A branch emitting `null` (or a nullable type) makes the merged property nullable: `json.category @c, partial: "categories/category"` in one branch plus `json.category nil` in the other generates `category: Category | null`.
 - **Optionality widens.** A property marked optional in *any* branch (e.g. via `inertia: :defer`) stays optional after the merge — and it's widened exactly once, not doubled.
-- **Base types don't union.** When branches disagree on the base type (`string` vs `number`), the first branch's type wins — except that an explicit `typelize:` assertion in any branch beats inferred guesses. Pin the combined type with `typelize:` if the distinction matters.
+- **Disagreeing types union.** Only one branch runs at render, so `json.value 1` in one branch and `json.value "one"` in the other generates `value: number | string` — object blocks included (`{secret: string} | {public_info: string}`). A member the walker can't type stays in the union as `unknown` (and warns); a column-delegated member (`json.extract!` in one branch) resolves through model inference. An explicit `typelize:` assertion in any branch still wins outright.
 
 Re-setting the same key *sequentially* (outside branches) follows jbuilder's runtime re-set semantics instead, in statement order:
 
 - A later **unconditional** write **replaces** the type — last write wins (`json.status 1` then `json.status "active"` generates `status: string`), including an own property overriding a merged `json.partial!`'s. This applies to `typelize:` too: an assertion annotates a *write*, so an assertion whose value is unconditionally overwritten later is dead, and the last asserted write wins.
-- Two **object blocks deep-merge** per key (jbuilder's `_merge_block`), recursively applying these same rules. Keys arriving only from a *conditional* block become optional — in both directions: a conditional block followed by an unconditional one keeps just the conditional block's own keys optional.
-- A later **conditional** write **unions** with the earlier type, keeping each occurrence's array-ness on its own side of the union: an array block conditionally re-set with a scalar generates `Array<{...}> | string`, never `Array<{...} | string>`. A conditional bare `nil` contributes `| null` instead of a union member, and a surviving `typelize:` assertion stays asserted through the union.
-- A **composed-partial (intersection) property** conditionally re-set is not expressible as a TS union (`A & B | C` binds as `A & (B | C)`), so the walker warns and emits `unknown` — pin the combined type with `typelize:`.
+- Two **object blocks deep-merge** per key (jbuilder's `_merge_block`), recursively applying these same rules. Keys arriving only from a *conditional* block become optional — in both directions: a conditional block followed by an unconditional one keeps just the conditional block's own keys optional. An unconditional object block after a *union* (say, object block + conditional scalar) deep-merges with the union's object members and drops scalar members — jbuilder raises `Jbuilder::MergeError` when a block re-sets a scalar, so no successful render contains them.
+- A later **conditional** write **unions** with the earlier type, keeping each occurrence's array-ness on its own side of the union: an array block conditionally re-set with a scalar generates `Array<{...}> | string`, never `Array<{...} | string>`. A conditional bare `nil` contributes `| null` instead of a union member, and a surviving `typelize:` assertion stays asserted through the union. A column-delegated occurrence (`json.extract! @user, :active` plus a conditional literal re-set) keeps the column's type in the union — `active: boolean | string`.
+- A **valueless `child!` block concatenates.** `json.items do json.child! ... end` over a key that already holds an array goes through jbuilder's `_merge_values(Array, Array)` branch, which *appends* — the element types union: `Array<{a: number} | {b: number}>`. The mirror order (a collection-value block re-setting a `child!` array) replaces, matching `_set_value`.
+- A **composed-partial (intersection) property** conditionally re-set with a *bare `nil`* is fine: `&` binds tighter than `|` in TS, so it generates `Course & CourseDetails | null` — exactly `(Course & CourseDetails) | null`. Re-set with any *non-null* member it can't be rendered faithfully (the union and the intersection can't nest in one property), so the walker warns and emits `unknown` — pin the combined type with `typelize:`.
 
 ## Caching blocks
 
@@ -601,6 +618,8 @@ for `mystery` — emitted `unknown`; pin it with `typelize:`
 ```
 
 The warning is decided *after* model inference, so a `json.deleted record.deleted` that a model column rescues never warns. It fires once per template+property per generation cycle. Add `typelize:` to silence it.
+
+Union members count: `unknown | string` *is* `unknown` in TypeScript, so a property whose union carries an untypeable member (an uninferable value unioned with a conditional literal, say) warns too — the message notes the `unknown` sits inside a union.
 
 ## Staged migration from another serializer
 
