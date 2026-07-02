@@ -22,6 +22,13 @@ gem "panko_serializer"
 
 gem "jbuilder"
 
+# The jbuilder plugin activates prism lazily at runtime (with an actionable
+# error when it's missing), so prism is deliberately NOT a gemspec
+# dependency. The suite's jbuilder specs DO need it — declare it here so
+# every CI Ruby (3.0+) resolves it deterministically instead of relying on
+# a transitive pick (all prism 1.x support Ruby >= 2.7).
+gem "prism", ">= 1.0"
+
 # Rails app
 gem "rails", "~> 7.1.3"
 gem "pg", "~> 1.1"
