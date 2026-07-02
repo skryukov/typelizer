@@ -70,7 +70,11 @@ RSpec.describe Typelizer do
       expect(Typelizer.interfaces).to eq([])
     ensure
       Typelizer.configuration.jbuilder_enabled = nil
-      Typelizer.send(:base_classes=, original)
+      # Union, not overwrite: DSL registration is a one-shot load-time side
+      # effect, so any first-time file loads triggered inside this example
+      # register into the swapped-in Set — overwriting with the pre-example
+      # snapshot would discard them for the rest of the process.
+      Typelizer.send(:base_classes=, original | Typelizer.base_classes)
     end
 
     it "uses per-writer reject_class when writer_name is given" do

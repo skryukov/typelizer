@@ -48,5 +48,16 @@ RSpec.configure do |config|
     # Generated output of the dummy app. Stale files from a previous run
     # interact with Writer#write_file's digest short-circuit, so start clean.
     FileUtils.rm_rf(Rails.root.join("app/javascript/types"))
+
+    # Serializer registration is a load-time side effect: Typelizer::DSL's
+    # included/extended hooks push the class name into Typelizer.base_classes
+    # when a serializer file is FIRST required, and Typelizer.interfaces
+    # requires files lazily (first-time-only per process). Preload them all
+    # so the registry is fully populated before any example runs — otherwise
+    # the process's first generation cycle can happen inside an example that
+    # swapped base_classes (openapi_spec's "no serializers" premise), which
+    # both breaks that example's assertion and permanently discards the
+    # in-flight registrations for the rest of the process.
+    Typelizer.dirs.flat_map { |dir| Dir["#{dir}/**/*.rb"] }.sort.each { |file| require file }
   end
 end
