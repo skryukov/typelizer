@@ -162,12 +162,12 @@ module Typelizer
             freeze
           end
 
+          # Recursive: a nested wrapper (`ArrayOf(ArrayOf(Shape))`, from
+          # `json.child!` inside a collection-value block folded into a
+          # union) must still expose its inner Shapes to type inference and
+          # the post-inference unknown warning.
           def map_element_shape(&block)
-            case element
-            when Shape then self.class.new(yield(element))
-            when Array then self.class.new(element.map { |m| m.is_a?(Shape) ? yield(m) : m })
-            else self
-            end
+            self.class.new(map_member(element, &block))
           end
 
           def to_s
@@ -185,6 +185,15 @@ module Typelizer
           end
 
           private
+
+          def map_member(member, &block)
+            case member
+            when Shape then yield member
+            when Array then member.map { |m| map_member(m, &block) }
+            when self.class then member.map_element_shape(&block)
+            else member
+            end
+          end
 
           def render_member(member)
             case member

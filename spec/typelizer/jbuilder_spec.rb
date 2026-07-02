@@ -3420,6 +3420,82 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "union dedupe and nested array inference (round 5)" do
+      it "dedupes same-type union members on a conditional re-set" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.status "active"
+          json.status "archived" if @archived
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("status: string;")
+        expect(output).not_to include("string | string")
+      end
+
+      # A conditional identical array block dedupes to ONE ArrayOf member,
+      # which must fold back to the plain `multi` representation — not stay
+      # a single-member union.
+      it "folds a single surviving ArrayOf union member back to a plain array type" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.tags @tags do |t|
+            json.label "x"
+          end
+          if @extra
+            json.tags @other_tags do |t|
+              json.label "x"
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to match(/tags: Array<\{\s*label: string;\s*\}>/)
+        expect(output).not_to include("> | Array<")
+      end
+
+      it "warns for an unknown prop inside an ArrayOf element shape (child! in a collection block)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.comments @comments do |c|
+            json.child! do
+              json.mystery some_helper_value
+            end
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("could not infer a type for `mystery`")
+        expect(logs).to include("things/show.json.jbuilder:3")
+      end
+
+      # `ArrayOf(ArrayOf(Shape))` — a child!-in-collection block folded into
+      # a union — must keep inference reaching the inner Shape.
+      it "runs model inference through a nested ArrayOf union member" do
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          json.grid @rows do |r|
+            json.child! do
+              json.extract! r, :id
+            end
+          end
+          json.grid "empty" if @empty
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+
+        expect(output).to include("id: number")
+        expect(output).to include("Array<Array<")
+      end
+    end
+
     describe "cross-branch type unions (round 5)" do
       # Only one branch runs at render: `@flag1 ? 20 : @d1` demonstrably
       # renders `false` when @d1 is false, so emitting `number` alone was a
