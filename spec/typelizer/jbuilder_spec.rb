@@ -3100,6 +3100,64 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "intersection nullability (round 5)" do
+      # `&` binds tighter than `|` in TS: `Course & CourseDetails | null` is
+      # exactly `(Course & CourseDetails) | null` — a conditional bare nil
+      # over an intersection is fully expressible and must not warn or
+      # degrade (a false warning fails strict builds).
+      it "widens a composed-partial (intersection) prop to | null on a conditional bare nil" do
+        write_template("courses/_course.json.jbuilder", <<~RUBY)
+          json.id course.id, typelize: "number"
+        RUBY
+        write_template("courses/_course_details.json.jbuilder", <<~RUBY)
+          json.summary course.summary, typelize: "string"
+        RUBY
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.course do
+            json.partial! "courses/course"
+            json.partial! "courses/course_details"
+          end
+          json.course nil if @hidden
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("course: Course & CourseDetails | null")
+        expect(logs).to eq("")
+      end
+
+      it "widens to | null when the unconditional write is the bare nil (reverse order)" do
+        write_template("courses/_course.json.jbuilder", <<~RUBY)
+          json.id course.id, typelize: "number"
+        RUBY
+        write_template("courses/_course_details.json.jbuilder", <<~RUBY)
+          json.summary course.summary, typelize: "string"
+        RUBY
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.course nil
+          if @visible
+            json.course do
+              json.partial! "courses/course"
+              json.partial! "courses/course_details"
+            end
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("course: Course & CourseDetails | null")
+        expect(logs).to eq("")
+      end
+    end
+
     describe "shadowed-builder-param warning precision (round 5)" do
       # Reading THROUGH the shadowing name (`j[:amount]`, `j.fetch`) is
       # legitimate element access — the template renders correctly, so a

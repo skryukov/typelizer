@@ -541,22 +541,27 @@ module Typelizer
               type: deep_merge_shapes(acc.type, incoming.type, incoming_optional: true, earlier_optional: acc.optional),
               nullable: acc.nullable || incoming.nullable
             )
+          elsif null_type?(incoming)
+            # A conditional bare `nil` contributes nullability, not type; a
+            # `null`-typed accumulator already covers it (no `null | null`).
+            # This holds for intersection (composed-partial) accumulators
+            # too: `&` binds tighter than `|` in TS, so the rendered
+            # `A & B | null` is exactly `(A & B) | null` — no degrade needed.
+            null_type?(acc) ? acc : acc.with(nullable: true)
+          elsif null_type?(acc)
+            # Unconditional `nil` then a conditional real write: <real> | null.
+            incoming.with(optional: acc.optional, nullable: true)
           elsif acc.additional_types&.any? || incoming.additional_types&.any?
             # An intersection type (composed-partial block) conditionally
-            # re-set can't be rendered inside a union — `A & B | C` binds as
-            # `A & (B | C)` in TS, a silently wrong type. Warn and emit
+            # re-set with a non-null member has no faithful rendering:
+            # `Property#render` joins the union FIRST and appends the
+            # intersection members after (`A | string & B`), which TS binds
+            # as `A | (string & B)` — silently wrong. Warn and emit
             # `unknown` instead.
             warn_merge("`#{acc.name}` conditionally re-sets a composed-partial (intersection) " \
               "type; the resulting union is not statically expressible — emitted `unknown`; " \
               "use `typelize:` to pin the type")
             build_property(acc.name, type: "unknown", optional: acc.optional)
-          elsif null_type?(incoming)
-            # A conditional bare `nil` contributes nullability, not type; a
-            # `null`-typed accumulator already covers it (no `null | null`).
-            null_type?(acc) ? acc : acc.with(nullable: true)
-          elsif null_type?(acc)
-            # Unconditional `nil` then a conditional real write: <real> | null.
-            incoming.with(optional: acc.optional, nullable: true)
           else
             merged_type, merged_multi = union_of(acc, incoming)
             # A delegated (nil-typed) occurrence keeps the merged prop OPEN
