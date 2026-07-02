@@ -255,9 +255,16 @@ module Typelizer
       end
     end
 
+    # Strips only a TRAILING Serializer/Resource suffix off the demodulized
+    # class name (mirroring the default serializer_name_mapper), so
+    # `AResourceFoo::UserSerializer` yields "User" — a leftmost scan would
+    # stop at "A(Resource…)". Names with no suffix at all (e.g. jbuilder's
+    # `Templates::Post`) keep their demodulized name instead of crashing.
     def self_type_name
-      serializer.name.to_s[/\w+(?=(?:Serializer|Resource))/] ||
-        config.serializer_name_mapper.call(serializer).tr_s(":", "")
+      base = serializer.name.to_s.split("::").last.to_s.sub(/(?:Serializer|Resource)\z/, "")
+      return base unless base.empty?
+
+      config.serializer_name_mapper.call(serializer).tr_s(":", "")
     end
 
     # Only a named interface element needs an import; plain type strings
