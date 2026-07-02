@@ -1464,6 +1464,27 @@ RSpec.describe Typelizer::Jbuilder do
         walker = Typelizer::SerializerPlugins::Jbuilder.activate_walker!
         expect(walker.metadata_for(path)[:type_name]).to eq("CustomThing")
       end
+
+      it "ignores typelize_as/typelize_from metadata from a syntax-broken template (recovered tree is untrustworthy)" do
+        path = write_template("trap/show.json.jbuilder", <<~RUBY)
+          typelize_as "SyntaxTrap"
+          typelize_from User
+
+          json.foo do
+            json.bar 1
+        RUBY
+
+        walker = Typelizer::SerializerPlugins::Jbuilder.activate_walker!
+        metadata = nil
+        with_capture_logger { metadata = walker.metadata_for(path) }
+
+        expect(metadata).to eq({type_name: nil, model: nil})
+
+        # Registration therefore falls back to the path-derived name.
+        with_capture_logger { Typelizer::Jbuilder.discover(views_root) }
+        expect(Typelizer::Jbuilder::Templates.const_defined?(:TrapShow, false)).to be true
+        expect(Typelizer::Jbuilder::Templates.const_defined?(:SyntaxTrap, false)).to be false
+      end
     end
 
     describe "if/elsif/else branch merging" do
