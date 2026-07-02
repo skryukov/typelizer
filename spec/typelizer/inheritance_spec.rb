@@ -12,11 +12,12 @@ RSpec.describe "Typelizer Inheritance", type: :typelizer do
   end
 
   around do |ex|
+    state = TypelizerConfigurationState.snapshot(configuration)
     restore_defaults!
 
     ex.call
 
-    restore_defaults!
+    TypelizerConfigurationState.restore(state, configuration)
   end
 
   describe "correct config ordering" do

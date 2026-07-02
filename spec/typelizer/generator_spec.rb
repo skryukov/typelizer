@@ -3,7 +3,7 @@
 RSpec.describe Typelizer::Generator, type: :typelizer do
   let(:configuration) { Typelizer.configuration }
   let(:default_output_dir) { configuration.writer_config(:default).output_dir }
-  let(:camel_case_output_dir) { configuration.writer_config(:camel_case).output_dir }
+  let(:camel_case_output_dir) { CamelCaseWriterFixture.output_dir }
 
   def restore_defaults!
     configuration.reset_writers!
@@ -13,11 +13,12 @@ RSpec.describe Typelizer::Generator, type: :typelizer do
   end
 
   around do |ex|
+    state = TypelizerConfigurationState.snapshot(configuration)
     restore_defaults!
 
     ex.call
 
-    restore_defaults!
+    TypelizerConfigurationState.restore(state, configuration)
 
     FileUtils.rm_rf(camel_case_output_dir)
   end
