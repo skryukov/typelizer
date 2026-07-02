@@ -896,6 +896,230 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "re-set semantics (round 4)" do
+      # jbuilder is last-write-wins: `typelize:` annotates a WRITE, so an
+      # assertion whose value never survives to render is dead.
+      it "lets a later unconditional write override an earlier typelize: assertion" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.status @raw, typelize: "number"
+          json.status "active"
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("status: string")
+        expect(output).not_to include("number")
+      end
+
+      it "lets an own unconditional write override a merged partial's asserted prop" do
+        write_template("things/_thing.json.jbuilder", <<~RUBY)
+          json.name @thing_name, typelize: "string"
+        RUBY
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.partial! "things/thing"
+          json.name 42
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("name: number")
+        expect(output).not_to include("name: string")
+      end
+
+      it "honors the LAST of two typelize: assertions (statement order, like the render)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.v @a, typelize: "number"
+          json.v @b, typelize: "string"
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("v: string")
+        expect(output).not_to include("number")
+      end
+
+      it "unions a trailing conditional re-set with a surviving assertion" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.v @a, typelize: "number"
+          json.v "degraded" if @fallback
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("v: number | string")
+      end
+
+      # The union of an array block and a scalar keeps Array<> on ITS side of
+      # the union — the scalar never lives inside the array.
+      it "keeps Array<> on the array side when an array block is conditionally re-set with a scalar" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items @items do |i|
+            json.id i, typelize: "number"
+          end
+          json.items "unavailable" if @degraded
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("items: Array<{")
+        expect(output).to include("}> | string;")
+        expect(output).not_to match(/Array<[^>]*string/m)
+      end
+
+      it "keeps the Array<> wrapper when the array block is the conditional side" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items "empty"
+          if @full
+            json.items @items do |i|
+              json.id i, typelize: "number"
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("items: string | Array<{")
+        expect(output).to include("id: number")
+      end
+
+      # Mirror image of "keys arriving from a conditional block re-merge are
+      # optional": when the EARLIER block is the conditional one, a render
+      # where only the unconditional block ran lacks its keys.
+      it "widens the earlier conditional block's own keys when deep-merged with a later unconditional block" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @admin
+            json.author do
+              json.internal_note "x"
+            end
+          end
+          json.author do
+            json.name "y"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("internal_note?: string")
+        expect(output).to include("name: string")
+        expect(output).to include("author: {")
+      end
+
+      it "unions a key shared by both blocks when the later block is conditional (deep merge, same key)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.author do
+            json.name "x"
+          end
+          if @legacy
+            json.author do
+              json.name 1
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("name: string | number")
+        expect(output).not_to include("name?:")
+      end
+
+      it "runs model inference inside union members (block shape conditionally re-set with a scalar)" do
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          json.payload do
+            json.extract! @user, :id, :name
+          end
+          json.payload "redacted" if @hidden
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+
+        expect(output).to include("id: number")
+        expect(output).to include("name: string")
+        expect(output).to include("} | string")
+      end
+
+      it "warns for unknown props inside union members (strict builds must see them)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.payload do
+            json.mystery some_helper
+          end
+          json.payload "redacted" if @hidden
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("could not infer a type for `mystery`")
+        expect(logs).to include("things/show.json.jbuilder:2")
+      end
+
+      it "does not render null | null for an unconditional nil plus a conditional nil re-set" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.legacy nil
+          json.legacy nil if @flag
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("legacy: null;")
+        expect(output).not_to include("null | null")
+      end
+
+      it "widens to | null when a conditional bare nil re-sets a literal" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.foo 1
+          json.foo nil if @redacted
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("foo: number | null")
+      end
+
+      # `A & B | C` binds as `A & (B | C)` in TS — the union of an
+      # intersection type is not expressible, so it must warn + `unknown`,
+      # never render silently wrong.
+      it "warns and emits unknown when a composed-partial (intersection) prop is conditionally re-set" do
+        write_template("courses/_course.json.jbuilder", <<~RUBY)
+          json.id course.id, typelize: "number"
+        RUBY
+        write_template("courses/_course_details.json.jbuilder", <<~RUBY)
+          json.summary course.summary, typelize: "string"
+        RUBY
+        write_template("courses/show.json.jbuilder", <<~RUBY)
+          json.course do
+            json.partial! "courses/course"
+            json.partial! "courses/course_details"
+          end
+          json.course "hidden" if @restricted
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::CoursesShow)
+        end
+
+        expect(logs).to include("not statically expressible")
+        expect(output).to include("course: unknown")
+        expect(output).not_to include("Course | ")
+      end
+    end
+
     describe "root array detection (re-review round 3)" do
       it "types `json.(collection) { |el| ... }` as a root array (jbuilder's call form)" do
         write_template("people/index.json.jbuilder", <<~RUBY)

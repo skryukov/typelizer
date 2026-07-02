@@ -518,7 +518,12 @@ When branches disagree, same-name properties are merged with these rules:
 - **Optionality widens.** A property marked optional in *any* branch (e.g. via `inertia: :defer`) stays optional after the merge — and it's widened exactly once, not doubled.
 - **Base types don't union.** When branches disagree on the base type (`string` vs `number`), the first branch's type wins — except that an explicit `typelize:` assertion in any branch beats inferred guesses. Pin the combined type with `typelize:` if the distinction matters.
 
-Re-setting the same key *sequentially* (outside branches) follows jbuilder's runtime re-set semantics instead: a later unconditional write **replaces** the type (`json.status 1` then `json.status "active"` generates `status: string` — including an own property overriding a merged `json.partial!`'s), two object blocks **deep-merge** per key, and a later *conditional* write unions with the earlier type (keys arriving only from the conditional block become optional).
+Re-setting the same key *sequentially* (outside branches) follows jbuilder's runtime re-set semantics instead, in statement order:
+
+- A later **unconditional** write **replaces** the type — last write wins (`json.status 1` then `json.status "active"` generates `status: string`), including an own property overriding a merged `json.partial!`'s. This applies to `typelize:` too: an assertion annotates a *write*, so an assertion whose value is unconditionally overwritten later is dead, and the last asserted write wins.
+- Two **object blocks deep-merge** per key (jbuilder's `_merge_block`), recursively applying these same rules. Keys arriving only from a *conditional* block become optional — in both directions: a conditional block followed by an unconditional one keeps just the conditional block's own keys optional.
+- A later **conditional** write **unions** with the earlier type, keeping each occurrence's array-ness on its own side of the union: an array block conditionally re-set with a scalar generates `Array<{...}> | string`, never `Array<{...} | string>`. A conditional bare `nil` contributes `| null` instead of a union member, and a surviving `typelize:` assertion stays asserted through the union.
+- A **composed-partial (intersection) property** conditionally re-set is not expressible as a TS union (`A & B | C` binds as `A & (B | C)`), so the walker warns and emits `unknown` — pin the combined type with `typelize:`.
 
 ## Caching blocks
 

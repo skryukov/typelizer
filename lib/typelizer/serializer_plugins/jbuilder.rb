@@ -87,11 +87,14 @@ module Typelizer
       # different nesting levels.
       def warn_unknown_property(prop, path:)
         unless final_unknown?(prop)
-          # Recurse into inline shapes (own type + intersection members).
-          # Checked after the cheap unknown test so typed leaves allocate
-          # nothing; an unknown-typed prop never carries Shape members.
+          # Recurse into inline shapes (own type, union members, array
+          # wrappers, intersection members). Checked after the cheap unknown
+          # test so typed leaves allocate nothing; an unknown-typed prop
+          # never carries Shape members.
           child_path = path + [prop.name.to_s]
-          prop.type.properties.each { |sub| warn_unknown_property(sub, path: child_path) } if prop.type.is_a?(Shape)
+          each_member_shape(prop.type) do |shape|
+            shape.properties.each { |sub| warn_unknown_property(sub, path: child_path) }
+          end
           prop.additional_types&.each do |member|
             member.properties.each { |sub| warn_unknown_property(sub, path: child_path) } if member.is_a?(Shape)
           end
@@ -120,6 +123,19 @@ module Typelizer
         return false if prop.user_asserted || prop.enum
 
         walker.class.unknown_type?(prop.type)
+      end
+
+      # Yields every inline Shape reachable from a property TYPE: the type
+      # itself, each union member (Array type), and array-wrapper elements
+      # (duck-typed via `element` — the walker's `ArrayOf`). Union members
+      # must warn too, or strict builds pass on silent unknowns inside them.
+      def each_member_shape(type, &block)
+        case type
+        when Shape then yield type
+        when Array then type.each { |member| each_member_shape(member, &block) }
+        else
+          each_member_shape(type.element, &block) if type.respond_to?(:element)
+        end
       end
 
       def walker

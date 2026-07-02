@@ -131,6 +131,57 @@ module Typelizer
           end
         end
 
+        # A rendered array type for the spots where the Property-level `multi`
+        # flag can't express array-ness: one side of a re-set union (an array
+        # block conditionally re-set with a scalar renders
+        # `Array<X> | string`, never `Array<X | string>`) and the element of
+        # a nested array (`json.child!` inside a collection-value block —
+        # `Array<Array<X>>`). Renders as `Array<element>` via `to_s`;
+        # `map_element_shape` lets type inference and the post-inference
+        # unknown warning recurse into a Shape element the same way they walk
+        # plain Shape members (duck-typed, so nothing eager-loaded needs this
+        # lazily-loaded class).
+        class ArrayOf
+          attr_reader :element
+
+          def initialize(element)
+            @element = element
+            freeze
+          end
+
+          def map_element_shape(&block)
+            case element
+            when Shape then self.class.new(yield(element))
+            when Array then self.class.new(element.map { |m| m.is_a?(Shape) ? yield(m) : m })
+            else self
+            end
+          end
+
+          def to_s
+            members = element.is_a?(Array) ? element : [element]
+            "Array<#{members.map { |m| render_member(m) }.join(" | ")}>"
+          end
+
+          def ==(other)
+            other.is_a?(self.class) && element == other.element
+          end
+          alias_method :eql?, :==
+
+          def hash
+            [self.class, element].hash
+          end
+
+          private
+
+          def render_member(member)
+            case member
+            when Shape then member.to_s
+            when nil then "unknown"
+            else member.respond_to?(:name) ? member.name : member.to_s
+            end
+          end
+        end
+
         TYPE_BY_LITERAL = {
           Prism::StringNode => "string",
           Prism::InterpolatedStringNode => "string",
@@ -385,37 +436,36 @@ module Typelizer
         #
         # - a later UNCONDITIONAL write replaces the value (last-wins:
         #   `json.status 1` then `json.status "active"` renders the string —
-        #   including an own prop overriding a merged partial's)
+        #   including an own prop overriding a merged partial's, and
+        #   including an earlier `typelize:` assertion whose value never
+        #   survives to render: that assertion is dead)
         # - two object blocks DEEP-MERGE per key (jbuilder's `_merge_block`)
         # - a later CONDITIONAL write may or may not run, so it unions with
-        #   what's there; a conditional bare `nil` contributes nullability
-        # - a `typelize:` assertion anywhere pins the type outright
+        #   what's there (a surviving assertion stays asserted); a
+        #   conditional bare `nil` contributes nullability
         def merge_same_level(props)
           return props if props.map { |p| p.name.to_s }.uniq.size == props.size
 
           props.group_by { |p| p.name.to_s }.values.map do |occurrences|
-            next occurrences.first if occurrences.size == 1
-
-            merged = occurrences.reduce { |acc, incoming| merge_reset(acc, incoming) }
-            if (asserted = occurrences.find(&:user_asserted))
-              merged = asserted.with(
-                optional: merged.optional,
-                nullable: asserted.nullable || merged.nullable
-              )
-            end
-            merged
+            occurrences.reduce { |acc, incoming| merge_reset(acc, incoming) }
           end
         end
 
-        # One re-set step: `acc` is the type accumulated so far, `incoming`
-        # the next same-name write in statement order.
+        # One re-set step: `acc` is what accumulated so far, `incoming` the
+        # next same-name write in statement order. Each occurrence is folded
+        # as its FULL rendered type — type + multi + nullable +
+        # optional (≙ conditional) + user_asserted — mirroring what jbuilder
+        # does with the rendered VALUE at runtime: an unconditional write is
+        # `_set_value` (replace) or `_merge_block` (object deep-merge); a
+        # conditional write forks the runtime into ran/didn't-run, i.e. a
+        # union of the folded result with the accumulator.
         def merge_reset(acc, incoming)
           if !incoming.optional
             # Unconditional: this write always happens at runtime — it
             # replaces a scalar or deep-merges into an existing object.
             if shape_pair?(acc, incoming)
               incoming.with(
-                type: deep_merge_shapes(acc.type, incoming.type, incoming_optional: false),
+                type: deep_merge_shapes(acc.type, incoming.type, incoming_optional: false, earlier_optional: acc.optional),
                 optional: false
               )
             else
@@ -423,19 +473,33 @@ module Typelizer
             end
           elsif shape_pair?(acc, incoming)
             acc.with(
-              type: deep_merge_shapes(acc.type, incoming.type, incoming_optional: true),
+              type: deep_merge_shapes(acc.type, incoming.type, incoming_optional: true, earlier_optional: acc.optional),
               nullable: acc.nullable || incoming.nullable
             )
+          elsif acc.additional_types&.any? || incoming.additional_types&.any?
+            # An intersection type (composed-partial block) conditionally
+            # re-set can't be rendered inside a union — `A & B | C` binds as
+            # `A & (B | C)` in TS, a silently wrong type. Warn and emit
+            # `unknown` instead.
+            warn_merge("`#{acc.name}` conditionally re-sets a composed-partial (intersection) " \
+              "type; the resulting union is not statically expressible — emitted `unknown`; " \
+              "use `typelize:` to pin the type")
+            build_property(acc.name, type: "unknown", optional: acc.optional)
           elsif null_type?(incoming)
-            # A conditional bare `nil` contributes nullability, not type.
-            acc.with(nullable: true)
+            # A conditional bare `nil` contributes nullability, not type; a
+            # `null`-typed accumulator already covers it (no `null | null`).
+            null_type?(acc) ? acc : acc.with(nullable: true)
           elsif null_type?(acc)
-            # Unconditional `nil` then a conditional real write: null | <real>.
+            # Unconditional `nil` then a conditional real write: <real> | null.
             incoming.with(optional: acc.optional, nullable: true)
           else
+            merged_type, merged_multi = union_of(acc, incoming)
             acc.with(
-              type: union_types(acc, incoming),
-              nullable: acc.nullable || incoming.nullable
+              type: merged_type,
+              multi: merged_multi,
+              nullable: acc.nullable || incoming.nullable,
+              user_asserted: acc.user_asserted || incoming.user_asserted,
+              inference_locked: acc.inference_locked || incoming.inference_locked
             )
           end
         end
@@ -447,10 +511,15 @@ module Typelizer
         end
 
         # jbuilder `_merge_block`: keys merge recursively — a later write to
-        # an existing key follows the same re-set rules; keys arriving from a
-        # CONDITIONAL later block count as conditional writes.
-        def deep_merge_shapes(earlier, later, incoming_optional:)
-          merged = earlier.properties.each_with_object({}) { |p, h| h[p.name.to_s] = p }
+        # an existing key follows the same re-set rules. Keys arriving from a
+        # CONDITIONAL later block count as conditional writes; the mirror
+        # holds too: when the EARLIER block was conditional, its keys may be
+        # absent from a render where only the later block ran, so they widen
+        # to optional unless the later block re-sets them unconditionally.
+        def deep_merge_shapes(earlier, later, incoming_optional:, earlier_optional: false)
+          merged = earlier.properties.each_with_object({}) do |p, h|
+            h[p.name.to_s] = earlier_optional ? p.with(optional: true) : p
+          end
           later.properties.each do |prop|
             key = prop.name.to_s
             prop = prop.with(optional: true) if incoming_optional
@@ -459,9 +528,27 @@ module Typelizer
           Shape.new(properties: merged.values)
         end
 
-        def union_types(acc, incoming)
-          types = (Array(acc.type) + Array(incoming.type)).uniq
-          (types.size == 1) ? types.first : types
+        # The union of two occurrences' RENDERED types: `multi` wraps its own
+        # occurrence's member (`Array<X> | string`), members dedupe, and a
+        # single surviving member folds back into the plain type/multi
+        # representation. Returns [type, multi].
+        def union_of(acc, incoming)
+          members = (union_members(acc) + union_members(incoming)).uniq
+          # Both sides delegated to model inference (type nil): stay nil so
+          # inference still fills the merged prop in.
+          return [nil, false] if members.empty?
+          return [members, false] if members.size > 1
+
+          member = members.first
+          member.is_a?(ArrayOf) ? [member.element, true] : [member, false]
+        end
+
+        # A nil type (delegated to model inference) contributes no member —
+        # the surviving side's type stands alone, as before the merge.
+        def union_members(prop)
+          return [ArrayOf.new(prop.type || "unknown")] if prop.multi
+
+          Array(prop.type)
         end
 
         # Control-flow forms the walker doesn't model: bodies aren't walked
@@ -1124,8 +1211,10 @@ module Typelizer
             (!null_type?(base) && occurrences.any? { |p| null_type?(p) })
         end
 
+        # `multi` guard: an array of nulls (`typelize: "null[]"`) is not the
+        # `null` literal.
         def null_type?(prop)
-          (prop.type.is_a?(String) || prop.type.is_a?(Symbol)) && prop.type.to_s == "null"
+          (prop.type.is_a?(String) || prop.type.is_a?(Symbol)) && prop.type.to_s == "null" && !prop.multi
         end
 
         # With an inferable (AR) model the type stays nil so model inference
@@ -1228,6 +1317,12 @@ module Typelizer
 
         def log_warning(node, message)
           Typelizer.logger.warn("Typelizer::Jbuilder: #{@path}:#{node.location.start_line}: #{message}")
+        end
+
+        # Merge-time warnings fold multiple statements, so there is no single
+        # source node to cite — the template path alone locates the problem.
+        def warn_merge(message)
+          Typelizer.logger.warn("Typelizer::Jbuilder: #{@path}: #{message}")
         end
 
         # Value-level inference: the type, whether it came from a source-code
