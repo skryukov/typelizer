@@ -35,6 +35,20 @@ module Typelizer
 
       private
 
+      # Model inference may WIDEN a property's nullability/optionality but
+      # never narrow it: a serializer plugin that proved a nil render (or an
+      # omitted key) — e.g. the jbuilder walker folding `json.name nil` —
+      # arrives with the flag already true, and a NOT NULL column must not
+      # erase that evidence. Props arriving without the flag (nil/false)
+      # keep the plain assignment this plugin always did.
+      def widen_nullable(prop, value)
+        prop.nullable = value unless prop.nullable
+      end
+
+      def widen_optional(prop, value)
+        prop.optional = value unless prop.optional
+      end
+
       def columns_hash
         return nil unless model_class
         return nil if model_class.abstract_class?
@@ -60,17 +74,17 @@ module Typelizer
           foreign_key = association.foreign_key
           column = columns_hash&.dig(foreign_key.to_s)
           if config.associations_strategy == :database
-            prop.nullable = column.null if column
+            widen_nullable(prop, column.null) if column
           elsif config.associations_strategy == :active_record
-            prop.nullable = association.options[:optional] === true || association.options[:required] === false
+            widen_nullable(prop, association.options[:optional] === true || association.options[:required] === false)
           else
             raise "Unknown associations strategy: #{config.associations_strategy}"
           end
         when :has_one
           if config.associations_strategy == :database
-            prop.nullable = true
+            widen_nullable(prop, true)
           elsif config.associations_strategy == :active_record
-            prop.nullable = !association.options[:required]
+            widen_nullable(prop, !association.options[:required])
           else
             raise "Unknown associations strategy: #{config.associations_strategy}"
           end
@@ -87,12 +101,12 @@ module Typelizer
         prop.multi = !!column.try(:array)
         case config.null_strategy
         when :nullable
-          prop.nullable = column.null
+          widen_nullable(prop, column.null)
         when :optional
-          prop.optional = column.null
+          widen_optional(prop, column.null)
         when :nullable_and_optional
-          prop.nullable = column.null
-          prop.optional = column.null
+          widen_nullable(prop, column.null)
+          widen_optional(prop, column.null)
         else
           raise "Unknown null strategy: #{config.null_strategy}"
         end
@@ -134,7 +148,7 @@ module Typelizer
 
         prop.type = @config.type_mapping[col.type]
         prop.multi = !!col.try(:array)
-        prop.nullable = col.null || info[:allow_nil]
+        widen_nullable(prop, col.null || info[:allow_nil])
         prop
       end
 
