@@ -90,7 +90,7 @@ module Typelizer
               # `typelize_as`/`typelize_from` after a `json.*` line (which has a
               # receiver) must still be picked up rather than silently dropped.
               next unless node.is_a?(Prism::CallNode) && node.receiver.nil?
-              arg = node.arguments&.arguments&.first
+              arg = unwrap_parens(node.arguments&.arguments&.first)
               case node.name
               when :typelize_as
                 result[:type_name] ||= literal_string(arg)
@@ -110,6 +110,19 @@ module Typelizer
             @walks_in_progress = Set.new
             @warned_empty_partials = Set.new
             @warned_syntax_errors = Set.new
+          end
+
+          # A value spelled with a space before its parens (`json.x (expr)`)
+          # parses as a ParenthesesNode argument — unwrap single-statement
+          # bodies so the inner expression infers exactly like the tight
+          # spelling `json.x(expr)`.
+          def unwrap_parens(node)
+            while node.is_a?(Prism::ParenthesesNode)
+              stmts = node.body.is_a?(Prism::StatementsNode) ? node.body.body : nil
+              break unless stmts&.size == 1
+              node = stmts.first
+            end
+            node
           end
 
           private
@@ -658,7 +671,7 @@ module Typelizer
           kwargs = keyword_args(node)
           optional ||= kwargs.any? { |key, value| OPTIONAL_KWARG_RESOLVERS[key]&.call(value) }
 
-          value = args.first
+          value = self.class.unwrap_parens(args.first)
           if (resolver = value_node_resolver(value))
             optional ||= resolver[:widening].include?(value.name)
             # The resolver block is arbitrary Ruby returning a plain value
@@ -951,7 +964,7 @@ module Typelizer
 
         def collection_attr_shortcut(args)
           return nil if args.size < 2
-          first = args.first
+          first = self.class.unwrap_parens(args.first)
           return nil unless first.is_a?(Prism::InstanceVariableReadNode) || first.is_a?(Prism::CallNode)
           props = symbol_args_to_properties(args)
           props.empty? ? nil : props
@@ -1010,6 +1023,7 @@ module Typelizer
         # infer from the name (plural → array), falling back to known
         # collection method names on the argument.
         def looks_like_collection?(name, node)
+          node = self.class.unwrap_parens(node)
           return true if node.is_a?(Prism::CallNode) && COLLECTION_METHODS.include?(node.name)
           plural_name?(name)
         end
@@ -1336,13 +1350,25 @@ module Typelizer
             "on it are not rendered; rename the parameter")
         end
 
+        # Method names that READ from the yielded element rather than writing
+        # a JSON key through it: hash/attribute access and common Enumerable
+        # readers. A genuine json-write through a shadowing param is a
+        # set!-style call with a made-up key name (`j.title "x"`) — never one
+        # of these.
+        SHADOW_READER_CALLS = %i[[] fetch dig each map sum count size length first last].freeze
+        private_constant :SHADOW_READER_CALLS
+
         # A set!-style call through `name`: a method call whose receiver is
-        # the shadowing local and that passes a value or block.
+        # the shadowing local and that passes a value or block. Known reader
+        # calls (`j[:amount]`, `j.fetch(:x)`) are element ACCESS, not writes —
+        # counting them would warn on templates that render correctly, which
+        # fails strict builds on a false positive.
         def builder_write_through?(node, name)
           return false if node.nil?
 
           if node.is_a?(Prism::CallNode) && node.receiver.is_a?(Prism::LocalVariableReadNode) &&
-              node.receiver.name == name && (node.arguments&.arguments&.any? || node.block)
+              node.receiver.name == name && !SHADOW_READER_CALLS.include?(node.name) &&
+              (node.arguments&.arguments&.any? || node.block)
             return true
           end
           node.compact_child_nodes.any? { |child| builder_write_through?(child, name) }
@@ -1378,6 +1404,7 @@ module Typelizer
         # what the template demonstrably renders), and whether a conditional
         # arm contributes `null`.
         def infer_value(node, name:)
+          node = self.class.unwrap_parens(node)
           return {type: "null", nullable: false, locked: true} if node.is_a?(Prism::NilNode)
           if TYPE_BY_LITERAL.key?(node.class)
             return {type: TYPE_BY_LITERAL[node.class], nullable: false, locked: true}
@@ -1386,7 +1413,66 @@ module Typelizer
           if node.is_a?(Prism::IfNode) || node.is_a?(Prism::UnlessNode)
             return infer_conditional_value(node, name: name)
           end
+          # `a && b` renders b only when a is truthy; a nil left side leaks
+          # through as the value, so the right side's type widens by `| null`.
+          if node.is_a?(Prism::AndNode)
+            right = infer_value(node.right, name: name)
+            return {type: right[:type], nullable: true, locked: right[:locked]}
+          end
+          # `a || b` renders the FALLBACK when a is nil/false — nil never
+          # survives the `||`, so the type comes from the right side and is
+          # nullable only if that side is itself nilable (`@x.title || "Untitled"`
+          # is `string`, not `string | null`).
+          if node.is_a?(Prism::OrNode)
+            right = infer_value(node.right, name: name)
+            # A literal-nil fallback (`a || nil`) types from the left side's
+            # name hint instead of emitting `null | null`.
+            if right[:type] == "null"
+              return {type: guess_from_name(name), nullable: true, locked: false}
+            end
+            return {type: right[:type], nullable: right[:nullable], locked: right[:locked]}
+          end
+          if node.is_a?(Prism::CallNode)
+            if (signal = nil_signal_call(node, name: name))
+              return signal
+            end
+            # Safe navigation ANYWHERE in the chain short-circuits to nil
+            # (`a&.b.c` included), so the terminal value widens by `| null`;
+            # the type hint comes from the terminal method name, then the
+            # property name.
+            if chain_safe_navigation?(node)
+              return {type: name_hint(node.name) || guess_from_name(name), nullable: true, locked: false}
+            end
+          end
           {type: guess_from_name(name), nullable: false, locked: false}
+        end
+
+        # Explicit read-past-nil idioms on a call value: `x.try(:sym)` (nil
+        # receiver or missing method → nil; hint from the tried name) and
+        # `x.presence` (blank → nil; type from the receiver's own inference).
+        def nil_signal_call(node, name:)
+          case node.name
+          when :try
+            sym = positional_args(node).first
+            if node.receiver && sym.is_a?(Prism::SymbolNode)
+              return {type: name_hint(sym.unescaped) || guess_from_name(name), nullable: true, locked: false}
+            end
+          when :presence
+            if node.receiver && node.arguments.nil? && node.block.nil?
+              inner = infer_value(node.receiver, name: name)
+              return {type: inner[:type], nullable: true, locked: inner[:locked]}
+            end
+          end
+          nil
+        end
+
+        def chain_safe_navigation?(node)
+          current = node
+          while current.is_a?(Prism::CallNode)
+            return true if current.safe_navigation?
+            current = current.receiver
+          end
+          false
         end
 
         # A ternary / if-else expression as a VALUE: the runtime value is one
@@ -1486,6 +1572,9 @@ module Typelizer
           when Prism::FalseNode then false
           when Prism::ArrayNode then node.elements.map { |el| literal_value(el) }
           when Prism::HashNode then assoc_pairs(node.elements)
+          when Prism::ParenthesesNode
+            unwrapped = self.class.unwrap_parens(node)
+            unwrapped.equal?(node) ? node : literal_value(unwrapped)
           else node
           end
         end

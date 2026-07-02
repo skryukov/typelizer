@@ -2857,6 +2857,160 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "explicit nil signals in values (round 5)" do
+      # Pure hint/literal paths (no typelize_from): render-verified against
+      # jbuilder 2.15.1 — each construct demonstrably renders null.
+      it "types safe navigation as nullable (`@post&.created_at`)" do
+        write_template("things/show.json.jbuilder", "json.created_at @post&.created_at\n")
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("created_at: string | null")
+      end
+
+      it "types a deep safe-navigation chain as nullable with the property-name hint" do
+        write_template("things/show.json.jbuilder", "json.total @cart&.items&.count\n")
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("total: number | null")
+      end
+
+      it "types `try(:sym)` as nullable with the tried name's hint" do
+        write_template("things/show.json.jbuilder", "json.updated_at @post.try(:updated_at)\n")
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("updated_at: string | null")
+      end
+
+      it "types `.presence` as nullable, keeping the receiver's inferred type" do
+        write_template("things/show.json.jbuilder", "json.published_at @row.published_at.presence\n")
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("published_at: string | null")
+      end
+
+      it "types `a && b` as nullable from the right side (nil left leaks through)" do
+        write_template("things/show.json.jbuilder", "json.is_admin @user && @user.admin\n")
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("is_admin: boolean | null")
+      end
+
+      # `a || b` renders the fallback when a is nil — nil never survives, so
+      # a literal fallback must NOT emit `| null` noise (that false `| null`
+      # is exactly what strict frontends trip over).
+      it "types `a || <literal>` from the fallback with NO null" do
+        write_template("things/show.json.jbuilder", "json.title @x.title || \"Untitled\"\n")
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("title: string;")
+        expect(output).not_to include("title: string | null")
+      end
+
+      it "keeps `| null` on `a || b` only when the right side is itself nilable" do
+        write_template("things/show.json.jbuilder", "json.updated_at @cache || @post.try(:updated_at)\n")
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("updated_at: string | null")
+      end
+
+      it "unwraps a parenthesized value (`json.x (cond ? a : nil)` with a space)" do
+        write_template("a/show.json.jbuilder", "json.created_at (@post ? @post.created_at : nil)\n")
+        write_template("b/show.json.jbuilder", "json.created_at(@post ? @post.created_at : nil)\n")
+
+        Typelizer::Jbuilder.discover(views_root)
+        spaced = render_interface(Typelizer::Jbuilder::Templates::AShow)
+        tight = render_interface(Typelizer::Jbuilder::Templates::BShow)
+
+        expect(tight).to include("created_at: string | null")
+        expect(spaced).to include("created_at: string | null")
+      end
+
+      it "honors a parenthesized `typelize:` literal" do
+        write_template("things/show.json.jbuilder", "json.payload @data, typelize: (\"string\")\n")
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("payload: string")
+        expect(logs).to eq("")
+      end
+
+      # Composed behavior with a model binding: the walker's nullable:true
+      # currently gets clobbered by column inference assigning (not widening)
+      # nullability — active_record.rb's widen-not-assign fix lands
+      # separately.
+      it "keeps safe-navigation nullability over a NOT NULL column of the same name" do
+        pending "requires model-inference widening in active_record.rb (merged separately)"
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          json.name @maybe_user&.name
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+
+        expect(output).to include("name: string | null")
+      end
+    end
+
+    describe "shadowed-builder-param warning precision (round 5)" do
+      # Reading THROUGH the shadowing name (`j[:amount]`, `j.fetch`) is
+      # legitimate element access — the template renders correctly, so a
+      # warning here is a false positive that fails strict builds.
+      it "does not warn for read-only access through a shadowing block param" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.report do |j|
+            j.rows @rows do |j|
+              json.amount j[:amount], typelize: "number"
+              json.details j.fetch(:details, nil), typelize: "string"
+            end
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).not_to include("shadows the JSON builder")
+      end
+
+      it "still warns for a genuine write through the shadowing param" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.report do |j|
+            j.rows @rows do |j|
+              j.title "x"
+            end
+          end
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("shadows the JSON builder")
+      end
+    end
+
     describe "discovery ordering" do
       it "registers templates in sorted path order regardless of FS glob order" do
         write_template("bbb/index.json.jbuilder", "json.x 1\n")
