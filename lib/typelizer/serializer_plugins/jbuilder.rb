@@ -86,21 +86,25 @@ module Typelizer
       # the `unknown_candidates` lookup distinguishes same-named props at
       # different nesting levels.
       def warn_unknown_property(prop, path:)
-        unless final_unknown?(prop)
-          # Recurse into inline shapes (own type, union members, array
-          # wrappers, intersection members). Checked after the cheap unknown
-          # test so typed leaves allocate nothing; an unknown-typed prop
-          # never carries Shape members.
-          child_path = path + [prop.name.to_s]
-          each_member_shape(prop.type) do |shape|
-            shape.properties.each { |sub| warn_unknown_property(sub, path: child_path) }
-          end
-          prop.additional_types&.each do |member|
-            member.properties.each { |sub| warn_unknown_property(sub, path: child_path) } if member.is_a?(Shape)
-          end
+        if final_unknown?(prop)
+          warn_final_unknown(prop, path: path)
           return
         end
 
+        # Recurse into inline shapes (own type, union members, array
+        # wrappers, intersection members). Checked after the cheap unknown
+        # test so typed leaves allocate nothing; an unknown-typed prop
+        # never carries Shape members.
+        child_path = path + [prop.name.to_s]
+        each_member_shape(prop.type) do |shape|
+          shape.properties.each { |sub| warn_unknown_property(sub, path: child_path) }
+        end
+        prop.additional_types&.each do |member|
+          member.properties.each { |sub| warn_unknown_property(sub, path: child_path) } if member.is_a?(Shape)
+        end
+      end
+
+      def warn_final_unknown(prop, path:)
         # No recorded line means the property didn't originate from this
         # template's walk (e.g. merged in from a top-level `json.partial!` —
         # the partial's own interface warns with the partial's path:line).
@@ -113,16 +117,20 @@ module Typelizer
         return if warned.include?(key)
 
         warned << key
+        emitted = prop.type.is_a?(Array) ? "`unknown` inside a union" : "`unknown`"
         Typelizer.logger.warn(
           "Typelizer::Jbuilder: #{template_path}:#{line}: could not infer a type for `#{prop.name}` — " \
-          "emitted `unknown`; pin it with `typelize:` (e.g. `json.#{prop.name} ..., typelize: \"string\"`)"
+          "emitted #{emitted}; pin it with `typelize:` (e.g. `json.#{prop.name} ..., typelize: \"string\"`)"
         )
       end
 
       def final_unknown?(prop)
         return false if prop.user_asserted || prop.enum
+        return true if walker.class.unknown_type?(prop.type)
 
-        walker.class.unknown_type?(prop.type)
+        # `unknown | string` IS unknown in TS — an untypeable union member
+        # must warn too, or strict builds pass on silently-unknown props.
+        prop.type.is_a?(Array) && prop.type.any? { |m| !m.nil? && walker.class.unknown_type?(m) }
       end
 
       # Yields every inline Shape reachable from a property TYPE: the type

@@ -2857,6 +2857,135 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "delegated union members (round 5)" do
+      # A column occurrence folded into a union used to be silently DROPPED
+      # (`Array(nil) == []`) and the merged prop poisoned with
+      # `inference_locked`, so `extract! + conditional literal` emitted only
+      # the literal's type. Renders (jbuilder 2.15.1): flag=false → `true`
+      # (boolean), flag=true → "suspended" — the union must cover both.
+      it "resolves an extract!-ed column unioned with a conditional literal through model inference" do
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          json.extract! @user, :active
+          json.active "suspended" if @flag
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+        end
+
+        expect(output).to include("active: boolean | string")
+        expect(logs).to eq("")
+      end
+
+      it "resolves the delegated member when the literal comes FIRST (reverse order)" do
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          json.name 42
+          json.extract! @user, :name if @flag
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+        end
+
+        expect(output).to include("name: number | string")
+        expect(logs).to eq("")
+      end
+
+      it "widens nullability by the delegated column's (nullable column + literal)" do
+        write_template("posts/show.json.jbuilder", <<~RUBY)
+          typelize_from Post
+
+          json.extract! @post, :title
+          json.title 0 if @legacy
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::PostsShow)
+
+        # posts.title is a NULLABLE string column: the delegated occurrence
+        # renders null when the column is null, so `| null` must survive.
+        expect(output).to include("title: string | number | null")
+      end
+
+      it "dedupes the resolved column type against a same-typed literal without enum repainting" do
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          json.extract! @user, :role
+          json.role "custom" if @override
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+
+        # users.role is an enum column (→ string) and the literal is a
+        # string: the members dedupe to a plain `string`. The column's enum
+        # metadata describes only ONE union member, so it must not repaint
+        # the property as the named enum type.
+        expect(output).to include("role: string")
+        expect(output).not_to include("UserRole")
+        expect(output).not_to include("string | string")
+      end
+
+      it "keeps a fully delegated re-set (extract! twice) on the plain column-inference path" do
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          json.extract! @user, :name
+          json.extract! @user, :name if @again
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+
+        expect(output).to include("name: string")
+        expect(output).not_to include("|")
+      end
+
+      it "degrades an unresolvable delegated member to `unknown` WITH a post-inference warning" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.extract! @thing, :mystery
+          json.mystery "n/a" if @fallback
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("mystery: unknown | string")
+        expect(logs).to include("could not infer a type for `mystery`")
+        expect(logs).to include("things/show.json.jbuilder:1")
+      end
+
+      # `unknown | string` IS unknown in TS — strict builds must see it even
+      # though the top-level type isn't the bare "unknown" string.
+      it "warns when a union carries an untypeable member (no model involved)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.thing @x.compute
+          json.thing "n/a" if @y
+        RUBY
+
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).to include("could not infer a type for `thing`")
+        expect(logs.scan("could not infer a type for `thing`").size).to eq(1)
+        expect(logs).to include("things/show.json.jbuilder:1")
+      end
+    end
+
     describe "explicit nil signals in values (round 5)" do
       # Pure hint/literal paths (no typelize_from): render-verified against
       # jbuilder 2.15.1 — each construct demonstrably renders null.

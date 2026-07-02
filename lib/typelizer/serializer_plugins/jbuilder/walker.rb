@@ -195,6 +195,58 @@ module Typelizer
           end
         end
 
+        # A union member whose type is delegated to model inference: an
+        # occurrence the walker folded in with `type: nil` (an `extract!`-ed
+        # column unioned with, say, a conditional literal). Dropping it (or
+        # locking the merged prop) silently narrowed the union to the literal
+        # side — the column's real type must survive.
+        #
+        # INTERNAL ONLY: `TypeInference#resolve_deferred_members` (which we
+        # also own) replaces every marker with the model-inferred column type
+        # before `Interface`-level consumers (render, imports, fingerprint,
+        # OpenAPI) ever see the property, honoring the union-member contract
+        # (String/Symbol/Shape/ArrayOf/Interface). The duck method
+        # `typelizer_deferred_inference?` is how that eager-loaded module
+        # detects markers without referencing this lazily-loaded class;
+        # `to_s` is a pure safety net.
+        class DeferredInference
+          attr_reader :column_name
+
+          def initialize(column_name)
+            @column_name = column_name.to_s
+            freeze
+          end
+
+          def typelizer_deferred_inference?
+            true
+          end
+
+          # Maps the model-inferred probe property back to a contract-safe
+          # union member: the column type (array columns keep their wrapper),
+          # or "unknown" when inference came up empty — the plugin's
+          # post-inference warning picks those up.
+          def resolved_member(probe)
+            type = probe.type
+            return "unknown" if type.nil?
+
+            type = type.to_s if type.is_a?(Symbol)
+            probe.multi ? ArrayOf.new(type) : type
+          end
+
+          def ==(other)
+            other.is_a?(self.class) && column_name == other.column_name
+          end
+          alias_method :eql?, :==
+
+          def hash
+            [self.class, column_name].hash
+          end
+
+          def to_s
+            "unknown"
+          end
+        end
+
         TYPE_BY_LITERAL = {
           Prism::StringNode => "string",
           Prism::InterpolatedStringNode => "string",
@@ -507,12 +559,17 @@ module Typelizer
             incoming.with(optional: acc.optional, nullable: true)
           else
             merged_type, merged_multi = union_of(acc, incoming)
+            # A delegated (nil-typed) occurrence keeps the merged prop OPEN
+            # to inference: locking it would strand the DeferredInference
+            # member unresolved and silently narrow the union to the
+            # literal side.
+            delegated = [acc, incoming].any? { |p| !p.multi && p.type.nil? }
             acc.with(
               type: merged_type,
               multi: merged_multi,
               nullable: acc.nullable || incoming.nullable,
               user_asserted: acc.user_asserted || incoming.user_asserted,
-              inference_locked: acc.inference_locked || incoming.inference_locked
+              inference_locked: !delegated && (acc.inference_locked || incoming.inference_locked)
             )
           end
         end
@@ -546,20 +603,31 @@ module Typelizer
         # single surviving member folds back into the plain type/multi
         # representation. Returns [type, multi].
         def union_of(acc, incoming)
-          members = (union_members(acc) + union_members(incoming)).uniq
-          # Both sides delegated to model inference (type nil): stay nil so
-          # inference still fills the merged prop in.
+          fold_members((union_members(acc) + union_members(incoming)).uniq)
+        end
+
+        # [type, multi] for a deduped member list: a sole ArrayOf unwraps to
+        # the plain multi representation; a sole DeferredInference marker
+        # folds back to a bare nil type (both sides delegated to the same
+        # column — whole-prop model inference fills it in, exactly like a
+        # single occurrence).
+        def fold_members(members)
           return [nil, false] if members.empty?
           return [members, false] if members.size > 1
 
           member = members.first
+          return [nil, false] if member.is_a?(DeferredInference)
+
           member.is_a?(ArrayOf) ? [member.element, true] : [member, false]
         end
 
-        # A nil type (delegated to model inference) contributes no member —
-        # the surviving side's type stands alone, as before the merge.
+        # A nil type (delegated to model inference) becomes a marker member:
+        # `TypeInference#resolve_deferred_members` swaps it for the column's
+        # inferred type post-walk, so the delegated side of the union is
+        # never silently dropped.
         def union_members(prop)
           return [ArrayOf.new(prop.type || "unknown")] if prop.multi
+          return [DeferredInference.new(prop.column_name || prop.name)] if prop.type.nil?
 
           Array(prop.type)
         end

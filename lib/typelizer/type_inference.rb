@@ -5,14 +5,72 @@ module Typelizer
     private
 
     def apply_model_inference(prop)
+      # A union carrying delegated members resolves per-member in
+      # `resolve_deferred_members`; whole-prop inference here would overwrite
+      # the union with the sole column type.
+      return prop if deferred_union?(prop)
+
       model_plugin.infer_types(prop)
     end
 
     def apply_metadata(prop)
+      # Column metadata (enum, comment) describes ONE member of a
+      # deferred-member union, not the union — an enum in particular would
+      # repaint the whole property as the enum type.
+      return prop if deferred_union?(prop)
+
       prop.tap do |p|
         p.comment ||= model_plugin.comment_for(p) if config.comments && p.comment != false
         p.enum ||= model_plugin.enum_for(p) if p.enum != false
       end
+    end
+
+    # A union type containing walker-delegated members (see the jbuilder
+    # Walker's `DeferredInference`) — duck-typed so this eager-loaded module
+    # never references that lazily-loaded class.
+    def deferred_union?(prop)
+      prop.type.is_a?(Array) && prop.type.any? { |m| m.respond_to?(:typelizer_deferred_inference?) }
+    end
+
+    # Resolves delegated union members: each marker gets the same per-column
+    # model inference a sole nil-typed property would (via a probe property),
+    # its member becomes the inferred type — and the property's
+    # nullability/optionality widen by the column's, since the delegated
+    # occurrence renders the column value. Members inference can't fill
+    # become "unknown", which the serializer plugin's post-inference warning
+    # reports. Runs unconditionally in `infer_nested_property_types`, so
+    # markers are resolved before Interface-level consumers see the type —
+    # even for user-asserted or DSL-typed properties that skip whole-prop
+    # inference.
+    def resolve_deferred_members(prop)
+      return prop unless deferred_union?(prop)
+
+      nullable = prop.nullable
+      optional = prop.optional
+      members = prop.type.map do |member|
+        next member unless member.respond_to?(:typelizer_deferred_inference?)
+
+        probe = model_plugin.infer_types(
+          Property.new(name: member.column_name, column_name: member.column_name,
+            optional: false, nullable: false, multi: false)
+        )
+        nullable ||= probe.nullable
+        optional ||= probe.optional
+        member.resolved_member(probe)
+      end.uniq
+
+      # A single surviving member folds back to the plain representation
+      # (mirroring the walker's own union fold); an array-wrapper member
+      # unwraps onto the `multi` flag.
+      type, multi =
+        if members.size > 1
+          [members, prop.multi]
+        elsif members.first.respond_to?(:element)
+          [members.first.element, true]
+        else
+          [members.first, prop.multi]
+        end
+      prop.with(type: type, multi: multi, nullable: nullable, optional: optional)
     end
 
     def transform_properties(props)
@@ -25,6 +83,7 @@ module Typelizer
     end
 
     def infer_nested_property_types(prop)
+      prop = resolve_deferred_members(prop)
       map_property_shapes(prop) { |shape| infer_shape_types(shape) }
     end
 
