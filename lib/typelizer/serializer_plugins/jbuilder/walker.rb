@@ -327,6 +327,15 @@ module Typelizer
           # a value-less `typelize:`), so the generic post-inference unknown
           # warning is suppressed for them.
           @prewarned_props = Set.new
+          # Object identities of array props built from a VALUELESS
+          # `json.<name> do json.child! ... end` block: at render these go
+          # through jbuilder's `_merge_block`, whose Array+Array branch
+          # CONCATENATES onto an existing array instead of replacing it —
+          # `merge_reset` needs to know which occurrences those are (see
+          # `merge_block_concat?`). Identity-keyed because the (multi, type)
+          # pair alone can't distinguish this form from a collection-value
+          # block, which replaces.
+          @merge_block_arrays = Set.new
         end
 
         def properties
@@ -371,14 +380,28 @@ module Typelizer
                 {root_is_array: false, root_array_element: nil, properties: [], unknown_lines: {}}
               else
                 stmts = self.class.parsed_tree(@path).statements.body
-                root_is_array = detect_root_array(stmts)
+                # Assigned before `extract` so `handle_array_bang` /
+                # `handle_partial_bang` can distinguish "conditional root
+                # array in an object template" (pre-warned, dropped) from a
+                # second root array CONCATENATED onto an existing one.
+                @root_is_array = detect_root_array(stmts)
+                properties = extract(stmts, optional: false)
+                if @root_array_concat
+                  # jbuilder CONCATENATES a second root `json.array!` onto
+                  # the first (`_merge_values(Array, Array)`): the element
+                  # type is the union of every form's shape. A flat property
+                  # list can't hold that union, so every element key widens
+                  # to optional — any single element carries only its own
+                  # form's keys.
+                  properties = properties.map { |p| p.with(optional: true) }
+                end
                 {
-                  root_is_array: root_is_array,
-                  root_array_element: root_is_array ? detect_root_array_element(stmts) : nil,
-                  properties: extract(stmts, optional: false),
+                  root_is_array: @root_is_array,
+                  root_array_element: @root_is_array ? detect_root_array_element(stmts) : nil,
                   # Populated as a side effect of `extract` above (see
                   # `note_unknown_candidate`); captured here so `unknown_candidates`
                   # reads it through `parsed` like every other derived value.
+                  properties: properties,
                   unknown_lines: @unknown_lines
                 }
               end
@@ -525,7 +548,12 @@ module Typelizer
         # conditional write forks the runtime into ran/didn't-run, i.e. a
         # union of the folded result with the accumulator.
         def merge_reset(acc, incoming)
-          if !incoming.optional
+          if merge_block_concat?(acc, incoming)
+            # A valueless `json.<key> do json.child! ... end` block over an
+            # array-valued key goes through jbuilder's `_merge_block`, whose
+            # Array+Array branch CONCATENATES — elements of BOTH shapes occur.
+            concat_merge(acc, incoming, conditional: incoming.optional)
+          elsif !incoming.optional
             # Unconditional: this write always happens at runtime — it
             # replaces a scalar or deep-merges into an existing object.
             if shape_pair?(acc, incoming)
@@ -533,6 +561,8 @@ module Typelizer
                 type: deep_merge_shapes(acc.type, incoming.type, incoming_optional: false, earlier_optional: acc.optional),
                 optional: false
               )
+            elsif union_with_mergeable_members?(acc) && object_block?(incoming) && !incoming.user_asserted
+              merge_block_over_union(acc, incoming)
             else
               incoming.with(optional: false)
             end
@@ -585,6 +615,102 @@ module Typelizer
           a.type.is_a?(Shape) && b.type.is_a?(Shape) && !a.multi && !b.multi
         end
 
+        def object_block?(prop)
+          prop.type.is_a?(Shape) && !prop.multi
+        end
+
+        # A union holding at least one member that renders as a HASH at
+        # runtime (an inline Shape or a named partial's Interface) — the
+        # members jbuilder's `_merge_block` would deep-merge into rather
+        # than crash on.
+        def union_with_mergeable_members?(prop)
+          !prop.multi && prop.type.is_a?(Array) &&
+            prop.type.any? { |m| m.is_a?(Shape) || interface_like?(m) }
+        end
+
+        # jbuilder's `_merge_block` over a union-valued key: an UNCONDITIONAL
+        # object block deep-merges into whatever the key currently holds.
+        # Shape members (hashes at render) deep-merge; scalar, array, and
+        # delegated members raise `Jbuilder::MergeError` (a bare-nil current
+        # raises `NullError`) at render, so no successful render contains
+        # them — they drop from the union. Verified against jbuilder 2.15.1:
+        # `{id}`-block + conditional `"anon"` + `{bio}`-block renders
+        # `{id, bio}` or crashes; the emitted type is the merged shape(s).
+        # A named partial reference also deep-merges at render (it's a hash),
+        # but `Interface & Shape` inside a union isn't statically
+        # expressible — warn and degrade to `unknown` instead of silently
+        # narrowing.
+        def merge_block_over_union(acc, incoming)
+          if acc.type.any? { |m| interface_like?(m) }
+            warn_merge("`#{acc.name}` re-sets a union containing a named partial reference " \
+              "with an object block; the deep-merged result is not statically expressible — " \
+              "emitted `unknown`; use `typelize:` to pin the type")
+            return build_property(acc.name, type: "unknown", optional: acc.optional)
+          end
+
+          merged = acc.type.filter_map do |member|
+            next unless member.is_a?(Shape)
+
+            deep_merge_shapes(member, incoming.type, incoming_optional: false, earlier_optional: acc.optional)
+          end.uniq
+          incoming.with(type: (merged.size == 1) ? merged.first : merged, optional: false)
+        end
+
+        def interface_like?(member)
+          !member.is_a?(Shape) && member.respond_to?(:properties)
+        end
+
+        # jbuilder concatenates only when the INCOMING write is a valueless
+        # `child!` block (`_merge_block` → `_merge_values(Array, Array)`) and
+        # the key currently holds an array — either a plain array occurrence
+        # (`multi`) or a union with array members. Collection-VALUE blocks
+        # replace instead (`_set` → `_set_value`), so they never take this
+        # path.
+        def merge_block_concat?(acc, incoming)
+          merge_block_array?(incoming) &&
+            (acc.multi || (!acc.multi && acc.type.is_a?(Array) && acc.type.any?(ArrayOf)))
+        end
+
+        # Element-type union for a render-time array CONCAT (verified against
+        # jbuilder 2.15.1): the merged property stays an array whose element
+        # type is the union of both sides' element types — `Array<A | B>`,
+        # never `Array<A> | Array<B>` and never a replacement. On a union
+        # accumulator the new elements join every array member; scalar
+        # members survive only when the incoming block is conditional (an
+        # unconditional merge-block over a scalar raises
+        # `Jbuilder::MergeError`, so those members can't produce output).
+        def concat_merge(acc, incoming, conditional:)
+          new_elements = element_members(incoming)
+          members = union_members(acc).filter_map do |member|
+            if member.is_a?(ArrayOf)
+              ArrayOf.new(fold_element_members(arrayof_members(member) + new_elements))
+            elsif conditional
+              member
+            end
+          end.uniq
+          type, multi = fold_members(members)
+          acc.with(
+            type: type,
+            multi: multi,
+            optional: conditional ? acc.optional : false,
+            nullable: conditional ? (acc.nullable || incoming.nullable) : incoming.nullable
+          )
+        end
+
+        # Element types contributed by one array-valued occurrence.
+        def element_members(prop)
+          prop.type.is_a?(Array) ? prop.type : [prop.type || "unknown"]
+        end
+
+        def arrayof_members(array_of)
+          array_of.element.is_a?(Array) ? array_of.element : [array_of.element]
+        end
+
+        def fold_element_members(members)
+          members = members.uniq
+          (members.size == 1) ? members.first : members
+        end
+
         # jbuilder `_merge_block`: keys merge recursively — a later write to
         # an existing key follows the same re-set rules. Keys arriving from a
         # CONDITIONAL later block count as conditional writes; the mirror
@@ -593,11 +719,11 @@ module Typelizer
         # to optional unless the later block re-sets them unconditionally.
         def deep_merge_shapes(earlier, later, incoming_optional:, earlier_optional: false)
           merged = earlier.properties.each_with_object({}) do |p, h|
-            h[p.name.to_s] = earlier_optional ? p.with(optional: true) : p
+            h[p.name.to_s] = earlier_optional ? preserve_merge_block_marker(p, p.with(optional: true)) : p
           end
           later.properties.each do |prop|
             key = prop.name.to_s
-            prop = prop.with(optional: true) if incoming_optional
+            prop = preserve_merge_block_marker(prop, prop.with(optional: true)) if incoming_optional
             merged[key] = merged.key?(key) ? merge_reset(merged[key], prop) : prop
           end
           Shape.new(properties: merged.values)
@@ -996,7 +1122,28 @@ module Typelizer
           # renders one scope per element, and `child!` turns EACH scope into
           # an array — array of arrays at runtime, `Array<Array<…>>` here.
           element = ArrayOf.new(element) if collection_value
-          build_property(name, type: element, optional: optional, multi: true)
+          prop = build_property(name, type: element, optional: optional, multi: true)
+          # Only the valueless form is `_merge_block`-ed (and so CONCATENATES
+          # over an existing array); a collection value replaces via
+          # `_set_value`.
+          remember_merge_block_array(prop) unless collection_value
+          prop
+        end
+
+        def remember_merge_block_array(prop)
+          @merge_block_arrays << prop.object_id
+          prop
+        end
+
+        def merge_block_array?(prop)
+          @merge_block_arrays.include?(prop.object_id)
+        end
+
+        # `Property#with` copies lose object identity — call this wherever a
+        # marked occurrence is copied before it reaches `merge_reset`.
+        def preserve_merge_block_marker(original, copy)
+          remember_merge_block_array(copy) if merge_block_array?(original)
+          copy
         end
 
         # Splits a block into [named partial interfaces, other stmts]. Only a
@@ -1140,11 +1287,16 @@ module Typelizer
             if @nested
               log_warning(node, "`json.partial!` with `collection:` inside a block is typed as a merged object, " \
                 "not an array — use `json.<name> @collection, partial: \"...\", as: ...` or `typelize:`")
+            elsif @root_is_array
+              # A collection partial in a root-array template CONCATENATES
+              # its rendered elements at render — merge its props (widened
+              # in `parsed`) instead of dropping them.
+              note_root_array_form
             elsif @root_conditional
-              # A conditional root collection partial — already warned by
-              # `warn_on_conditional_root_array`; merging the partial's props
-              # into the root object would fabricate a root shape that never
-              # renders.
+              # A conditional root collection partial in an OBJECT template —
+              # already warned by `warn_on_conditional_root_array`; merging
+              # the partial's props into the root object would fabricate a
+              # root shape that never renders.
               return []
             end
           end
@@ -1200,10 +1352,16 @@ module Typelizer
             if @nested
               log_warning(node, "`json.#{node.name}` with a block inside another block is typed as an " \
                 "object, not an array — use `typelize:` to pin an array type")
+            elsif @root_is_array
+              # In a root-array template every form (conditional or not)
+              # CONCATENATES at render — its element props merge in (widened
+              # in `parsed`) rather than being dropped.
+              note_root_array_form
             elsif @root_conditional
-              # A conditional root array — already warned; its element props
-              # describe array ELEMENTS, so walking them into the root object
-              # shape would fabricate a root type that never renders.
+              # A conditional root array in an OBJECT template — already
+              # warned; its element props describe array ELEMENTS, so walking
+              # them into the root object shape would fabricate a root type
+              # that never renders.
               return []
             end
             # `array!`/`call` blocks yield each ELEMENT, never the builder.
@@ -1219,9 +1377,12 @@ module Typelizer
             if @nested
               log_warning(node, "`json.array!` without a block emits its attributes as an object shape, " \
                 "not an array — use the block form or `typelize:` to pin an array type")
+            elsif @root_is_array
+              note_root_array_form
             elsif @root_conditional
-              # Same as the block form above: conditional root array — the
-              # attribute shape belongs to elements, not the root object.
+              # Same as the block form above: conditional root array in an
+              # object template — the attribute shape belongs to elements,
+              # not the root object.
               return []
             end
             props
@@ -1257,6 +1418,14 @@ module Typelizer
           branches, fully_covered = collect_branches(node)
           branch_props = branches.map { |body| with_root_conditional { extract(body, optional: false) } }
           merge_branches(branch_props, fully_covered: fully_covered)
+        end
+
+        # Counts root-array-emitting forms in a root-array template: from the
+        # second one on, jbuilder CONCATENATES at render, so `parsed` widens
+        # every merged element key to optional (see `@root_array_concat`).
+        def note_root_array_form
+          @root_array_forms = (@root_array_forms || 0) + 1
+          @root_array_concat = true if @root_array_forms > 1
         end
 
         # Marks that the walk is inside a top-level conditional: a root-array
@@ -1317,7 +1486,7 @@ module Typelizer
             base = present.find(&:user_asserted) ||
               present.find { |p| !null_type?(p) } || present.first
             optional = present.any?(&:optional) || !(fully_covered && occurrences.all?)
-            base.with(optional: optional, nullable: widened_nullable(base, present))
+            preserve_merge_block_marker(base, base.with(optional: optional, nullable: widened_nullable(base, present)))
           end
         end
 

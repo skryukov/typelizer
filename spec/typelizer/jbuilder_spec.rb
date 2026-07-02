@@ -3100,6 +3100,228 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "array concat semantics (round 5)" do
+      # jbuilder's `_merge_block` → `_merge_values(Array, Array)` branch
+      # CONCATENATES: a valueless `json.<key> do json.child! ... end` over an
+      # existing array appends elements of the new shape. Render-verified
+      # (jbuilder 2.15.1): [{a: 1}, {b: 2}].
+      it "unions element types when a child!-block re-sets a collection block (concat)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items @xs do |x|
+            json.a x, typelize: "number"
+          end
+          json.items do
+            json.child! do
+              json.b 2
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to match(/items: Array<\{\s*a: number;\s*\} \| \{\s*b: number;\s*\}>/)
+      end
+
+      it "unions element types across two child!-blocks on the same key (concat)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items do
+            json.child! do
+              json.a 1
+            end
+          end
+          json.items do
+            json.child! do
+              json.b 2
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("a: number")
+        expect(output).to include("b: number")
+        expect(output).to match(/items: Array<\{[\s\S]*\} \| \{[\s\S]*\}>/)
+      end
+
+      # The mirror order REPLACES (`_set` → `_set_value`): render keeps only
+      # the collection block's elements.
+      it "keeps replace semantics when a collection block re-sets a child!-block" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items do
+            json.child! do
+              json.b 2
+            end
+          end
+          json.items @xs do |x|
+            json.a x, typelize: "number"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("a: number")
+        expect(output).not_to include("b:")
+      end
+
+      it "unions element types for a CONDITIONAL child!-block concat" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items @xs do |x|
+            json.a x, typelize: "number"
+          end
+          if @extra
+            json.items do
+              json.child! do
+                json.b 2
+              end
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        # Render truth: [{a:1}] or [{a:1},{b:2}] — element union, key present
+        # either way.
+        expect(output).to match(/items: Array<\{[\s\S]*a: number;[\s\S]*\} \| \{[\s\S]*b: number;[\s\S]*\}>/)
+        expect(output).not_to include("items?:")
+      end
+
+      # A second root `json.array!` also concatenates
+      # (`@attributes = _merge_values(Array, Array)`). The element type is
+      # the union of both shapes; a flat property list can't express that,
+      # so every merged element key widens to optional — and nothing is
+      # silently dropped.
+      it "merges a conditional second root array's element props as optional (no silent drop)" do
+        write_template("things/index.json.jbuilder", <<~RUBY)
+          json.array! @xs do |x|
+            json.id 1
+          end
+          if @legacy
+            json.array! @more do |m|
+              json.extra 2
+            end
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsIndex)
+        end
+
+        expect(output).to include("type ThingsIndex = Array<ThingsIndexData>")
+        expect(output).to include("id?: number")
+        expect(output).to include("extra?: number")
+        expect(logs).to eq("")
+      end
+
+      it "merges two unconditional root arrays' element props as optional (concat)" do
+        write_template("things/index.json.jbuilder", <<~RUBY)
+          json.array! @xs do |x|
+            json.id 1
+          end
+          json.array! @more do |m|
+            json.extra 2
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsIndex)
+
+        expect(output).to include("id?: number")
+        expect(output).to include("extra?: number")
+      end
+
+      it "keeps a single root array's element keys required (no spurious widening)" do
+        write_template("things/index.json.jbuilder", <<~RUBY)
+          json.array! @xs do |x|
+            json.id 1
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsIndex)
+
+        expect(output).to include("id: number")
+        expect(output).not_to include("id?:")
+      end
+    end
+
+    describe "unconditional block over a union (round 5)" do
+      # Render truth (jbuilder 2.15.1): {id}-block + conditional "anon" +
+      # {bio}-block renders {id, bio} when the scalar didn't run and raises
+      # Jbuilder::MergeError when it did — the ONLY successful render deep-
+      # merges the shapes, so the scalar member drops from the type.
+      it "deep-merges an unconditional object block into a union's shape member" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.author do
+            json.id 1
+          end
+          json.author "anon" if @hide
+          json.author do
+            json.bio "x"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("id: number")
+        expect(output).to include("bio: string")
+        expect(output).not_to include("| string")
+        expect(output).not_to include("unknown")
+      end
+
+      # Same principle for arrays: array + conditional scalar + child!-block
+      # renders concat or crashes (verified) — the scalar member drops, the
+      # element types union.
+      it "drops a crash-only scalar member when a child!-block concatenates over the union" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items @xs do |x|
+            json.a x, typelize: "number"
+          end
+          json.items "none" if @empty
+          json.items do
+            json.child! do
+              json.b 2
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to match(/items: Array<\{[\s\S]*\} \| \{[\s\S]*\}>/)
+        expect(output).not_to include("none")
+        expect(output).not_to include("| string")
+      end
+
+      it "warns and degrades when the union holds a named partial reference (inexpressible merge)" do
+        write_template("courses/_course.json.jbuilder", <<~RUBY)
+          json.id course.id, typelize: "number"
+        RUBY
+        write_template("courses/show.json.jbuilder", <<~RUBY)
+          json.course @course, partial: "courses/course", as: :course
+          json.course "closed" if @closed
+          json.course do
+            json.note "x"
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::CoursesShow)
+        end
+
+        expect(logs).to include("not statically expressible")
+        expect(output).to include("course: unknown")
+      end
+    end
+
     describe "intersection nullability (round 5)" do
       # `&` binds tighter than `|` in TS: `Course & CourseDetails | null` is
       # exactly `(Course & CourseDetails) | null` — a conditional bare nil
