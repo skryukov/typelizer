@@ -103,6 +103,12 @@ RSpec.describe "Jbuilder plugin loading" do
       )
     end
 
+    it "renders json.(...) with annotation-only kwargs and a block as [] instead of crashing" do
+      json = renderer.render(template: "call_annotation_only", formats: [:json])
+
+      expect(JSON.parse(json)).to eq([])
+    end
+
     it "renders a plain jbuilder template byte-identical to vanilla jbuilder" do
       expect(::JbuilderTemplate.ancestors).to include(Typelizer::Jbuilder::SetExt)
 

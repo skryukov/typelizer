@@ -225,6 +225,40 @@ RSpec.describe "Jbuilder / jbuilder-inertia contract" do
       end
     end
 
+    describe "annotation-only kwargs with a block (no positional value)" do
+      # Stripping leaves these calls with zero positional args. `array!`'s
+      # collection defaults to an empty array upstream, but `call`'s `object`
+      # has NO default — SetExt must forward an empty collection instead of
+      # letting the render die with ArgumentError.
+      let(:template_class) do
+        Class.new(::JbuilderTemplate) { prepend Typelizer::Jbuilder::SetExt }
+      end
+
+      it "renders json.(typelize:) { } as an empty collection instead of raising ArgumentError" do
+        template = template_class.new(nil)
+        template.call(typelize: "T") { |item| template.id(item) }
+
+        expect(template.attributes!).to eq([])
+      end
+
+      it "renders json.array!(typelize:) { } as an empty collection" do
+        template = template_class.new(nil)
+        template.array!(typelize: "Foo[]") { |item| template.id(item) }
+
+        expect(template.attributes!).to eq([])
+      end
+
+      it "strips inertia: on json.(...) { } when jbuilder-inertia is absent, rendering [] with a warning" do
+        template = template_class.new(nil)
+        logs = with_capture_logger do
+          template.call(inertia: :defer) { |item| template.id(item) }
+        end
+
+        expect(template.attributes!).to eq([])
+        expect(logs).to include("`inertia:` option found but jbuilder-inertia is not installed; option ignored")
+      end
+    end
+
     context "with no JbuilderInertia loaded" do
       it "strips inertia:, renders clean JSON, and warns exactly once" do
         json = nil
@@ -263,6 +297,25 @@ RSpec.describe "Jbuilder / jbuilder-inertia contract" do
         expect(captured).to include(hash_including(inertia: :defer))
         expect(captured).to include(hash_including(frobnicate: :defer))
         expect(logs).not_to include("jbuilder-inertia is not installed")
+      end
+
+      it "forwards a sole-hash directive (no value, no block) to the owner instead of re-packing it as the value" do
+        captured = []
+        fake_ext = build_fake_inertia_ext(captured)
+        stub_const("JbuilderInertia::JbuilderExt", fake_ext)
+
+        klass = Class.new(::JbuilderTemplate)
+        klass.prepend(fake_ext)
+        klass.prepend(Typelizer::Jbuilder::SetExt)
+
+        template = klass.new(nil)
+        # `json.stats(inertia: :defer)` — with the owner patch live, the hash
+        # is a directive for it, NOT the sole-hash nested-object value: the
+        # kwargs must reach the owner so IT decides what renders.
+        template.stats(inertia: :defer)
+
+        expect(captured).to include(hash_including(inertia: :defer))
+        expect(template.attributes!).not_to eq("stats" => {inertia: :defer})
       end
     end
 

@@ -172,7 +172,7 @@ An annotation must accompany a value or a block. A bare `json.metadata typelize:
 
 The `typelize:` kwarg always wins — it's scoped to that exact property at that exact nesting level, so a nested `json.stats { json.total @t, typelize: "number" }` never affects a top-level `total`. Use it when you need to pin a shape that the walker can't infer.
 
-`typelize:` applies to named `json.<name>` calls; on multi-attribute emitters (`json.extract!`, `json.array!`, `json.(...)`) it has no per-field meaning, so it's ignored for type generation — but still render-safe (stripped before jbuilder sees it).
+`typelize:` applies to named `json.<name>` calls; on multi-attribute emitters (`json.extract!`, `json.array!`, `json.(...)`) it has no per-field meaning, so it's ignored for type generation. The same accompany-a-value-or-block rule applies here too: alongside a value or a block the kwarg is render-safe (stripped before jbuilder sees it), while a bare `json.array! typelize: "Foo[]"` (no value, no block) is not an annotation — jbuilder receives the hash as the collection and renders it verbatim. The block-only forms (`json.(typelize: "T") { ... }`, `json.array!(typelize: "Foo[]") { ... }`) strip the annotation and render `[]`, the empty collection.
 
 ## Partials
 

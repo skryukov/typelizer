@@ -177,6 +177,13 @@ module Typelizer
         _typelizer_strip_kwargs!(kwargs)
 
         if kwargs.empty?
+          # Stripping can leave a block-only call (`json.(typelize: "T") { }`
+          # — a block is guaranteed here, the blockless sole-hash form
+          # returned above). Upstream `call(object, *attributes)` has no
+          # default for `object` (unlike `array!`), so forward an empty
+          # collection: renders `[]`, mirroring the stripped `array!` form.
+          return super([], &block) if args.empty?
+
           super(*args, &block)
         else
           super

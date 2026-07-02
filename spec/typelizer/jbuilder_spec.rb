@@ -2691,6 +2691,36 @@ RSpec.describe Typelizer::Jbuilder do
         expect { Typelizer::Jbuilder.discover(core_root) }
           .to raise_error(Typelizer::Jbuilder::NameCollision)
       end
+
+      it "keeps the first registration as the relative-slot winner across direct template calls" do
+        first = write_template(core_root, "posts/show.json.jbuilder", "json.core true\n")
+        write_template(overlay_root, "posts/show.json.jbuilder", "json.overlay true\n")
+
+        core_klass = Typelizer::Jbuilder.template("posts/show.json.jbuilder", views_root: core_root)
+        overlay_klass = Typelizer::Jbuilder.template(
+          "posts/show.json.jbuilder", views_root: overlay_root, as: "OverlayPostsShow"
+        )
+
+        # The later registration must not steal the shadowing slot (Rails
+        # view-path order: the FIRST root containing a relative path wins)...
+        expect(overlay_klass).not_to be(core_klass)
+        expect(Typelizer::Jbuilder.relative_registry.fetch("posts/show.json.jbuilder")).to be(core_klass)
+
+        # ...so template_for keeps resolving through the slot to the first
+        # root's class: directly for the winner's own absolute path, and via
+        # shadowing for the same relative path under yet another root (which
+        # has no absolute-registry entry of its own).
+        expect(Typelizer::Jbuilder.template_for(File.expand_path(first), views_root: core_root))
+          .to be(core_klass)
+
+        third_root = Dir.mktmpdir("typelizer-jbuilder-third-root")
+        begin
+          shadowed = write_template(third_root, "posts/show.json.jbuilder", "json.third true\n")
+          expect(Typelizer::Jbuilder.template_for(shadowed, views_root: third_root)).to be(core_klass)
+        ensure
+          FileUtils.rm_rf(third_root)
+        end
+      end
     end
 
     describe "explicit re-registration" do
