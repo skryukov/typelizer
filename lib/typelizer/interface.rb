@@ -185,8 +185,7 @@ module Typelizer
         all_properties = collect_all_properties(properties_to_print + trait_interfaces.flat_map(&:properties))
 
         flat_types = (all_properties.filter_map(&:type) + all_properties.flat_map { |p| p.additional_types || [] })
-          .flat_map { |t| Array(t) }
-          .reject { |t| t.is_a?(Shape) }
+          .flat_map { |t| flatten_type_members(t) }
           .uniq
         association_serializers, attribute_types = flat_types.partition { |type| type.is_a?(Interface) }
 
@@ -243,16 +242,45 @@ module Typelizer
     def collect_all_properties(props)
       props.flat_map do |prop|
         children = ([prop.type] + Array(prop.additional_types))
-          .flat_map { |type| nested_properties_of(type) || [] }
+          .flat_map { |type| nested_properties_of(type) }
         children.any? ? [prop] + collect_all_properties(children) : [prop]
       end
     end
 
+    # Structural recursion into every type that can carry nested properties:
+    # inline Shapes, inline Interfaces, union members (Array — the walker's
+    # same-level fold), and the walker's lazy ArrayOf element (itself a
+    # Shape, a member union, or a plain type). Import and enum collection
+    # both walk through here, so an Interface referenced inside a
+    # union-member Shape (or an array element Shape) is still imported.
     def nested_properties_of(type)
       case type
       when Shape then type.properties
-      when Interface then type.properties if type.inline?
+      when Interface then type.inline? ? type.properties : []
+      when Array then type.flat_map { |member| nested_properties_of(member) }
+      else
+        array_wrapper?(type) ? nested_properties_of(type.element) : []
       end
+    end
+
+    # Named type references reachable from a property type: splats union
+    # members and looks through ArrayOf wrappers to their elements. Shapes
+    # yield nothing here — their nested properties are walked structurally
+    # (collect_all_properties), never string-tokenized, so a rendered
+    # `{ author: User; }` body can't leak `User;` garbage into imports.
+    def flatten_type_members(type)
+      case type
+      when Array then type.flat_map { |member| flatten_type_members(member) }
+      when Shape then []
+      else
+        array_wrapper?(type) ? flatten_type_members(type.element) : [type]
+      end
+    end
+
+    # The jbuilder walker's lazy array wrapper, matched by duck — it lives
+    # in a lazily-loaded plugin file, so no constant reference from here.
+    def array_wrapper?(type)
+      type.respond_to?(:element) && type.respond_to?(:map_element_shape)
     end
 
     # Strips only a TRAILING Serializer/Resource suffix off the demodulized
