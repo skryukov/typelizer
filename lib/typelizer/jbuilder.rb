@@ -34,12 +34,13 @@ module Typelizer
     # enabled — so annotated templates never crash a render.
     #
     # Stripping only ever touches kwargs that accompany a real positional
-    # value or block — the only annotation grammar the walker supports, and
-    # forms plain jbuilder crashes on anyway (so no working app can lose
-    # data). A braceless hash with NO value (`json.settings theme: "dark"`)
-    # is jbuilder's plain nested-object form: it's re-packed as the
-    # positional value untouched, even when a key happens to be named
-    # `typelize` or `inertia`.
+    # value or block — `typelize:`/`inertia:` in those positions are reserved
+    # annotation grammar. The only non-annotation pattern affected is a
+    # braceless hash containing those exact keys passed WITH a block
+    # (pathological; documented in the guide). A braceless hash with NO
+    # value and no block (`json.settings theme: "dark"`) is jbuilder's plain
+    # nested-object form: it's re-packed as the positional value untouched,
+    # even when a key happens to be named `typelize` or `inertia`.
     #
     # Each gem strips its own render-inert vocabulary (`typelize:`); the
     # render-ACTIVE `inertia:` kwarg (owned by jbuilder-inertia) is stripped
