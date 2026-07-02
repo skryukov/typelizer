@@ -306,6 +306,12 @@ module Typelizer
         # jbuilder_api_canary_spec guards that the dispatch stays exhaustive.
         PASSTHROUGH_CALLS = %i[cache! cache_if! cache_root!].freeze
 
+        # json.* calls that never write a key into the current scope — a
+        # block containing only these still renders BLANK (see
+        # `block_can_render_blank?`).
+        NON_WRITING_CALLS = %i[key_format! ignore_nil! deep_format_keys! attributes! target!].freeze
+        private_constant :NON_WRITING_CALLS
+
         COLLECTION_METHODS = %i[all where includes order limit offset group distinct none].freeze
 
         # `column_inference: true` → bound to a model: `extract!`-style props
@@ -1075,6 +1081,15 @@ module Typelizer
           warn_shadowed_builder_param(node) if multi
           with_name(name) do
             with_block_scope(node.block, yields_builder: !multi) do
+              # A valueless object block whose scope renders BLANK is OMITTED
+              # at render (`_merge_block` returns BLANK, `_set_value` skips
+              # blank values) — verified: `json.k do json.x @a if @c end`
+              # with the condition false renders `{}` with no `k` key, and
+              # the omission cascades through enclosing blocks.
+              # Collection-value blocks are exempt: they render `[]`,
+              # keeping the key. Checked inside the block scope so rebound
+              # builder params (`do |j| j.x 1 end`) count as writes.
+              optional ||= !multi && block_can_render_blank?(node.block)
               children, non_children = partition_child_bangs(node.block)
               if children.any?
                 next handle_child_array(node, name: name, optional: optional, children: children,
@@ -1091,6 +1106,55 @@ module Typelizer
               build_property(name, type: Shape.new(properties: shape_body(node.block)), optional: optional, multi: multi)
             end
           end
+        end
+
+        # True when no statement in the block body is guaranteed to write a
+        # key — jbuilder then renders the scope BLANK and the enclosing key
+        # is omitted, so the property must be optional.
+        def block_can_render_blank?(block_node)
+          return true unless block_node.is_a?(Prism::BlockNode)
+
+          (block_node.body&.body || []).none? { |stmt| definitely_writes?(stmt) }
+        end
+
+        # Whether a statement is guaranteed to write into the current scope
+        # at render:
+        # - a conditional writes only when the chain is fully covered AND
+        #   every branch writes (matches renders: `if/else` both writing
+        #   always produces the key; a lone `if` can skip it)
+        # - a valueless named block writes only what its own body writes
+        #   (blank bodies are omitted — the cascade case), and cache
+        #   wrappers are transparent
+        # - values, `extract!`, `array!`/`child!` (arrays render `[]` even
+        #   when empty), `merge!`, and `partial!` write unconditionally
+        # - non-json statements never write
+        def definitely_writes?(node)
+          if node.is_a?(Prism::IfNode) || node.is_a?(Prism::UnlessNode)
+            branches, fully_covered = collect_branches(node)
+            return fully_covered && branches.all? { |body| body.any? { |stmt| definitely_writes?(stmt) } }
+          end
+          return false unless json_call?(node)
+          return false if NON_WRITING_CALLS.include?(node.name)
+
+          if PASSTHROUGH_CALLS.include?(node.name)
+            return node.block.is_a?(Prism::BlockNode) &&
+                with_block_scope(node.block, yields_builder: true) { !block_can_render_blank?(node.block) }
+          end
+
+          if node.block.is_a?(Prism::BlockNode) && block_value_args(node).empty? &&
+              !%i[array! child! call].include?(node.name)
+            # Recurse with the nested block's builder alias in scope so
+            # `json.b do |b| b.x 1 end` counts its write.
+            return with_block_scope(node.block, yields_builder: true) { !block_can_render_blank?(node.block) }
+          end
+          true
+        end
+
+        # Positional VALUE arguments of a block-bearing call — `set!`'s
+        # leading literal key is not a value.
+        def block_value_args(node)
+          args = positional_args(node)
+          (node.name == :set!) ? args.drop(1) : args
         end
 
         # Splits a block body into [`json.child!` calls, other stmts].

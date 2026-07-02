@@ -3523,6 +3523,119 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "blank-rendered blocks widen to optional (round 5)" do
+      # jbuilder omits a key whose object-block scope rendered BLANK:
+      # `json.k2 do json.created_at @t if @flag end` renders `{}` (no k2 at
+      # all) when the condition is false — render-verified on 2.15.1.
+      it "marks a block with an all-conditional body optional" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.k2 do
+            json.created_at @t if @flag1
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("k2?: {")
+        expect(output).to include("created_at?: string")
+      end
+
+      it "cascades the omission through enclosing blocks" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.outer do
+            json.k2 do
+              json.created_at @t if @flag1
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("outer?: {")
+        expect(output).to include("k2?: {")
+      end
+
+      # Render truth: a fully-covered if/else writes in EVERY branch, so the
+      # key is always present — widening it would be false optionality.
+      it "keeps a block required when a fully-covered conditional always writes" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.k2 do
+            if @flag1
+              json.a 1
+            else
+              json.b 2
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("k2: {")
+        expect(output).not_to include("k2?:")
+      end
+
+      it "keeps a block required when any statement writes unconditionally" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.k2 do
+            json.always 1
+            json.created_at @t if @flag1
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("k2: {")
+        expect(output).not_to include("k2?:")
+      end
+
+      # A collection-value block renders `[]` when every element scope is
+      # blank — the key stays present.
+      it "keeps a collection-value block required even with an all-conditional body" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items @xs do |x|
+            json.a x if @flag1
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("items: Array<")
+        expect(output).not_to include("items?:")
+      end
+
+      it "counts writes through a rebound builder param (`do |j| j.x 1 end`)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.k2 do |j|
+            j.x 1
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("k2: {")
+        expect(output).not_to include("k2?:")
+      end
+
+      it "widens a valueless `json.set!` block with an all-conditional body" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.set! "wrap" do
+            json.x 1 if @flag1
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("wrap?: {")
+      end
+    end
+
     describe "discovery ordering" do
       it "registers templates in sorted path order regardless of FS glob order" do
         write_template("bbb/index.json.jbuilder", "json.x 1\n")
