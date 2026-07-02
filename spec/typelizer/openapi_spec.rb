@@ -154,8 +154,12 @@ RSpec.describe Typelizer do
       schemas.each do |name, schema|
         expect(name).to be_a(String)
         expect(schema).to be_a(Hash)
-        expect(schema[:type]).to eq(:object)
-        expect(schema[:properties]).to be_a(Hash)
+        expect([:object, :array]).to include(schema[:type])
+        if schema[:type] == :array
+          expect(schema[:items]).to be_a(Hash)
+        else
+          expect(schema[:properties]).to be_a(Hash)
+        end
       end
     end
   end
@@ -199,10 +203,65 @@ RSpec.describe Typelizer::OpenAPI do
 
     it "omits required key when all properties are optional" do
       prop = Typelizer::Property.new(name: :field, type: :string, optional: true)
-      interface = instance_double(Typelizer::Interface, properties: [prop])
+      interface = instance_double(Typelizer::Interface, properties: [prop], root_is_array: false)
 
       schema = described_class.schema_for(interface)
       expect(schema).not_to have_key(:required)
+    end
+  end
+
+  describe ".schema_for with root arrays" do
+    let(:context) { Typelizer::WriterContext.new }
+
+    # Mirrors the duck-typed plugin pattern: stub the serializer plugin so
+    # the interface reports a root array, the way jbuilder's
+    # `json.array!` templates do.
+    def root_array_interface(element:, props: [])
+      interface = Typelizer::Interface.new(serializer: Alba::PostSerializer, context: context)
+      plugin = Object.new
+      plugin.define_singleton_method(:properties) { props }
+      plugin.define_singleton_method(:root_key) { nil }
+      plugin.define_singleton_method(:meta_fields) { nil }
+      plugin.define_singleton_method(:root_is_array) { true }
+      plugin.define_singleton_method(:root_array_element) { element }
+      allow(interface).to receive(:serializer_plugin).and_return(plugin)
+      interface
+    end
+
+    it "wraps the interface's own properties when the element is inline (mirrors `type X = Array<XData>`)" do
+      props = [
+        Typelizer::Property.new(name: "code", type: :number, column_name: "code"),
+        Typelizer::Property.new(name: "label", type: :string, column_name: "label", optional: true)
+      ]
+      interface = root_array_interface(element: nil, props: props)
+
+      schema = described_class.schema_for(interface)
+      expect(schema).to eq(
+        type: :array,
+        items: {
+          type: :object,
+          properties: {"code" => {type: :number}, "label" => {type: :string}},
+          required: ["code"]
+        }
+      )
+    end
+
+    it "emits a $ref for a NAMED element interface (mirrors `type X = Array<Element>`)" do
+      element = context.interface_for(Alba::UserSerializer)
+      interface = root_array_interface(element: element)
+
+      schema = described_class.schema_for(interface)
+      expect(schema).to eq(
+        type: :array,
+        items: {"$ref" => "#/components/schemas/AlbaUser"}
+      )
+    end
+
+    it "maps a plain type-string element the way bare types map elsewhere" do
+      interface = root_array_interface(element: "unknown")
+
+      schema = described_class.schema_for(interface)
+      expect(schema).to eq(type: :array, items: {type: :object})
     end
   end
 

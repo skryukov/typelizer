@@ -32,7 +32,12 @@ module Typelizer
         validate_version!(openapi_version)
 
         type_mapping = interface.respond_to?(:config) ? interface.config.type_mapping : Typelizer.configuration.type_mapping
-        object_schema(interface.properties, openapi_version: openapi_version, type_mapping: type_mapping)
+
+        if interface.respond_to?(:root_is_array) && interface.root_is_array
+          {type: :array, items: root_array_items(interface, openapi_version: openapi_version, type_mapping: type_mapping)}
+        else
+          object_schema(interface.properties, openapi_version: openapi_version, type_mapping: type_mapping)
+        end
       end
 
       def property_schema(property, openapi_version: "3.0", type_mapping: Typelizer.configuration.type_mapping)
@@ -54,6 +59,24 @@ module Typelizer
       end
 
       private
+
+      # Mirrors interface.ts.erb's root-array rendering (`type X =
+      # Array<Element | XData>`): an inline or absent element inlines an
+      # object schema built from the interface's own properties, a NAMED
+      # element interface becomes a $ref to its schema, and a plain type
+      # string ("unknown") maps the way bare types do elsewhere in this
+      # writer.
+      def root_array_items(interface, openapi_version:, type_mapping:)
+        element = interface.respond_to?(:root_array_element) ? interface.root_array_element : nil
+
+        if element.nil?
+          object_schema(interface.properties, openapi_version: openapi_version, type_mapping: type_mapping)
+        elsif element.respond_to?(:properties) && element.respond_to?(:inline?) && element.inline?
+          schema_for(element, openapi_version: openapi_version)
+        else
+          union_member_schema(element)
+        end
+      end
 
       def ref_schema(ref, property, openapi_version:)
         ref_obj = {"$ref" => ref}
