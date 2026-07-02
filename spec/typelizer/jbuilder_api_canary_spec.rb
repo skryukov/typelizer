@@ -58,6 +58,13 @@ RSpec.describe "Jbuilder API canary" do
     calls
   end
 
+  # Dispatch arms intentionally kept for methods OUTSIDE jbuilder's public
+  # surface. Currently none: a name jbuilder doesn't define routes through
+  # `method_missing`/`set!` at render time — i.e. it IS a property — so a
+  # special arm for it would type something the runtime doesn't do. Add an
+  # entry here only with a written justification.
+  let(:dispatch_allowlist) { [] }
+
   it "dispatches on every public jbuilder DSL method" do
     unaccounted = jbuilder_dsl_methods - dispatched_calls
 
@@ -71,6 +78,21 @@ RSpec.describe "Jbuilder API canary" do
       lib/typelizer/serializer_plugins/jbuilder/walker.rb — type it, or
       warn+skip via `warn_skipped` / `log_warning` — then add a spec.
       This is the warn-on-drop invariant: no jbuilder API is handled silently.
+    MSG
+  end
+
+  it "dispatches on nothing beyond jbuilder's public DSL surface" do
+    phantom = dispatched_calls.uniq - jbuilder_dsl_methods - dispatch_allowlist
+
+    expect(phantom).to be_empty, <<~MSG
+      The walker dispatches on method(s) jbuilder #{Jbuilder::VERSION} does not
+      expose: #{phantom.inspect}
+
+      At render time jbuilder routes an undefined name through
+      `method_missing`/`set!` — it renders as a plain JSON key — so a special
+      arm mis-models the runtime (a dead arm at best, a silently dropped
+      property at worst). Remove the arm from extract_one, or add the name to
+      `dispatch_allowlist` with a justification.
     MSG
   end
 

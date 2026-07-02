@@ -234,7 +234,7 @@ type PostsIndex = {
 
 If the name doesn't match the plurality of the value (e.g. a collection named `data`), pin it with `typelize:` or rename the property. Known ActiveRecord collection methods on the argument (`all`, `where`, `includes`, `order`, `limit`, `offset`, `group`, `distinct`, `none`) also force array inference — custom scopes like `recent` or `active` are **not** recognized statically; use a plural property name or `typelize:`.
 
-Words that look plural but are conceptually singular (`news`, `settings`, `earnings`, `analytics`, `statistics`, `series`) are treated as singular. Apps with additional domain-specific cases can extend Rails' inflector (`ActiveSupport::Inflector.inflections { |i| i.uncountable %w[...] }`) — the heuristic consults it.
+Words that look plural but are conceptually singular (`news`, `settings`, `earnings`, `analytics`, `statistics`, `series`, `metadata`, `data`, `stats`, `credentials`) are treated as singular. Apps with additional domain-specific cases can extend Rails' inflector (`ActiveSupport::Inflector.inflections { |i| i.uncountable %w[...] }`) — the heuristic consults it, and a `typelize:` pin always overrides it.
 
 Recursive partials work too — Typelizer memoizes interfaces per class, so a `_comment.json.jbuilder` that references itself via `partial: "comments/comment"` produces a stable self-referential type.
 
@@ -583,7 +583,6 @@ The walker is static — it parses templates without running them. Constructs it
 | `json.array! @xs, partial: some_variable` | Skipped + warning (dynamic reference; root stays an object) | String-literal `partial:` or `typelize:` |
 | Root array inside a conditional | Object type + warning | `typelize:` |
 | `@items.each { json.set!(...) { ... } }` (iteration/expression wrapping json calls) | Skipped + warning (body never walked) | `json.array!` block form or `typelize:` |
-| `json.cache_collection! @items` (bare or with `partial:`) | Skipped + warning (runtime collection caching) | Collection `json.partial!` or `json.<name> @items, partial: "...", as: ...` |
 | `json.extract! obj, *attrs` (splat/dynamic attribute list) | Literal attributes emitted; dynamic ones skipped + warning | List attributes literally or `typelize:` |
 | `json.key_format!` / `json.deep_format_keys!` | No property + warning (runtime key casing diverges from source names) | Align casing via `properties_transformer` config |
 | `json.ignore_nil!` | No property + warning (nil keys omitted at runtime) | Mark affected properties optional via `typelize:` |

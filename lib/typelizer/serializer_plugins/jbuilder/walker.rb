@@ -599,11 +599,6 @@ module Typelizer
             # there's no property to attach it to.
             warn_skipped(node, "`json.child!` at the template root (no enclosing `json.<name>` block)")
             []
-          when :cache_collection!
-            # Both forms (bare and `partial:`) render each collection member
-            # through fragment-cache plumbing the walker cannot follow.
-            warn_skipped(node, "`json.cache_collection!` (runtime collection caching)")
-            []
           when :key_format!
             log_warning(node, "`json.key_format!` changes runtime key casing; generated types use " \
               "source names — align casing via Typelizer's `properties_transformer` config")
@@ -1022,8 +1017,10 @@ module Typelizer
         # Words that look plural but are conceptually singular, so e.g.
         # `json.earnings @summary, partial: ...` types `Earnings`, not
         # `Array<Earnings>`. Apps can extend this via Rails' inflector
-        # uncountables (`singularize` consults inflections first).
-        SINGULAR_LOOKING_PLURALS = %w[news settings earnings analytics statistics series].freeze
+        # uncountables (`singularize` consults inflections first), and a
+        # `typelize:` pin always overrides the heuristic.
+        SINGULAR_LOOKING_PLURALS = %w[news settings earnings analytics statistics series
+          metadata data stats credentials].freeze
 
         def plural_name?(name)
           str = name.to_s

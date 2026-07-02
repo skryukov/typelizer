@@ -1360,6 +1360,34 @@ RSpec.describe Typelizer::Jbuilder do
         expect(output).to include("authors: Array<")
       end
 
+      it "treats plural-looking aggregate names (metadata/data/stats/credentials) as singular objects" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.metadata @meta, :mean, :max
+          json.data @payload, :size, :checksum
+          json.stats @summary, :views, :clicks
+          json.credentials @creds, :login, :token
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        %w[metadata data stats credentials].each do |name|
+          expect(output).to include("#{name}: {")
+          expect(output).not_to include("#{name}: Array<")
+        end
+      end
+
+      it "lets a typelize: pin override the singular/plural heuristic" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.stats @all_stats, :mean, :max, typelize: "Array<{ mean: number }>"
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("stats: Array<{ mean: number }>")
+      end
+
       it "warns and falls back to inference when typelize: is a Ruby hash, not a type string" do
         write_template("things/show.json.jbuilder", <<~RUBY)
           json.foo bar, typelize: {id: "number"}
@@ -2637,7 +2665,13 @@ RSpec.describe Typelizer::Jbuilder do
     end
 
     describe "cache_collection!" do
-      it "warns for the bare form and emits no bogus property" do
+      # `cache_collection!` is NOT part of jbuilder 2.15's public API (it
+      # lived in the external jbuilder_cache_multi gem): jbuilder routes it
+      # through `method_missing`/`set!` and renders a literal
+      # "cache_collection!" JSON key. The walker's `else` arm mirrors that —
+      # a quoted property, warned as unknown — instead of a dead special case
+      # (the API canary keeps the dispatch list honest in both directions).
+      it "types the bare form as a plain (quoted) property, like jbuilder renders it" do
         write_template("probe/index.json.jbuilder", <<~RUBY)
           json.ok true
           json.cache_collection! @people
@@ -2649,31 +2683,12 @@ RSpec.describe Typelizer::Jbuilder do
           output = render_interface(Typelizer::Jbuilder::Templates::ProbeIndex)
         end
 
-        expect(logs).to include("probe/index.json.jbuilder:2")
-        expect(logs).to include("json.cache_collection!")
-        expect(logs).to include("typelize:")
         expect(output).to include("ok: boolean")
-        expect(output).not_to include("cache_collection")
-      end
-
-      it "warns for the `partial:` form and emits no bogus property" do
-        write_template("probe/_item.json.jbuilder", <<~RUBY)
-          json.id item.id, typelize: "number"
-        RUBY
-        write_template("probe/index.json.jbuilder", <<~RUBY)
-          json.cache_collection! @people, partial: "probe/item", as: :item
-        RUBY
-
-        output = nil
-        logs = with_capture_logger do
-          Typelizer::Jbuilder.discover(views_root)
-          output = render_interface(Typelizer::Jbuilder::Templates::ProbeIndex)
-        end
-
-        expect(logs).to include("probe/index.json.jbuilder:1")
-        expect(logs).to include("json.cache_collection!")
-        expect(output).not_to include("cache_collection")
-        expect(output).not_to include("ProbeItem")
+        expect(output).to include("'cache_collection!': unknown")
+        # warn-on-drop: the untypeable value still warns through the normal
+        # unknown-candidate path.
+        expect(logs).to include("could not infer a type for `cache_collection!`")
+        expect(logs).to include("probe/index.json.jbuilder:2")
       end
     end
 
