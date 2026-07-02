@@ -3420,6 +3420,109 @@ RSpec.describe Typelizer::Jbuilder do
       end
     end
 
+    describe "cross-branch type unions (round 5)" do
+      # Only one branch runs at render: `@flag1 ? 20 : @d1` demonstrably
+      # renders `false` when @d1 is false, so emitting `number` alone was a
+      # silent wrong type — and swallowing the `unknown` member also muted
+      # the post-inference warning.
+      it "unions disagreeing branch types and keeps the unknown member warning alive" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @flag1
+            json.k2 20
+          else
+            json.k2 @d1
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("k2: number | unknown")
+        expect(logs).to include("could not infer a type for `k2`")
+      end
+
+      it "unions two inferable branch types" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @numeric
+            json.value 1
+          else
+            json.value "one"
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(output).to include("value: number | string")
+        expect(output).not_to include("value?:")
+        expect(logs).to eq("")
+      end
+
+      it "unions branch object shapes (only one branch's shape renders)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @admin
+            json.payload do
+              json.secret "x"
+            end
+          else
+            json.payload do
+              json.public_info "y"
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("secret: string")
+        expect(output).to include("public_info: string")
+        expect(output).to match(/payload: \{[\s\S]*\} \| \{[\s\S]*\}/)
+      end
+
+      it "resolves a delegated branch member through model inference" do
+        write_template("users/show.json.jbuilder", <<~RUBY)
+          typelize_from User
+
+          if @raw
+            json.extract! @user, :active
+          else
+            json.active "suspended"
+          end
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::UsersShow)
+        end
+
+        expect(output).to include("active: boolean | string")
+        expect(logs).to eq("")
+      end
+
+      it "still lets a typelize: assertion in one branch win outright" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          if @full
+            json.stats @data, typelize: "Record<string, number>"
+          else
+            json.stats compute_stats
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("stats: Record<string, number>")
+        expect(output).not_to include("unknown")
+      end
+    end
+
     describe "discovery ordering" do
       it "registers templates in sorted path order regardless of FS glob order" do
         write_template("bbb/index.json.jbuilder", "json.x 1\n")

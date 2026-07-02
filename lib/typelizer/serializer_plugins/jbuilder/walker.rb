@@ -1470,24 +1470,50 @@ module Typelizer
           [branches, false]
         end
 
-        # Merges same-name props across branches: nullability widens
-        # (`Foo` + `Foo | null` → `Foo | null`); a prop is optional unless
-        # every branch of a fully-covered chain emits it (or any branch marked
-        # it optional). Type ambiguity isn't unioned — the first non-`null`
-        # branch wins (a bare `nil` branch contributes only nullability),
-        # except a `typelize:` assertion in any branch wins and carries
-        # `user_asserted` through so model inference can't clobber it.
+        # Merges same-name props across branches: only ONE branch runs at
+        # render, so disagreeing branch types UNION (`json.k 20` vs
+        # `json.k @dynamic` renders either) — through the same member
+        # machinery as the sequential fold, so delegated (nil-typed) members
+        # resolve via model inference and `unknown` members keep the
+        # post-inference warning alive instead of being silently swallowed
+        # by another branch's type. Nullability widens (a bare `nil` branch
+        # contributes `| null`, not a member); a prop is optional unless
+        # every branch of a fully-covered chain emits it (or any branch
+        # marked it optional). A `typelize:` assertion in any branch wins
+        # outright and carries `user_asserted` through so model inference
+        # can't clobber it.
         def merge_branches(branch_props, fully_covered:)
           indexed = branch_props.map { |props| props.to_h { |p| [p.name.to_s, p] } }
           names = branch_props.flat_map { |props| props.map { |p| p.name.to_s } }.uniq
           names.map do |name|
             occurrences = indexed.map { |idx| idx[name] }
             present = occurrences.compact
-            base = present.find(&:user_asserted) ||
-              present.find { |p| !null_type?(p) } || present.first
+            base = merged_branch_occurrence(present)
             optional = present.any?(&:optional) || !(fully_covered && occurrences.all?)
             preserve_merge_block_marker(base, base.with(optional: optional, nullable: widened_nullable(base, present)))
           end
+        end
+
+        # The single property a set of branch occurrences merges into: an
+        # asserted occurrence wins outright; a sole typed occurrence stands
+        # as-is (bare-`nil` branches contribute nullability only); multiple
+        # typed occurrences union their members.
+        def merged_branch_occurrence(present)
+          asserted = present.find(&:user_asserted)
+          return asserted if asserted
+
+          typed = present.reject { |p| null_type?(p) }
+          base = typed.first || present.first
+          return base if typed.size <= 1
+
+          members = typed.flat_map { |p| union_members(p) }.uniq
+          type, multi = fold_members(members)
+          delegated = typed.any? { |p| !p.multi && p.type.nil? }
+          base.with(
+            type: type,
+            multi: multi,
+            inference_locked: !delegated && typed.any?(&:inference_locked)
+          )
         end
 
         # Nullability widens across merged occurrences: an explicit `nullable`
