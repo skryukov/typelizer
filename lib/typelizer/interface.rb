@@ -283,16 +283,20 @@ module Typelizer
       type.respond_to?(:element) && type.respond_to?(:map_element_shape)
     end
 
-    # Strips only a TRAILING Serializer/Resource suffix off the demodulized
-    # class name (mirroring the default serializer_name_mapper), so
-    # `AResourceFoo::UserSerializer` yields "User" — a leftmost scan would
-    # stop at "A(Resource…)". Names with no suffix at all (e.g. jbuilder's
-    # `Templates::Post`) keep their demodulized name instead of crashing.
+    # The name this serializer uses to reference ITSELF in typelize
+    # declarations (excluded from imports). Derived from the demodulized
+    # serializer_name_mapper output — the same name the interface actually
+    # exports — so it tracks whatever suffix policy the mapper applies: the
+    # default mapper already strips a trailing Serializer/Resource
+    # (`AResourceFoo::UserSerializer` → "User", and only trailing — a
+    # leftmost scan would stop at "A(Resource…)"), while a non-stripping
+    # mapper (e.g. jbuilder's demodulize) keeps the full name, so a template
+    # `typelize_as "Post2Resource"` embedding a partial `typelize_as
+    # "Post2"` still imports Post2 instead of subtracting it as "self".
+    # Suffix-less names (jbuilder's `Templates::Post`) pass through
+    # unchanged.
     def self_type_name
-      base = serializer.name.to_s.split("::").last.to_s.sub(/(?:Serializer|Resource)\z/, "")
-      return base unless base.empty?
-
-      config.serializer_name_mapper.call(serializer).tr_s(":", "")
+      config.serializer_name_mapper.call(serializer).to_s.split("::").last.to_s
     end
 
     # Only a named interface element needs an import; plain type strings
