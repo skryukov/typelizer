@@ -62,11 +62,6 @@ RSpec.describe "Jbuilder differential fuzzing (fixed corpus)" do
   end
 
   it "emits types that accept every rendered state (zero SEVERITY-A divergences)" do
-    # The tree still carries known walker/fold bugs (round-5 findings); this
-    # spec is the regression gate for their fixes. `pending` keeps the suite
-    # green while still executing and reporting the divergences.
-    pending "enable after round-5 fixes merge"
-
     failing = corpus_results.select { |r| r.divergences.any? { |d| d.severity == :A } }
     expect(failing).to be_empty, JbuilderFuzz::Runner.format_failures(failing, limit: 8)
   end

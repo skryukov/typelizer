@@ -3082,11 +3082,9 @@ RSpec.describe Typelizer::Jbuilder do
       end
 
       # Composed behavior with a model binding: the walker's nullable:true
-      # currently gets clobbered by column inference assigning (not widening)
-      # nullability — active_record.rb's widen-not-assign fix lands
-      # separately.
+      # must survive column inference (active_record.rb widens instead of
+      # assigning nullability).
       it "keeps safe-navigation nullability over a NOT NULL column of the same name" do
-        pending "requires model-inference widening in active_record.rb (merged separately)"
         write_template("users/show.json.jbuilder", <<~RUBY)
           typelize_from User
 
