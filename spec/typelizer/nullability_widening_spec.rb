@@ -3,9 +3,13 @@
 # Model inference must WIDEN, never narrow, plugin-provided nullability and
 # optionality. The jbuilder walker proves nil renders (nullable) and omitted
 # keys (optional) from template source; a NOT NULL column with the same name
-# must not clobber that evidence. Props arriving without the flag keep the
-# plain column-driven assignment (existing class-based serializers are
-# unaffected).
+# must not clobber that evidence. Props arriving WITHOUT the flag keep the
+# plain column-driven assignment — so a plugin that never pre-sets the flag
+# (the common column-backed attribute) is unaffected. A plugin that DOES
+# pre-set `nullable: true`/optional on a NOT NULL column (e.g. an Alba custom
+# type with `auto_convert: false`) now keeps it instead of being narrowed;
+# that behavior change and its one-time file rewrite are noted in the
+# CHANGELOG.
 RSpec.describe "model inference nullability widening" do
   let(:views_root) { Dir.mktmpdir("typelizer-nullability-widening") }
 

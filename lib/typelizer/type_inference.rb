@@ -126,6 +126,13 @@ module Typelizer
     def infer_shape_types(shape)
       shape.map_properties do |sub_prop|
         sub_prop
+          # Same class-name resolution the top-level pipeline runs, so a
+          # nested `typelize: "SomeSerializer"` resolves to an interface
+          # reference instead of surviving as a literal (which renders as-is
+          # and emits a dangling import). `resolve_asserted_type` lives on
+          # Interface; duck-typed includers of this module (Alba's
+          # TraitInterface) never carry user_asserted props, so skip it there.
+          .then { |p| respond_to?(:resolve_asserted_type, true) ? resolve_asserted_type(p) : p }
           .then { |p| p.type ? p : apply_model_inference(p) }
           .then { |p| p.inference_locked ? p : apply_metadata(p) }
           .then { |p| infer_nested_property_types(p) }

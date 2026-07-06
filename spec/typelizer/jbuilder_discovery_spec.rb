@@ -94,6 +94,18 @@ RSpec.describe "Jbuilder discovery lifecycle" do
       expect(output_dir.join("GammaShow.ts")).to exist
     end
 
+    it "discovers templates under a root whose path contains glob metacharacters" do
+      # A real checkout path can contain `[`, `]`, `{`, `*` — interpolated
+      # into the glob PATTERN these are metacharacters that match nothing.
+      meta_root = File.join(views_root, "app [wip]")
+      FileUtils.mkdir_p(File.join(meta_root, "posts"))
+      File.write(File.join(meta_root, "posts", "show.json.jbuilder"), "json.id 1\n")
+
+      Typelizer::Jbuilder.discover(meta_root)
+
+      expect(Typelizer::Jbuilder::Templates.const_defined?(:PostsShow, false)).to be(true)
+    end
+
     it "renames types (typelize_as change) without duplicate exports in index.ts" do
       configuration.jbuilder_views = [views_root]
       path = write_template("widgets/show.json.jbuilder", %(typelize_as "WidgetAlpha"\n\njson.w 1\n))

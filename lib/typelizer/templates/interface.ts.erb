@@ -21,7 +21,7 @@ type <%= interface.name %> = {
 <% end -%>
 }
 <% elsif interface.root_is_array -%>
-type <%= interface.name %> = Array<<%= interface.root_array_element_name || "#{interface.name}Data" %>>;
+type <%= interface.name %> = Array<<%= interface.root_array_element_type %>>;
 <% end -%>
 <% interface.trait_interfaces.each do |trait| -%>
 

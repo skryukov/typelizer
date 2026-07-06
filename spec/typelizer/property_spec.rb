@@ -56,6 +56,23 @@ RSpec.describe Typelizer::Property do
       end
     end
 
+    describe "non-identifier names" do
+      it "quotes a name that is not a valid JS identifier" do
+        prop = described_class.new(name: "kebab-key", type: "string")
+        expect(prop.to_s).to eq("'kebab-key': string")
+      end
+
+      it "escapes an apostrophe in the name so the TS stays valid" do
+        prop = described_class.new(name: "it's", type: "number")
+        expect(prop.to_s).to eq("'it\\'s': number")
+      end
+
+      it "escapes the quote and backslashes under prefer_double_quotes" do
+        prop = described_class.new(name: "say \"hi\"\\x", type: "number")
+        expect(prop.render(prefer_double_quotes: true)).to eq("\"say \\\"hi\\\"\\\\x\": number")
+      end
+    end
+
     describe "nullable properties" do
       it "adds | null for nullable properties" do
         prop = described_class.new(name: "field", type: "string", nullable: true)

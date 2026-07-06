@@ -3,6 +3,7 @@ module Typelizer
     :name, :type, :optional, :nullable,
     :multi, :column_name, :column_type, :comment, :enum, :enum_type_name, :deprecated,
     :with_traits, :additional_types, :user_asserted, :inference_locked,
+    :merge_block_array,
     keyword_init: true
   ) do
     def with(**attrs)
@@ -60,8 +61,9 @@ module Typelizer
     def fingerprint
       # Use array format for consistent output across Ruby versions
       # (Hash#inspect format changed in Ruby 3.4).
-      # column_type, user_asserted, and inference_locked are excluded because
-      # they only inform inference, not output.
+      # column_type, user_asserted, inference_locked, and merge_block_array
+      # are excluded because they only inform inference/merge behavior, not
+      # output.
       # additional_types is excluded from to_h to avoid changing fingerprints
       # for properties that don't use it; when present, its rendered names are
       # merged back in (it affects generated output).
@@ -72,7 +74,7 @@ module Typelizer
       # ORIGINAL object (String or Symbol) so existing digests stay
       # byte-identical.
       quoted_name = js_key(name.to_s, false)
-      hash = to_h.except(:column_type, :additional_types, :user_asserted, :inference_locked)
+      hash = to_h.except(:column_type, :additional_types, :user_asserted, :inference_locked, :merge_block_array)
         .merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
       hash = hash.merge(name: quoted_name) unless quoted_name == name.to_s
       if additional_types&.any?
@@ -124,8 +126,14 @@ module Typelizer
       (sort_order == :alphabetical) ? keys.sort_by(&:downcase) : keys
     end
 
+    # Escapes the quote character and backslashes so a name or enum value
+    # containing them (e.g. a `json.set! "it's"` key) emits a valid TS string
+    # literal instead of `'it's'`, which is a syntax error that breaks the
+    # whole generated file. Names without those characters are byte-identical.
     def quote_string(str, prefer_double_quotes)
-      prefer_double_quotes ? "\"#{str}\"" : "'#{str}'"
+      quote = prefer_double_quotes ? "\"" : "'"
+      escaped = str.to_s.gsub(/[\\#{quote}]/) { |char| "\\#{char}" }
+      "#{quote}#{escaped}#{quote}"
     end
 
     # A name that isn't a valid JS identifier (e.g. "kebab-key") must be

@@ -44,12 +44,23 @@ module Typelizer
     # they resolve their name below instead of through this override.
     def type_name_override
       return nil unless serializer.respond_to?(:_typelizer_type_name)
+      # `typelize_as` defines a singleton method, which subclasses INHERIT —
+      # but a type name must be unique per class (an inherited override renames
+      # every descendant to the same name and collides on one file). Honor it
+      # only on the class that declared it; a subclass without its own
+      # `typelize_as` falls through to the mapper (its own demodulized name).
+      return nil unless serializer.respond_to?(:singleton_methods) &&
+        serializer.singleton_methods(false).include?(:_typelizer_type_name)
       serializer._typelizer_type_name
     end
 
     def filename
       if config.filename_mapper
-        config.filename_mapper.call(config.serializer_name_mapper.call(serializer))
+        # Feed the mapper the OVERRIDE name when `typelize_as` set one, so a
+        # renamed interface writes to a matching file instead of the mapper's
+        # (now stale) name — otherwise two interfaces clobber one file while
+        # the collision warning stays silent.
+        config.filename_mapper.call(type_name_override || config.serializer_name_mapper.call(serializer))
       else
         name.gsub("::", "/")
       end
@@ -102,6 +113,19 @@ module Typelizer
       when Interface then element.name
       when String then element
       end
+    end
+
+    # The element type rendered inside `Array<...>`: the named partial element
+    # and/or the inline `...Data` alias. A template that MIXES both forms
+    # (a blockless `json.array! @a, partial: "..."` plus a block/attrs form)
+    # unions them (`Array<Post | XData>`) instead of silently narrowing to the
+    # partial alone and orphaning an unreferenced `XData`.
+    def root_array_element_type
+      members = []
+      members << root_array_element_name if root_array_element_name
+      members << "#{name}Data" unless properties_to_print.empty?
+      members << "#{name}Data" if members.empty?
+      members.uniq.join(" | ")
     end
 
     def wrapped?
@@ -294,9 +318,12 @@ module Typelizer
     # `typelize_as "Post2Resource"` embedding a partial `typelize_as
     # "Post2"` still imports Post2 instead of subtracting it as "self".
     # Suffix-less names (jbuilder's `Templates::Post`) pass through
-    # unchanged.
+    # unchanged. A `typelize_as` override IS the exported name, so it wins:
+    # otherwise the stale mapper name is subtracted from imports and a
+    # genuine reference to a different type that happens to match it (e.g. a
+    # `typelize "Post"` after `typelize_as "PostLegacy"`) is silently dropped.
     def self_type_name
-      config.serializer_name_mapper.call(serializer).to_s.split("::").last.to_s
+      type_name_override || config.serializer_name_mapper.call(serializer).to_s.split("::").last.to_s
     end
 
     # Only a named interface element needs an import; plain type strings

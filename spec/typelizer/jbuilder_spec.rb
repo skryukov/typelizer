@@ -354,6 +354,35 @@ RSpec.describe Typelizer::Jbuilder do
       expect(output).not_to include("attr_json: unknown")
     end
 
+    it "resolves a nested typelize: serializer reference to an imported interface, matching the top level" do
+      profile = Class.new do
+        include Alba::Resource
+        include Typelizer::DSL
+
+        typelize_as "Profile"
+        attributes :id
+      end
+      stub_const("ProfileResource", profile)
+
+      write_template("things/show.json.jbuilder", <<~RUBY)
+        json.top @p, typelize: "ProfileResource"
+        json.author do
+          json.profile @p, typelize: "ProfileResource"
+        end
+      RUBY
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+      # Both the top-level and the nested assertion must resolve to the
+      # interface name and be imported — never survive as the literal
+      # "ProfileResource" (which emits a dangling import).
+      expect(output).to include("top: Profile")
+      expect(output).to include("profile: Profile")
+      expect(output).to include("import type {Profile}")
+      expect(output).not_to include("ProfileResource")
+    end
+
     it "scopes a nested typelize: to its nesting level (no flat-key leak onto same-named top-level props)" do
       write_template("users/show.json.jbuilder", <<~RUBY)
         typelize_from User
@@ -664,6 +693,21 @@ RSpec.describe Typelizer::Jbuilder do
         end
 
         expect(logs).not_to include("unbalanced")
+      end
+
+      it "accepts a balanced typelize: string with a backslash-escaped quote" do
+        write_template("things/show.json.jbuilder", <<~'RUBY')
+          json.word @w, typelize: "'don\\'t' | 'ok'"
+        RUBY
+
+        output = nil
+        logs = with_capture_logger do
+          Typelizer::Jbuilder.discover(views_root)
+          output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+        end
+
+        expect(logs).not_to include("unbalanced")
+        expect(output).to include("word: 'don\\'t' | 'ok'")
       end
 
       it "warns and emits nothing for a template with a Ruby syntax error (recovered AST lies)" do
@@ -2135,6 +2179,29 @@ RSpec.describe Typelizer::Jbuilder do
         expect(output).not_to include("PortalsIndexData")
       end
 
+      it "unions the partial element with an inline block form when a root mixes both (no silent narrowing)" do
+        write_template("posts/_post.json.jbuilder", <<~RUBY)
+          json.id post.id, typelize: "number"
+        RUBY
+        write_template("posts/index.json.jbuilder", <<~RUBY)
+          json.array! @featured, partial: "posts/post", as: :post
+          json.array! @drafts do |d|
+            json.title d.title, typelize: "string"
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::PostsIndex)
+
+        # jbuilder concatenates both forms, so the element type is the union
+        # of the partial and the block shape — the inline `PostsIndexData`
+        # alias must be REFERENCED (not orphaned) and `Post` imported.
+        expect(output).to include("type PostsIndexData = {")
+        expect(output).to include("title: string")
+        expect(output).to match(/type PostsIndex = Array<Post \| PostsIndexData>;|type PostsIndex = Array<PostsIndexData \| Post>;/)
+        expect(output).to include("import type {Post}")
+      end
+
       it "is written (not dropped as empty) and exported despite having no own properties" do
         write_template("portals/_portal.json.jbuilder", <<~RUBY)
           json.id portal.id, typelize: "number"
@@ -3034,6 +3101,27 @@ RSpec.describe Typelizer::Jbuilder do
         expect(output).to include("is_admin: boolean | null")
       end
 
+      it "unions `boolean` into `a && b` when the left is a predicate (false leaks)" do
+        write_template("things/show.json.jbuilder", "json.expires_at @sub.active? && @sub.expires_at\n")
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        # `@sub.active?` renders `false` when inactive, which `string | null`
+        # alone would reject.
+        expect(output).to match(/expires_at: (string \| boolean|boolean \| string) \| null/)
+      end
+
+      it "keeps `a && b` object-valued (nil-only) when the left is a bare attribute" do
+        write_template("things/show.json.jbuilder", "json.user_id @user && @user.id\n")
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        expect(output).to include("user_id: number | null")
+        expect(output).not_to include("boolean")
+      end
+
       # `a || b` renders the fallback when a is nil — nil never survives, so
       # a literal fallback must NOT emit `| null` noise (that false `| null`
       # is exactly what strict frontends trip over).
@@ -3185,6 +3273,70 @@ RSpec.describe Typelizer::Jbuilder do
         # either way.
         expect(output).to match(/items: Array<\{[\s\S]*a: number;[\s\S]*\} \| \{[\s\S]*b: number;[\s\S]*\}>/)
         expect(output).not_to include("items?:")
+      end
+
+      it "concatenates a child!-block re-set by a branch-merged child!-block union (no marker loss)" do
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.items do
+            json.child! do
+              json.a 1
+            end
+          end
+          if @x
+            json.items do
+              json.child! do
+                json.b 2
+              end
+            end
+          else
+            json.items do
+              json.child! do
+                json.c 3
+              end
+            end
+          end
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        # Render truth: [{a}] concatenated with [{b}] or [{c}]. The element
+        # type is the union of all three; the marker must survive the branch
+        # merge (else the concat degrades to a replace) and the ArrayOf
+        # members must NOT nest into `Array<Array<…>>`.
+        expect(output).to include("a: number")
+        expect(output).to include("b: number")
+        expect(output).to include("c: number")
+        expect(output).to match(/items: Array<[^>]*>/)
+        expect(output).not_to include("Array<Array")
+      end
+
+      it "concatenates child!-arrays across a json.partial! merge (marker survives the walker boundary)" do
+        write_template("things/_extra.json.jbuilder", <<~RUBY)
+          json.tags do
+            json.child! do
+              json.y 2
+            end
+          end
+        RUBY
+        write_template("things/show.json.jbuilder", <<~RUBY)
+          json.tags do
+            json.child! do
+              json.x 1
+            end
+          end
+          json.partial! "things/extra"
+        RUBY
+
+        Typelizer::Jbuilder.discover(views_root)
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+
+        # At render the partial writes into the same builder, so jbuilder
+        # concatenates both arrays: the element type is `{x} | {y}`, never the
+        # partial's `{y}` alone.
+        expect(output).to include("x: number")
+        expect(output).to include("y: number")
+        expect(output).to match(/tags: Array<[^>]*>/)
       end
 
       # A second root `json.array!` also concatenates

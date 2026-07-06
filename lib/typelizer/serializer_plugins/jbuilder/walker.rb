@@ -342,15 +342,6 @@ module Typelizer
           # a value-less `typelize:`), so the generic post-inference unknown
           # warning is suppressed for them.
           @prewarned_props = Set.new
-          # Object identities of array props built from a VALUELESS
-          # `json.<name> do json.child! ... end` block: at render these go
-          # through jbuilder's `_merge_block`, whose Array+Array branch
-          # CONCATENATES onto an existing array instead of replacing it —
-          # `merge_reset` needs to know which occurrences those are (see
-          # `merge_block_concat?`). Identity-keyed because the (multi, type)
-          # pair alone can't distinguish this form from a collection-value
-          # block, which replaces.
-          @merge_block_arrays = Set.new
         end
 
         def properties
@@ -712,9 +703,16 @@ module Typelizer
           )
         end
 
-        # Element types contributed by one array-valued occurrence.
+        # Element types contributed by one array-valued occurrence. An
+        # ArrayOf member (a branch-merged `child!` array, whose union holds
+        # `Array<{b}> | Array<{c}>`) is UNWRAPPED to its element shapes, so a
+        # concat folds to `Array<{a} | {b} | {c}>` — never a nested
+        # `Array<Array<…>>`.
         def element_members(prop)
-          prop.type.is_a?(Array) ? prop.type : [prop.type || "unknown"]
+          members = Array(prop.type).flat_map do |member|
+            member.is_a?(ArrayOf) ? arrayof_members(member) : [member]
+          end
+          members.empty? ? ["unknown"] : members
         end
 
         def arrayof_members(array_of)
@@ -734,11 +732,11 @@ module Typelizer
         # to optional unless the later block re-sets them unconditionally.
         def deep_merge_shapes(earlier, later, incoming_optional:, earlier_optional: false)
           merged = earlier.properties.each_with_object({}) do |p, h|
-            h[p.name.to_s] = earlier_optional ? preserve_merge_block_marker(p, p.with(optional: true)) : p
+            h[p.name.to_s] = earlier_optional ? p.with(optional: true) : p
           end
           later.properties.each do |prop|
             key = prop.name.to_s
-            prop = preserve_merge_block_marker(prop, prop.with(optional: true)) if incoming_optional
+            prop = prop.with(optional: true) if incoming_optional
             merged[key] = merged.key?(key) ? merge_reset(merged[key], prop) : prop
           end
           Shape.new(properties: merged.values)
@@ -1021,14 +1019,22 @@ module Typelizer
 
         # Cheap syntactic sanity check for a `typelize:` string: unbalanced
         # brackets/braces/quotes. Skips quoted content (string-literal types
-        # may contain brackets) and the `>` of `=>` arrows.
+        # may contain brackets), a backslash-escaped quote inside a string
+        # (`'don\'t'` stays open), and the `>` of `=>` arrows.
         def unbalanced_override?(override)
           stack = []
           quote = nil
           prev = nil
+          escaped = false
           override.to_s.each_char do |ch|
             if quote
-              quote = nil if ch == quote
+              if escaped
+                escaped = false
+              elsif ch == "\\"
+                escaped = true
+              elsif ch == quote
+                quote = nil
+              end
             elsif ch == "'" || ch == '"' || ch == "`"
               quote = ch
             elsif DELIMITER_PAIRS.key?(ch)
@@ -1198,25 +1204,15 @@ module Typelizer
           prop = build_property(name, type: element, optional: optional, multi: true)
           # Only the valueless form is `_merge_block`-ed (and so CONCATENATES
           # over an existing array); a collection value replaces via
-          # `_set_value`.
-          remember_merge_block_array(prop) unless collection_value
-          prop
-        end
-
-        def remember_merge_block_array(prop)
-          @merge_block_arrays << prop.object_id
+          # `_set_value`. The marker is a Property field, so it rides through
+          # every `#with` copy (including across a `json.partial!` merge into
+          # another walker) without out-of-band bookkeeping.
+          prop = prop.with(merge_block_array: true) unless collection_value
           prop
         end
 
         def merge_block_array?(prop)
-          @merge_block_arrays.include?(prop.object_id)
-        end
-
-        # `Property#with` copies lose object identity — call this wherever a
-        # marked occurrence is copied before it reaches `merge_reset`.
-        def preserve_merge_block_marker(original, copy)
-          remember_merge_block_array(copy) if merge_block_array?(original)
-          copy
+          !!prop.merge_block_array
         end
 
         # Splits a block into [named partial interfaces, other stmts]. Only a
@@ -1391,7 +1387,41 @@ module Typelizer
             return []
           end
 
-          @context.interface_for(partial_class).properties
+          # The partial's properties are the FINAL output of its own
+          # interface — already inferred against the PARTIAL's model. Deep-copy
+          # them (they are shared, memoized objects — host inference mutates in
+          # place, which would corrupt the partial's own interface and make
+          # output order-dependent) and mark them resolved so the host's model
+          # inference and metadata can't repaint them against the HOST's model.
+          @context.interface_for(partial_class).properties.map { |prop| finalize_merged_property(prop) }
+        end
+
+        # Deep-copies a merged partial property and flags it (recursively)
+        # `inference_locked`, so the host interface treats it as final: no
+        # shared-object mutation, no model/metadata repaint against the host.
+        def finalize_merged_property(prop)
+          copy = prop.with(inference_locked: true, type: finalize_merged_type(prop.type))
+          if copy.additional_types&.any?
+            copy = copy.with(additional_types: copy.additional_types.map { |t| finalize_merged_type(t) })
+          end
+          copy
+        end
+
+        # Deep-copies inline shapes reachable from a merged type (own Shape,
+        # union members, ArrayOf elements), recursing through
+        # `finalize_merged_property`. Named Interface references and plain type
+        # strings are shared as-is — they are separate, immutable interfaces.
+        def finalize_merged_type(type)
+          case type
+          when Shape then Shape.new(properties: type.properties.map { |p| finalize_merged_property(p) })
+          when Array then type.map { |member| finalize_merged_type(member) }
+          else
+            if type.respond_to?(:map_element_shape)
+              type.map_element_shape { |shape| finalize_merged_type(shape) }
+            else
+              type
+            end
+          end
         end
 
         def handle_extract(node, optional:)
@@ -1563,7 +1593,7 @@ module Typelizer
             present = occurrences.compact
             base = merged_branch_occurrence(present)
             optional = present.any?(&:optional) || !(fully_covered && occurrences.all?)
-            preserve_merge_block_marker(base, base.with(optional: optional, nullable: widened_nullable(base, present)))
+            base.with(optional: optional, nullable: widened_nullable(base, present))
           end
         end
 
@@ -1754,11 +1784,17 @@ module Typelizer
           if node.is_a?(Prism::IfNode) || node.is_a?(Prism::UnlessNode)
             return infer_conditional_value(node, name: name)
           end
-          # `a && b` renders b only when a is truthy; a nil left side leaks
-          # through as the value, so the right side's type widens by `| null`.
+          # `a && b` renders b when a is truthy, null when a is nil, and the
+          # literal `false` when a is false — so a boolean-valued left operand
+          # leaks `false` into the value. Widen by `| null` always; also union
+          # `boolean` in when the left is SYNTACTICALLY boolean (a predicate
+          # `?`, a comparison, a `!`, a literal, or a boolean name hint). A
+          # bare attribute (`@x.active`) gives no static boolean signal and is
+          # treated as object-valued (nil-only leak), like `@obj && @obj.field`.
           if node.is_a?(Prism::AndNode)
             right = infer_value(node.right, name: name)
-            return {type: right[:type], nullable: true, locked: right[:locked]}
+            type = boolean_guard?(node.left) ? union_with_boolean(right[:type]) : right[:type]
+            return {type: type, nullable: true, locked: right[:locked]}
           end
           # `a || b` renders the FALLBACK when a is nil/false — nil never
           # survives the `||`, so the type comes from the right side and is
@@ -1849,6 +1885,37 @@ module Typelizer
           node.is_a?(Prism::CallNode) &&
             node.receiver.is_a?(Prism::ConstantReadNode) &&
             node.receiver.name == :Time
+        end
+
+        BOOLEAN_GUARD_OPERATORS = %i[== != < > <= >= !].freeze
+        private_constant :BOOLEAN_GUARD_OPERATORS
+
+        # True when a `&&` left operand is syntactically boolean-valued (so its
+        # `false` case leaks into the rendered value): a literal, a predicate
+        # method (`admin?`), a comparison/negation operator, or a boolean name
+        # hint (`is_active`). A bare attribute (`@x.active`) is undecidable
+        # statically and treated as object-valued.
+        def boolean_guard?(node)
+          node = self.class.unwrap_parens(node)
+          case node
+          when Prism::TrueNode, Prism::FalseNode then true
+          when Prism::CallNode
+            BOOLEAN_GUARD_OPERATORS.include?(node.name) ||
+              node.name.to_s.end_with?("?") ||
+              name_hint(node.name.to_s) == "boolean"
+          else false
+          end
+        end
+
+        # Adds `boolean` to a rendered value type, deduped: a scalar becomes a
+        # two-member union, a union gains the member, an already-boolean type
+        # is unchanged.
+        def union_with_boolean(type)
+          members = Array(type)
+          return type if members.include?("boolean")
+
+          members += ["boolean"]
+          (members.size == 1) ? members.first : members
         end
 
         def guess_from_name(name)

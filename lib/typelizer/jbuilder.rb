@@ -191,6 +191,64 @@ module Typelizer
         end
       end
 
+      # `merge!(object)` takes exactly one positional and no `**kwargs`, so a
+      # `typelize:` annotation packs as a second positional and raises
+      # ArgumentError. Strip our vocabulary; a braceless sole hash IS the
+      # object being merged (`json.merge!(a: 1)`), so it's re-packed untouched
+      # unless a live foreign owner claims a key. The walker can't type a
+      # dynamic merge and already warns on it, so nothing is lost here.
+      def merge!(*args, **kwargs)
+        return super(*args) if kwargs.empty?
+        if args.empty?
+          return super(kwargs) unless _typelizer_foreign_claims?(kwargs)
+        end
+
+        _typelizer_strip_kwargs!(kwargs)
+
+        if kwargs.empty?
+          super(*args)
+        else
+          super
+        end
+      end
+
+      # `child!` appends the current block's object to the target array; it
+      # takes no positional value and no `**kwargs`, so a `typelize:`
+      # annotation packs positionally and raises. Strip it and forward the
+      # block untouched.
+      def child!(*args, **kwargs, &block)
+        return super(*args, &block) if kwargs.empty?
+
+        _typelizer_strip_kwargs!(kwargs)
+
+        if kwargs.empty?
+          super(*args, &block)
+        else
+          super
+        end
+      end
+
+      # jbuilder's `partial!` has no `**kwargs`, so a `typelize:` annotation
+      # (or a foreign `inertia:` when its gem is absent) survives into the
+      # partial's locals hash and reaches the template as an unexpected local
+      # — a 500 under Rails strict locals. Strip our vocabulary before
+      # forwarding; the walker ignores `typelize:` on `partial!` (a merged
+      # partial can't be typed through a per-call annotation). Keyword-style
+      # locals that survive stripping re-pack as jbuilder's trailing options
+      # hash; a braces-hash locals argument arrives positionally and skips
+      # this path entirely via the empty-kwargs fast path.
+      def partial!(*args, **kwargs, &block)
+        return super(*args, &block) if kwargs.empty?
+
+        _typelizer_strip_kwargs!(kwargs)
+
+        if kwargs.empty?
+          super(*args, &block)
+        else
+          super
+        end
+      end
+
       private
 
       # True when a live foreign patch (e.g. jbuilder-inertia's) owns one of
@@ -282,7 +340,11 @@ module Typelizer
         walker = SerializerPlugins::Jbuilder.activate_walker!
         # Sorted for deterministic registration order — stable `index.ts`
         # output and stable collision error messages across filesystems.
-        Dir.glob(File.join(views_root, "**/*.json.jbuilder")).sort.each do |path|
+        # `base:` keeps the root out of the glob PATTERN so a real checkout
+        # path containing glob metacharacters (`app [wip]/`) still matches
+        # its templates instead of silently discovering nothing.
+        Dir.glob("**/*.json.jbuilder", base: views_root).sort.each do |rel_path|
+          path = File.join(views_root, rel_path)
           # Rails view-path shadowing: a template at the same relative path
           # as one from an earlier root is overridden by it at render time —
           # the earlier registration wins, this file is skipped (it is not a

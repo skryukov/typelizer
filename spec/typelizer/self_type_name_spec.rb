@@ -34,6 +34,23 @@ RSpec.describe Typelizer::Interface, "#self_type_name" do
     expect(self_type_name_for("Templates::Post")).to eq("Post")
   end
 
+  it "uses a typelize_as override as the self name so a same-named foreign type stays imported" do
+    klass = Class.new do
+      include Alba::Resource
+      include Typelizer::DSL
+
+      typelize_as "PostLegacy"
+      attributes :id
+    end
+    stub_const("PostSerializer", klass)
+
+    interface = described_class.new(serializer: klass, context: context)
+
+    # Without this, self_type_name is the mapper's "Post", which subtracts a
+    # genuine `typelize "Post"` reference from imports (TS2304).
+    expect(interface.send(:self_type_name)).to eq("PostLegacy")
+  end
+
   it "follows a custom serializer_name_mapper that does not strip suffixes" do
     stub_const("Templates::Post2Resource", Class.new)
     interface = described_class.new(serializer: Templates::Post2Resource, context: context)

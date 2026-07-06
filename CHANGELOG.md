@@ -66,6 +66,8 @@ and this project adheres to [Semantic Versioning].
 
 - `Typelizer::Generator#call` now materializes every writer's interfaces before writing any files (so a failing serializer in one writer no longer leaves another writer partially written first) and returns writer batches instead of a writers hash. ([@skryukov])
 
+- Model inference now only ever **widens** a property's nullability/optionality, never narrows it: a plugin (or the jbuilder walker) that already proved a value nullable/optional keeps that flag even against a `NOT NULL` column. This fixes jbuilder templates whose walker-proven `| null` was erased by a same-named column, but it is also a behavior change for **existing class-based serializers** whose plugin set `nullable: true` (or an optional attribute) on a value backed by a `NOT NULL` column — e.g. an Alba custom type registered with `auto_convert: false`, or an `oj_serializers` attribute passed `nullable: true`. Such a property rendered without `| null` before and renders with it now; the affected file is rewritten once on the next generation. This is the one exception to the byte-identical-digest note above beyond the two quoting cases; plain column-backed attributes are unaffected. ([@skryukov])
+
 ### Fixed
 
 - Per-writer stale-file cleanup no longer crosses writers: a writer whose `output_dir` is nested inside another writer's (e.g. `types/jbuilder` under `types`) keeps its files instead of having them collected as stale by the outer writer. ([@skryukov])

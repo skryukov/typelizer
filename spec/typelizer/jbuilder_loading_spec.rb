@@ -109,6 +109,18 @@ RSpec.describe "Jbuilder plugin loading" do
       expect(JSON.parse(json)).to eq([])
     end
 
+    it "renders json.merge! carrying a typelize: kwarg instead of raising ArgumentError" do
+      json = renderer.render(template: "merge_annotated", formats: [:json])
+
+      expect(JSON.parse(json)).to eq("id" => 1, "extra" => "x")
+    end
+
+    it "renders json.child! carrying a typelize: kwarg instead of raising ArgumentError" do
+      json = renderer.render(template: "child_annotated", formats: [:json])
+
+      expect(JSON.parse(json)).to eq("comments" => [{"body" => "hi"}])
+    end
+
     it "renders a plain jbuilder template byte-identical to vanilla jbuilder" do
       expect(::JbuilderTemplate.ancestors).to include(Typelizer::Jbuilder::SetExt)
 
@@ -124,6 +136,70 @@ RSpec.describe "Jbuilder plugin loading" do
       end
 
       expect(rendered).to eq(vanilla)
+    end
+  end
+
+  # `json.partial!` renders a real ActionView partial, which the bare
+  # `controller.renderer` harness above can't resolve (no virtual path), so
+  # its kwarg-stripping is pinned at the unit level: SetExt must strip the
+  # reserved `typelize:` before it reaches jbuilder's `partial!`, or it lands
+  # in the partial's locals and 500s under Rails strict locals. `merge!`/
+  # `child!` are covered by the render examples above; their sole-hash rules
+  # are pinned here too.
+  describe "SetExt kwarg stripping on merge!/child!/partial!" do
+    let(:recorder) do
+      Class.new do
+        attr_reader :calls
+
+        def initialize
+          @calls = []
+        end
+
+        def merge!(*args)
+          @calls << [:merge!, args]
+        end
+
+        def child!(*args, &block)
+          @calls << [:child!, args, block]
+        end
+
+        def partial!(*args)
+          @calls << [:partial!, args]
+        end
+      end
+    end
+
+    let(:builder) { Class.new(recorder) { prepend Typelizer::Jbuilder::SetExt }.new }
+
+    it "strips typelize: from partial! locals while preserving real locals" do
+      builder.partial!("comments/comment", comment: 1, typelize: "T")
+
+      expect(builder.calls).to eq([[:partial!, ["comments/comment", {comment: 1}]]])
+    end
+
+    it "strips typelize: from partial! and omits an emptied trailing hash" do
+      builder.partial!("comments/comment", typelize: "T")
+
+      expect(builder.calls).to eq([[:partial!, ["comments/comment"]]])
+    end
+
+    it "strips typelize: from merge! carrying a hash object" do
+      builder.merge!({extra: "x"}, typelize: "T")
+
+      expect(builder.calls).to eq([[:merge!, [{extra: "x"}]]])
+    end
+
+    it "re-packs a merge! sole braceless hash as the object, untouched" do
+      builder.merge!(theme: "dark") # standard:disable Performance/RedundantMerge
+
+      expect(builder.calls).to eq([[:merge!, [{theme: "dark"}]]])
+    end
+
+    it "strips typelize: from child! and forwards the block" do
+      block = proc {}
+      builder.child!(typelize: "T", &block)
+
+      expect(builder.calls).to eq([[:child!, [], block]])
     end
   end
 

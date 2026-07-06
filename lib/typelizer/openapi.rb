@@ -61,21 +61,27 @@ module Typelizer
       private
 
       # Mirrors interface.ts.erb's root-array rendering (`type X =
-      # Array<Element | XData>`): an inline or absent element inlines an
-      # object schema built from the interface's own properties, a NAMED
-      # element interface becomes a $ref to its schema, and a plain type
-      # string ("unknown") maps the way bare types do elsewhere in this
-      # writer.
+      # Array<Element | XData>`): a NAMED element interface becomes a $ref (or
+      # an inline object schema) and the interface's own properties become an
+      # inline object schema; a template that mixes both forms `anyOf`s them,
+      # matching the TypeScript union instead of dropping either side.
       def root_array_items(interface, openapi_version:, type_mapping:)
         element = interface.respond_to?(:root_array_element) ? interface.root_array_element : nil
+        members = []
 
-        if element.nil?
-          object_schema(interface.properties, openapi_version: openapi_version, type_mapping: type_mapping)
-        elsif element.respond_to?(:properties) && element.respond_to?(:inline?) && element.inline?
-          schema_for(element, openapi_version: openapi_version)
-        else
-          union_member_schema(element, openapi_version: openapi_version, type_mapping: type_mapping)
+        if element
+          members << if element.respond_to?(:properties) && element.respond_to?(:inline?) && element.inline?
+            schema_for(element, openapi_version: openapi_version)
+          else
+            union_member_schema(element, openapi_version: openapi_version, type_mapping: type_mapping)
+          end
         end
+        unless interface.properties.empty?
+          members << object_schema(interface.properties, openapi_version: openapi_version, type_mapping: type_mapping)
+        end
+        members << object_schema(interface.properties, openapi_version: openapi_version, type_mapping: type_mapping) if members.empty?
+
+        (members.size == 1) ? members.first : {anyOf: members}
       end
 
       def ref_schema(ref, property, openapi_version:)
