@@ -1974,7 +1974,11 @@ module Typelizer
           branches, fully_covered = collect_branches(node)
           arms = branches.map { |body| body.last }
           if arms.any?(&:nil?)
-            return {type: guess_from_name(name), nullable: false, locked: false}
+            # An EMPTY branch body evaluates to nil at render, so a missing
+            # arm contributes nullability — `json.total(if @f; else 5 end)`
+            # renders null in the empty-arm state. (Found by the dead-code
+            # audit: this arm returned nullable:false, a type lie.)
+            return {type: guess_from_name(name), nullable: true, locked: false}
           end
 
           inferred = arms.map { |arm| infer_value(arm, name: name) }
