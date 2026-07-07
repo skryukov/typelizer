@@ -6,7 +6,7 @@ module JbuilderFuzz
   # combination of the boolean "dimensions" — conditional flags and
   # nil-or-present safe-navigation receivers).
   GeneratedTemplate = Struct.new(:seed, :source, :base_ivars, :states, :aux_files,
-    :unmodeled_keys, :helpers, keyword_init: true)
+    :unmodeled_keys, :helpers, :uses_it_alias, keyword_init: true)
 
   # Deterministic template generator: all randomness flows from a single
   # Random.new(seed), so a seed is a complete reproduction recipe.
@@ -69,6 +69,11 @@ module JbuilderFuzz
       @partials = [] # {ref:, keys:, locals:, strict:} for partials written to @aux_files
       @seq = 0
       @stmts_left = MAX_STMTS
+      # `it` (the implicit block parameter) is a Ruby 3.4+ construct: real
+      # jbuilder cannot render a template using it on older Rubies. The walker
+      # still parses it statically, so it stays in the grammar for coverage;
+      # the runner skips only the RENDER pass below 3.4 (see Runner#run_seed).
+      @uses_it_alias = false
     end
 
     def generate
@@ -88,7 +93,8 @@ module JbuilderFuzz
         states: build_states,
         aux_files: @aux_files.dup,
         unmodeled_keys: @unmodeled_keys.dup,
-        helpers: @helpers.dup
+        helpers: @helpers.dup,
+        uses_it_alias: @uses_it_alias
       )
     end
 
@@ -485,6 +491,7 @@ module JbuilderFuzz
         # `it`/`_1` rebinds per-block, so keep these bodies free of nested
         # blocks (a nested paramless block would silently rebind them).
         inner_builder = (style == :it) ? "it" : "_1"
+        @uses_it_alias = true if style == :it
         body = (1 + @rng.rand(2)).times.map { simple_line(inner_builder, inner_used, element) }
         [head, *indent(body), "end"]
       end
@@ -926,6 +933,7 @@ module JbuilderFuzz
         ["json.child! do |#{param}|", *indent(body), "end"]
       when :it, :numbered
         b = (style == :it) ? "it" : "_1"
+        @uses_it_alias = true if style == :it
         body = (1 + @rng.rand(2)).times.map { simple_line(b, inner_used, nil) }
         ["json.child! do", *indent(body), "end"]
       else

@@ -12,7 +12,10 @@
 # coverage against the floor checked into coverage_ratchet.json and exits
 # non-zero on regression; prints every uncovered branch as a worklist.
 # --update rewrites the floor to the measured values (do this only when a
-# grammar extension legitimately raises coverage).
+# grammar extension legitimately raises coverage). Run --update on the LOWEST
+# supported Ruby: prism parses `it` per the running Ruby's syntax version, so
+# walker coverage is Ruby-dependent and the floor must be the matrix minimum
+# (see the note in coverage_ratchet.json).
 #
 # Ruby's Coverage only instruments files compiled AFTER Coverage.start, so
 # the ordering below is load-bearing: boot the dummy app first (walker.rb

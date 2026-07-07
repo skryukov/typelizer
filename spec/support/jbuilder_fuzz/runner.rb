@@ -67,6 +67,14 @@ module JbuilderFuzz
         return result
       end
 
+      # `it` (the implicit block parameter) is Ruby 3.4+: real jbuilder cannot
+      # render a template using it on older Rubies, so a render here would
+      # raise `undefined ... 'it'` and be recorded as a spurious grammar-
+      # contract crash. The walker already parsed the template statically
+      # above (walk coverage is unaffected — the ratchet still sees it), so
+      # skip only the render/check pass on those Rubies.
+      return result if template.uses_it_alias && Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.4")
+
       unmodeled = template.unmodeled_keys || Set.new
       template.states.each do |state|
         ivars = template.base_ivars.merge(state[:ivars])

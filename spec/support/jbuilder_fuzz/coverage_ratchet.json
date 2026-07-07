@@ -1,7 +1,8 @@
 {
+  "note": "line_pct is the MINIMUM across the CI Ruby matrix, not any single Ruby's value. Prism parses with the running Ruby's syntax version, so the `it` implicit block parameter yields a method-call node on Ruby <= 3.3 but an ItLocalVariableReadNode on 3.4+ — the two hit different walker branches, and no single Ruby covers both. Ruby 3.4+ reaches ~76.68%; Ruby <= 3.3 reaches 76.63%. Pin the floor to the lowest so the gate holds on every matrix Ruby; only run --update on the lowest supported Ruby.",
   "seeds": "1..200",
   "walker": {
-    "line_pct": 76.68,
+    "line_pct": 76.63,
     "branch_pct": 55.0
   }
 }
