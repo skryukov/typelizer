@@ -220,6 +220,61 @@ RSpec.describe Typelizer::Jbuilder do
       expect(output).to match(/body: string/)
     end
 
+    # Regression (real-world corpus: taxonworks `_metadata` composes ITSELF
+    # under a key — data-bounded recursion at render). The intersection
+    # collision scan must not force `properties` on a member whose own walk
+    # is on the stack; the emitted type keeps the named recursive reference.
+    it "emits a recursive named type for a partial that composes itself" do
+      write_template("shared/_meta.json.jbuilder", <<~ERB)
+        json.id 1
+        json.parent do
+          json.partial! "shared/meta", object: 2
+        end
+      ERB
+      write_template("things/show.json.jbuilder", <<~ERB)
+        json.partial! "shared/meta", object: 1
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+      partial_output = render_interface(Typelizer::Jbuilder::Templates::SharedMeta)
+
+      expect(output).to include("id: number;")
+      expect(output).to include("parent: SharedMeta;")
+      expect(partial_output).to include("parent: SharedMeta;")
+    end
+
+    # Regression (real-world corpus: taxonworks leads/index): deep-merging
+    # two same-key blocks that each compose a RECURSIVE partial unrolls
+    # forever — flattening the interface re-inlines a fresh copy containing
+    # the self-member, so the fold never terminates (fresh objects, no
+    # identity cycle). Re-entrant flattening must degrade to `unknown`.
+    it "degrades to unknown instead of unrolling when recursive compositions deep-merge" do
+      write_template("shared/_node.json.jbuilder", <<~ERB)
+        json.id 1
+        json.tree do
+          json.partial! "shared/node", object: 2
+        end
+      ERB
+      write_template("things/show.json.jbuilder", <<~ERB)
+        json.tree do
+          json.partial! "shared/node", object: 1
+        end
+        json.tree do
+          json.partial! "shared/node", object: 3
+        end
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = nil
+      expect {
+        output = render_interface(Typelizer::Jbuilder::Templates::ThingsShow)
+      }.not_to raise_error
+
+      expect(output).to include("id: number;")
+      expect(output).to match(/tree: unknown;/)
+    end
+
     # Regression (grammar-v2 fuzzer, seed 5580): jbuilder DEEP-MERGES two
     # same-key object blocks, but the fold only knew Shape+Shape pairs — a
     # composed (interface-typed) side fell through to replacement, dropping
@@ -4170,12 +4225,23 @@ RSpec.describe Typelizer::Jbuilder do
         expect(Typelizer::Jbuilder::Templates::Widget._views_root).to eq(File.expand_path(core_root))
       end
 
-      it "still raises NameCollision for different relative paths claiming one name" do
+      it "warns and skips (not raises) when different relative paths claim one name during discover" do
         write_template(core_root, "aaa/thing.json.jbuilder", %(typelize_as "DupName"\n\njson.x 1\n))
         write_template(core_root, "bbb/thing.json.jbuilder", %(typelize_as "DupName"\n\njson.x 1\n))
 
-        expect { Typelizer::Jbuilder.discover(core_root) }
-          .to raise_error(Typelizer::Jbuilder::NameCollision)
+        io = StringIO.new
+        original_logger = Typelizer.logger
+        Typelizer.logger = Logger.new(io)
+        begin
+          expect { Typelizer::Jbuilder.discover(core_root) }.not_to raise_error
+          expect(io.string).to include("DupName")
+          expect(io.string).to include("skipping")
+        ensure
+          Typelizer.logger = original_logger
+        end
+        # The first registration (sorted order) owns the name.
+        expect(Typelizer::Jbuilder::Templates.const_get(:DupName)._template_path)
+          .to end_with("aaa/thing.json.jbuilder")
       end
 
       it "keeps the first registration as the relative-slot winner across direct template calls" do

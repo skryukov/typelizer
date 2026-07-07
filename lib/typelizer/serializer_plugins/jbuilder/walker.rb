@@ -554,12 +554,30 @@ module Typelizer
         # conditional write forks the runtime into ran/didn't-run, i.e. a
         # union of the folded result with the accumulator.
         def merge_reset(acc, incoming)
+          flattened = nil
           if composed_object_block_pair?(acc, incoming)
             # jbuilder DEEP-MERGES consecutive object blocks (`_merge_block`
             # → `_merge_values(Hash, Hash)`), but a composed side (named
             # interface / intersection) has no faithful deep-merge
             # representation — replacing or unioning it would reject merged
             # renders. Flatten to Shapes so the shape_pair? branches fold it.
+            #
+            # RECURSIVE interfaces cannot be flattened repeatedly: inlining
+            # one produces a fresh copy that still contains the self-member,
+            # so two recursive compositions folding on the same key would
+            # unroll each other forever (fresh objects each level — no
+            # identity cycle to detect). Track the interfaces being
+            # flattened across this fold; re-entry degrades to `unknown`.
+            @flattening_interfaces ||= Set.new
+            keys = (composed_interface_members(acc) + composed_interface_members(incoming))
+              .map { |i| flatten_identity(i) }
+            if keys.any? { |key| @flattening_interfaces.include?(key) }
+              warn_merge("`#{acc.name}` deep-merges a recursive partial composition; the unrolled " \
+                "type is not statically expressible — emitted `unknown`; use `typelize:` to pin the type")
+              return build_property(acc.name, type: "unknown", optional: acc.optional && incoming.optional)
+            end
+            flattened = keys
+            keys.each { |key| @flattening_interfaces.add(key) }
             acc = flatten_composed(acc)
             incoming = flatten_composed(incoming)
           end
@@ -627,6 +645,21 @@ module Typelizer
               inference_locked: !delegated && (acc.inference_locked || incoming.inference_locked)
             )
           end
+        ensure
+          flattened&.each { |key| @flattening_interfaces.delete(key) }
+        end
+
+        def composed_interface_members(prop)
+          [*Array(prop.type), *Array(prop.additional_types)].select { |m| interface_like?(m) }
+        end
+
+        def flatten_identity(member)
+          serializer = member.respond_to?(:serializer) ? member.serializer : nil
+          if serializer.respond_to?(:_template_path)
+            serializer._template_path
+          else
+            member
+          end
         end
 
         # Deep-merge only applies to two OBJECT blocks; array blocks
@@ -693,11 +726,22 @@ module Typelizer
 
           members = [*Array(prop.type), *additionals]
           return prop unless members.all? { |m| m.is_a?(Shape) || interface_like?(m) }
+          # A recursive (in-progress) member can't be flattened — reading its
+          # properties would re-enter its own walk. Keep the composed form.
+          return prop if members.any? { |m| interface_like?(m) && walk_in_progress?(m) }
 
           props = members.flat_map do |m|
             m.is_a?(Shape) ? m.properties : m.properties.map { |p| finalize_merged_property(p) }
           end
           prop.with(type: Shape.new(properties: props), additional_types: nil)
+        end
+
+        # Whether an interface-like member's template walk is currently on
+        # the stack (a recursive partial reference).
+        def walk_in_progress?(member)
+          member.respond_to?(:serializer) &&
+            member.serializer.respond_to?(:_template_path) &&
+            self.class.walks_in_progress.include?(member.serializer._template_path)
         end
 
         # Two same-key object blocks where at least one is composed: both
@@ -710,6 +754,7 @@ module Typelizer
         def flatten_composed(prop)
           return flatten_intersection(prop) if Array(prop.additional_types).any?
           return prop unless interface_like?(prop.type)
+          return prop if walk_in_progress?(prop.type)
 
           props = prop.type.properties.map { |p| finalize_merged_property(p) }
           prop.with(type: Shape.new(properties: props))
@@ -1170,7 +1215,15 @@ module Typelizer
                 # `never`). Any cross-member collision demotes the block to a
                 # plain inline-merged Shape — the same statement-order fold
                 # (last-wins / conditional union) used for root-level merges.
-                member_keys = interfaces.map { |i| i.properties.map { |p| p.name.to_s } }
+                # A member whose OWN walk is still on the stack (a recursive
+                # partial — e.g. `_metadata` composing itself under a key)
+                # cannot enumerate its keys yet: forcing `properties` here
+                # recurses to SystemStackError. Skip it in the scan and keep
+                # the named recursive reference (TS supports those).
+                member_keys = interfaces.map do |i|
+                  next [] if walk_in_progress?(i)
+                  i.properties.map { |p| p.name.to_s }
+                end
                 member_keys << rest_props.map { |p| p.name.to_s }
                 flat_keys = member_keys.flatten
                 if flat_keys.uniq.size == flat_keys.size

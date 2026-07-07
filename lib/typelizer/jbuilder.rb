@@ -359,7 +359,15 @@ module Typelizer
 
           metadata = walker.metadata_for(path)
           model = metadata[:model] || model_resolver&.call(path)
-          template(path, views_root: views_root, model: model, as: metadata[:type_name])
+          begin
+            template(path, views_root: views_root, model: model, as: metadata[:type_name])
+          rescue NameCollision => e
+            # One ambiguous pair must not kill discovery for the whole tree:
+            # skip this file (its partial references degrade to `unknown`
+            # with their own warnings) and keep going. Direct `template()`
+            # calls still raise — an explicit registration deserves the error.
+            Typelizer.logger.warn("#{e.message} — skipping #{path}")
+          end
         end
       end
 
@@ -547,7 +555,26 @@ module Typelizer
         parts = rel.split("/")
         parts = collapse_partial_parent(parts)
         name = parts.map { |part| sanitize_segment(part.delete_prefix("_")) }.join
+        # `_show.json.jbuilder` beside `show.json.jbuilder` (a common Rails
+        # pair) derives the SAME name; the partial takes a "Partial" suffix
+        # so the pair coexists — `typelize_as` overrides as usual. Pairs the
+        # collapse rule already disambiguates (`posts/_post` → `Post` beside
+        # `posts/post` → `PostsPost`) keep their names.
+        name += "Partial" if partial_sibling_collision?(full_path, views_root, name)
         validate_type_name!(name, full_path)
+      end
+
+      def partial_sibling_collision?(full_path, views_root, name)
+        basename = File.basename(full_path)
+        return false unless basename.start_with?("_")
+
+        sibling = File.join(File.dirname(full_path), basename.delete_prefix("_"))
+        return false unless File.exist?(sibling)
+
+        # The sibling is not a partial, so this cannot recurse.
+        derive_type_name(sibling, views_root) == name
+      rescue Typelizer::Error
+        false
       end
 
       def sanitize_segment(segment)

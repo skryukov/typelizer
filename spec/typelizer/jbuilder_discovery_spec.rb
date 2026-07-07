@@ -156,17 +156,67 @@ RSpec.describe "Jbuilder discovery lifecycle" do
     end
   end
 
-  describe "collision timing" do
-    it "raises NameCollision at generation time naming both template paths" do
+  describe "collision handling" do
+    # Real-world corpus lesson (taxonworks, WikiEduDashboard): one ambiguous
+    # pair aborting discovery kills type generation for the ENTIRE views
+    # tree. Discovery now warns (naming both paths) and skips the later
+    # file; every other template keeps generating.
+    it "warns and skips the later template on a name collision, keeping discovery alive" do
       first = write_template("aaa/thing.json.jbuilder", %(typelize_as "DupName"\n\njson.x 1\n))
       second = write_template("bbb/thing.json.jbuilder", %(typelize_as "DupName"\n\njson.x 1\n))
+      write_template("ccc/later.json.jbuilder", "json.y 2\n")
       configuration.jbuilder_views = [views_root]
 
-      expect { Typelizer.interfaces(writer_name: :jb_discovery) }
-        .to raise_error(Typelizer::Jbuilder::NameCollision) { |error|
-          expect(error.message).to include(first)
-          expect(error.message).to include(second)
-        }
+      io = StringIO.new
+      original_logger = Typelizer.logger
+      Typelizer.logger = Logger.new(io)
+      begin
+        interfaces = Typelizer.interfaces(writer_name: :jb_discovery)
+        names = interfaces.map(&:name)
+        expect(names).to include("DupName")
+        expect(names).to include("CccLater") # discovery continued past the pair
+        expect(io.string).to include(first)
+        expect(io.string).to include(second)
+        expect(io.string).to include("skipping")
+      ensure
+        Typelizer.logger = original_logger
+      end
+    end
+
+    it "still raises on an explicit template() registration collision" do
+      first = write_template("aaa/thing.json.jbuilder", %(typelize_as "DupName"\n\njson.x 1\n))
+      second = write_template("bbb/thing.json.jbuilder", %(typelize_as "DupName"\n\njson.x 1\n))
+
+      Typelizer::Jbuilder.template(first, views_root: views_root, as: "DupName")
+      expect {
+        Typelizer::Jbuilder.template(second, views_root: views_root, as: "DupName")
+      }.to raise_error(Typelizer::Jbuilder::NameCollision)
+    end
+  end
+
+  describe "partial/template sibling naming" do
+    # `_show.json.jbuilder` beside `show.json.jbuilder` derives the same
+    # name — very common in real apps (taxonworks: images/api/v1). The
+    # partial takes a "Partial" suffix instead of colliding.
+    it "suffixes a partial whose derived name collides with its template sibling" do
+      write_template("images/api/v1/show.json.jbuilder", "json.id 1\n")
+      write_template("images/api/v1/_show.json.jbuilder", "json.id 1\n")
+
+      Typelizer::Jbuilder.discover(views_root)
+
+      expect(Typelizer::Jbuilder::Templates.const_defined?(:ImagesApiV1Show)).to be(true)
+      expect(Typelizer::Jbuilder::Templates.const_defined?(:ImagesApiV1ShowPartial)).to be(true)
+    end
+
+    it "keeps collapse-disambiguated pairs unsuffixed (posts/_post beside posts/post)" do
+      write_template("posts/post.json.jbuilder", "json.id 1\n")
+      write_template("posts/_post.json.jbuilder", "json.id 1\n")
+
+      Typelizer::Jbuilder.discover(views_root)
+
+      expect(Typelizer::Jbuilder::Templates.const_defined?(:Post)).to be(true)
+      expect(Typelizer::Jbuilder::Templates.const_defined?(:PostsPost)).to be(true)
+      expect(Typelizer::Jbuilder::Templates.const_defined?(:PostPartial)).to be(false)
     end
   end
 
