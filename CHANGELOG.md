@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning].
 
 - Duplicate exported type names in one `index.ts` (e.g. an Alba `PostResource` and a `posts/_post.json.jbuilder` both resolving to `Post`) now log a generation-time warning naming both sources. The same name across separate writers stays silent — that's the supported staged-migration setup. ([@skryukov])
 
+- **Runtime conformance checking** (`Typelizer::Conformance`): validate a rendered JSON payload against the interface Typelizer emitted for it — unions, intersections, nested shapes, root arrays, nullability, and optionality, with `unknown` as an honest wildcard. For jbuilder, `Typelizer::Jbuilder::Conformance.subscribe!` (test-mode, opt-in) listens to ActionView render notifications and `validate_last_render!(response.body)` raises with every violation when a response doesn't conform — so a request-spec suite doubles as a differential check of the generated types against real data. The core is serializer-agnostic and works with any Typelizer interface. ([@skryukov])
+
+- `_show.json.jbuilder` next to `show.json.jbuilder` (same directory) now derives a `…ShowPartial` type name instead of raising `NameCollision`; any remaining discovery-time collision logs a warning naming both files and skips the later one instead of aborting type generation for the whole views tree. Explicit `Typelizer::Jbuilder.template` registrations still raise. ([@skryukov])
+
 ### Changed
 
 - `Typelizer::Error` is now the gem's base exception class: `Typelizer::TypeGenerationError`, `Typelizer::Writer::WriterError` (previously a bare `StandardError` descendant), and the new Jbuilder errors all inherit from it, so `rescue Typelizer::Error` catches every Typelizer-raised failure from one root. ([@skryukov])
