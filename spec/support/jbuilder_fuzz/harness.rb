@@ -19,6 +19,12 @@ require "tmpdir"
 require "fileutils"
 require "jbuilder"
 
+# Fire the :action_view load hooks NOW: jbuilder's railtie registers the
+# .jbuilder template handler and typelizer's railtie prepends SetExt onto
+# JbuilderTemplate — the Renderer needs both installed before the first
+# render, regardless of which spec (or standalone script) loads first.
+ActionView::Base.to_s
+
 require_relative "generator"
 require_relative "checker"
 require_relative "renderer"

@@ -1,0 +1,7 @@
+{
+  "seeds": "1..200",
+  "walker": {
+    "line_pct": 77.83,
+    "branch_pct": 56.13
+  }
+}

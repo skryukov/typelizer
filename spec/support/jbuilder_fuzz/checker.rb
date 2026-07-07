@@ -27,7 +27,11 @@ module JbuilderFuzz
     module_function
 
     # model: {properties:, root_is_array:, root_array_element:}
-    def check(model, rendered)
+    # unmodeled: JSON keys the generator DECLARED as rendered-but-unmodeled
+    # (merge! payloads, dynamic set! keys). They are excused at emission —
+    # inside union probes too, so a member failing only on excused keys still
+    # counts as a match.
+    def check(model, rendered, unmodeled: Set.new)
       violations = []
       if model[:root_is_array]
         unless rendered.is_a?(Array)
@@ -38,18 +42,18 @@ module JbuilderFuzz
         element = model[:root_array_element]
         rendered.each_with_index do |el, i|
           if element.nil?
-            check_object(el, model[:properties], "$[#{i}]", violations)
+            check_object(el, model[:properties], "$[#{i}]", violations, unmodeled)
           else
-            check_type(el, element, "$[#{i}]", violations)
+            check_type(el, element, "$[#{i}]", violations, unmodeled)
           end
         end
       else
-        check_object(rendered, model[:properties], "$", violations)
+        check_object(rendered, model[:properties], "$", violations, unmodeled)
       end
       violations
     end
 
-    def check_object(value, properties, path, violations)
+    def check_object(value, properties, path, violations, unmodeled)
       unless value.is_a?(Hash)
         violations << Violation.new(kind: :type_mismatch, path: path,
           detail: "expected an object, got #{truncate(value.inspect)}")
@@ -61,13 +65,14 @@ module JbuilderFuzz
 
       value.each_key do |key|
         next if by_name.key?(key)
+        next if unmodeled.include?(key)
         violations << Violation.new(kind: :uncovered_key, path: "#{path}.#{key}",
           detail: "rendered key #{key.inspect} (= #{truncate(value[key].inspect)}) has no property in the emitted type")
       end
 
       by_name.each do |name, prop|
         if value.key?(name)
-          check_property(value[name], prop, "#{path}.#{name}", violations)
+          check_property(value[name], prop, "#{path}.#{name}", violations, unmodeled)
         elsif !prop.optional
           violations << Violation.new(kind: :missing_required_key, path: "#{path}.#{name}",
             detail: "property is required (optional: false) but the key is absent from the render")
@@ -75,7 +80,7 @@ module JbuilderFuzz
       end
     end
 
-    def check_property(value, prop, path, violations)
+    def check_property(value, prop, path, violations, unmodeled)
       if value.nil?
         null_ok = prop.nullable || (!prop.multi && covers_null?(prop.type))
         unless null_ok
@@ -99,23 +104,89 @@ module JbuilderFuzz
             detail: "expected Array<#{describe(prop.type)}>, got #{truncate(value.inspect)}")
           return
         end
-        value.each_with_index { |el, i| check_type(el, prop.type, "#{path}[#{i}]", violations) }
+        # On a multi prop the intersection applies to the ELEMENT
+        # (`Array<Base & Shape>`), so additionals ride into each element check.
+        additionals = Array(prop.additional_types)
+        value.each_with_index do |el, i|
+          if additionals.any?
+            check_intersection(el, prop.type, additionals, "#{path}[#{i}]", violations, unmodeled)
+          else
+            check_type(el, prop.type, "#{path}[#{i}]", violations, unmodeled)
+          end
+        end
         return
       end
 
-      check_type(value, prop.type, path, violations)
-      # Intersection members must ALL accept (defensive; not in grammar v1).
-      Array(prop.additional_types).each { |member| check_type(value, member, path, violations) }
+      additionals = Array(prop.additional_types)
+      if additionals.any?
+        check_intersection(value, prop.type, additionals, path, violations, unmodeled)
+      else
+        check_type(value, prop.type, path, violations, unmodeled)
+      end
     end
 
-    def check_type(value, type, path, violations)
+    # Intersection semantics (`base & S1 & S2`): the value must satisfy the
+    # base AND every additional member, but key COVERAGE is judged against
+    # the UNION of all object-like members — checking each member's coverage
+    # independently would flag every key that belongs to one of the OTHERS.
+    def check_intersection(value, base, additionals, path, violations, unmodeled)
+      # TS precedence note: `[A, "null"] & S` is emitted as `A & S | null`;
+      # the nil case was accepted in check_property, so non-nil values must
+      # satisfy the remaining base member(s) plus the additionals.
+      base_members = Array(base).reject { |m| (m.is_a?(String) || m.is_a?(Symbol)) && m.to_s == "null" }
+      if base_members.size > 1
+        # A multi-member union intersected with shapes is not a form the
+        # walker emits (conditional re-sets of composed props degrade to
+        # `unknown` instead); accept conservatively rather than false-alarm.
+        return
+      end
+
+      object_members, scalar_members = (base_members + additionals).partition { |m| object_like?(m) }
+      scalar_members.each { |m| check_type(value, m, path, violations, unmodeled) }
+      return if object_members.empty?
+
+      unless value.is_a?(Hash)
+        violations << Violation.new(kind: :type_mismatch, path: path,
+          detail: "expected an object (intersection), got #{truncate(value.inspect)}")
+        return
+      end
+
+      covered = object_members.flat_map { |m| m.properties.map { |p| p.name.to_s } }
+      value.each_key do |key|
+        next if covered.include?(key) || unmodeled.include?(key)
+        violations << Violation.new(kind: :uncovered_key, path: "#{path}.#{key}",
+          detail: "rendered key #{key.inspect} (= #{truncate(value[key].inspect)}) is in no member of the intersection")
+      end
+
+      # A key claimed by several members is checked against EACH (strict
+      # intersection semantics — exactly what catches lying compositions).
+      object_members.each do |member|
+        member.properties.each do |prop|
+          name = prop.name.to_s
+          if value.key?(name)
+            check_property(value[name], prop, "#{path}.#{name}", violations, unmodeled)
+          elsif !prop.optional
+            violations << Violation.new(kind: :missing_required_key, path: "#{path}.#{name}",
+              detail: "property is required by an intersection member but absent from the render")
+          end
+        end
+      end
+    end
+
+    def object_like?(member)
+      member.is_a?(Typelizer::Shape) ||
+        (!member.is_a?(String) && !member.is_a?(Symbol) && !member.is_a?(Array) &&
+          !member.respond_to?(:element) && member.respond_to?(:properties))
+    end
+
+    def check_type(value, type, path, violations, unmodeled)
       case type
       when nil
         # Delegated/unresolved type renders as `unknown` — wildcard.
       when Array
-        check_union(value, type, path, violations)
+        check_union(value, type, path, violations, unmodeled)
       when Typelizer::Shape
-        check_object(value, type.properties, path, violations)
+        check_object(value, type.properties, path, violations, unmodeled)
       when String, Symbol
         unless scalar_ok?(type.to_s, value)
           violations << Violation.new(kind: value.nil? ? :null_rejected : :type_mismatch, path: path,
@@ -128,9 +199,9 @@ module JbuilderFuzz
               detail: "expected #{describe(type)}, got #{truncate(value.inspect)}")
             return
           end
-          value.each_with_index { |el, i| check_type(el, type.element, "#{path}[#{i}]", violations) }
+          value.each_with_index { |el, i| check_type(el, type.element, "#{path}[#{i}]", violations, unmodeled) }
         elsif type.respond_to?(:properties) # Interface-like
-          check_object(value, type.properties, path, violations)
+          check_object(value, type.properties, path, violations, unmodeled)
         end
         # Anything else is accepted conservatively (no false alarms).
       end
@@ -139,10 +210,10 @@ module JbuilderFuzz
     # Union: the value must satisfy at least one member. If every member
     # rejects, but some member fails ONLY on key coverage, surface those
     # coverage violations (the value structurally fits that member).
-    def check_union(value, members, path, violations)
+    def check_union(value, members, path, violations, unmodeled)
       probes = members.map do |member|
         probe = []
-        check_type(value, member, path, probe)
+        check_type(value, member, path, probe, unmodeled)
         probe
       end
       return if probes.any?(&:empty?)

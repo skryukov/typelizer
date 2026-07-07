@@ -49,8 +49,10 @@ RSpec.describe "Jbuilder differential fuzzing (fixed corpus)" do
       first = JbuilderFuzz::Generator.new(seed).generate
       second = JbuilderFuzz::Generator.new(seed).generate
       expect(second.source).to eq(first.source)
+      # .inspect: maybe-dimension states carry anonymous-Struct instances,
+      # which never compare == across two generator runs.
       expect(second.base_ivars.inspect).to eq(first.base_ivars.inspect)
-      expect(second.states).to eq(first.states)
+      expect(second.states.inspect).to eq(first.states.inspect)
     end
   end
 
@@ -64,5 +66,17 @@ RSpec.describe "Jbuilder differential fuzzing (fixed corpus)" do
   it "emits types that accept every rendered state (zero SEVERITY-A divergences)" do
     failing = corpus_results.select { |r| r.divergences.any? { |d| d.severity == :A } }
     expect(failing).to be_empty, JbuilderFuzz::Runner.format_failures(failing, limit: 8)
+  end
+
+  # A clean corpus only vouches for the walker code it reaches; this pins HOW
+  # MUCH it reaches. Runs in a subprocess because Coverage must start before
+  # walker.rb is compiled, and the spec suite loads the walker long before
+  # this example. See coverage_run.rb for the ratchet rules.
+  it "exercises the walker at or above the pinned coverage floor (grammar ratchet)" do
+    script = File.expand_path("../support/jbuilder_fuzz/coverage_run.rb", __dir__)
+
+    output = IO.popen([RbConfig.ruby, script, "1", "200"], err: [:child, :out], &:read)
+
+    expect($?).to be_success, "coverage ratchet failed:\n#{output}"
   end
 end

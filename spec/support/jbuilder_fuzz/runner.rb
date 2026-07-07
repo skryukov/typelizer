@@ -5,13 +5,17 @@ module JbuilderFuzz
   # walker, capture the emitted typed model + warnings, render every state
   # with real jbuilder, and validate each render against the model.
   #
-  # Severity:
-  #   - SEVERITY-A: the template produced NO warnings and the emitted type
-  #     rejects a render (or the walker/pipeline crashed on grammar-v1 input)
-  #   - SEVERITY-B: the template warned, but a non-`unknown` emitted type
-  #     still rejects a render
-  #   - an :uncovered_key on a warned template is excused (the warning IS the
-  #     contract for untypeable constructs); warnings alone never fail
+  # Severity (generator-scoped contracts, not template-wide warned status):
+  #   - the generator DECLARES which rendered keys the walker will not model
+  #     (GeneratedTemplate#unmodeled_keys — merge! payloads, dynamic set!
+  #     keys, concat extras); an :uncovered_key on exactly those keys is
+  #     excused, and nothing else is
+  #   - every other violation is SEVERITY-A: the grammar only generates
+  #     constructs whose typed behavior the dossiers pin down, so a surviving
+  #     divergence is a walker/checker/grammar bug, never expected noise.
+  #     (A template-wide "warned" excusal would let one merge! statement
+  #     mask violations from every other statement in the seed.)
+  #   - warnings alone never fail; the warned count is reported as a stat
   #   - a render crash is a generator/grammar defect, recorded separately
   module Runner
     Divergence = Struct.new(:seed, :severity, :kind, :path, :detail, :state_desc, :rendered, keyword_init: true)
@@ -25,6 +29,13 @@ module JbuilderFuzz
       full = File.join(views_root, rel)
       FileUtils.mkdir_p(File.dirname(full))
       File.write(full, template.source)
+      # Partial fixtures referenced by the seed (walk side auto-registers
+      # "_"-prefixed files; render side resolves them through ActionView).
+      (template.aux_files || {}).each do |aux_rel, aux_source|
+        aux_full = File.join(views_root, aux_rel)
+        FileUtils.mkdir_p(File.dirname(aux_full))
+        File.write(aux_full, aux_source)
+      end
 
       Typelizer::Jbuilder.reset!
       klass = Typelizer::Jbuilder.template(rel, views_root: views_root)
@@ -56,22 +67,22 @@ module JbuilderFuzz
         return result
       end
 
-      warned = warnings.any?
+      unmodeled = template.unmodeled_keys || Set.new
       template.states.each do |state|
         ivars = template.base_ivars.merge(state[:ivars])
         rendered =
           begin
-            Renderer.render(template.source, ivars)
+            Renderer.render(views_root: views_root, template: "t#{seed}/show",
+              ivars: ivars, helpers: template.helpers || {})
           rescue => e
             result.render_crashes << {state: state[:desc], error: "#{e.class}: #{e.message}"}
             next
           end
 
-        Checker.check(model, rendered).each do |violation|
-          next if violation.kind == :uncovered_key && warned
+        Checker.check(model, rendered, unmodeled: unmodeled).each do |violation|
           result.divergences << Divergence.new(
             seed: seed,
-            severity: warned ? :B : :A,
+            severity: :A,
             kind: violation.kind,
             path: violation.path,
             detail: violation.detail,
