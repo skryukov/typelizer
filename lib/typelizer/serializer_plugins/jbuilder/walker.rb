@@ -554,11 +554,25 @@ module Typelizer
         # conditional write forks the runtime into ran/didn't-run, i.e. a
         # union of the folded result with the accumulator.
         def merge_reset(acc, incoming)
+          if composed_object_block_pair?(acc, incoming)
+            # jbuilder DEEP-MERGES consecutive object blocks (`_merge_block`
+            # → `_merge_values(Hash, Hash)`), but a composed side (named
+            # interface / intersection) has no faithful deep-merge
+            # representation — replacing or unioning it would reject merged
+            # renders. Flatten to Shapes so the shape_pair? branches fold it.
+            acc = flatten_composed(acc)
+            incoming = flatten_composed(incoming)
+          end
+
           if merge_block_concat?(acc, incoming)
             # A valueless `json.<key> do json.child! ... end` block over an
             # array-valued key goes through jbuilder's `_merge_block`, whose
             # Array+Array branch CONCATENATES — elements of BOTH shapes occur.
-            concat_merge(acc, incoming, conditional: incoming.optional)
+            # A composed (intersection) accumulator flattens first: the fold
+            # wraps `acc.type` alone into the element union while `#with`
+            # would carry `additional_types` onto the merged prop, where TS
+            # precedence binds it to the LAST union member only.
+            concat_merge(flatten_intersection(acc), incoming, conditional: incoming.optional)
           elsif !incoming.optional
             # Unconditional: this write always happens at runtime — it
             # replaces a scalar or deep-merges into an existing object.
@@ -664,6 +678,41 @@ module Typelizer
 
         def interface_like?(member)
           !member.is_a?(Shape) && member.respond_to?(:properties)
+        end
+
+        # A composed (intersection) prop entering a union/concat fold has no
+        # faithful per-member representation (`&` binds tighter than `|`, so
+        # it would attach to a single union member). Intersection members
+        # have pairwise-disjoint keys — a collision demotes the block at
+        # composition time — so the intersection flattens LOSSLESSLY into one
+        # Shape; interface-owned properties are deep-copied so the host fold
+        # can't corrupt the partial's own interface.
+        def flatten_intersection(prop)
+          additionals = Array(prop.additional_types)
+          return prop if additionals.empty?
+
+          members = [*Array(prop.type), *additionals]
+          return prop unless members.all? { |m| m.is_a?(Shape) || interface_like?(m) }
+
+          props = members.flat_map do |m|
+            m.is_a?(Shape) ? m.properties : m.properties.map { |p| finalize_merged_property(p) }
+          end
+          prop.with(type: Shape.new(properties: props), additional_types: nil)
+        end
+
+        # Two same-key object blocks where at least one is composed: both
+        # must become plain Shapes before the deep-merge fold.
+        def composed_object_block_pair?(a, b)
+          [a, b].all? { |p| !p.multi && (p.type.is_a?(Shape) || interface_like?(p.type)) } &&
+            [a, b].any? { |p| interface_like?(p.type) || Array(p.additional_types).any? }
+        end
+
+        def flatten_composed(prop)
+          return flatten_intersection(prop) if Array(prop.additional_types).any?
+          return prop unless interface_like?(prop.type)
+
+          props = prop.type.properties.map { |p| finalize_merged_property(p) }
+          prop.with(type: Shape.new(properties: props))
         end
 
         # jbuilder concatenates only when the INCOMING write is a valueless
@@ -1115,8 +1164,19 @@ module Typelizer
               if interfaces.any?
                 additional = interfaces.drop(1)
                 rest_props = with_nested { extract(rest, optional: false) }
-                additional += [Shape.new(properties: rest_props)] if rest_props.any?
-                next build_property(name, type: interfaces.first, additional_types: additional, optional: optional, multi: multi)
+                # An intersection is only truthful while no key is claimed by
+                # two members: at render a later same-key write REPLACES, but
+                # `A & {k: T2}` still asserts A's `k: T1` (T1 & T2 can be
+                # `never`). Any cross-member collision demotes the block to a
+                # plain inline-merged Shape — the same statement-order fold
+                # (last-wins / conditional union) used for root-level merges.
+                member_keys = interfaces.map { |i| i.properties.map { |p| p.name.to_s } }
+                member_keys << rest_props.map { |p| p.name.to_s }
+                flat_keys = member_keys.flatten
+                if flat_keys.uniq.size == flat_keys.size
+                  additional += [Shape.new(properties: rest_props)] if rest_props.any?
+                  next build_property(name, type: interfaces.first, additional_types: additional, optional: optional, multi: multi)
+                end
               end
               build_property(name, type: Shape.new(properties: shape_body(node.block)), optional: optional, multi: multi)
             end

@@ -133,6 +133,124 @@ RSpec.describe Typelizer::Jbuilder do
       Typelizer::Renderer.call("interface.ts.erb", interface: iface)
     end
 
+    # Regression (found by the grammar-v2 differential fuzzer): a same-key
+    # write after a composed partial! REPLACES at render, but the emitted
+    # `SharedInfo & {total: string}` would still assert SharedInfo's
+    # `total: number` — an intersection that rejects the real render. Any
+    # cross-member key collision must demote the block to an inline merge.
+    it "demotes the intersection to an inline merge when the block re-sets a merged key" do
+      write_template("shared/_info.json.jbuilder", <<~ERB)
+        json.total total, typelize: "number"
+        json.source "partial"
+      ERB
+      write_template("posts/show.json.jbuilder", <<~ERB)
+        json.course do
+          json.partial! "shared/info", total: 3
+          json.total "override" if @upgraded
+        end
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::PostsShow)
+
+      expect(output).not_to include("SharedInfo &")
+      expect(output).to match(/total: number \| string;/)
+      expect(output).to include("source: string;")
+    end
+
+    it "demotes the intersection when two composed partials claim the same key" do
+      write_template("shared/_a.json.jbuilder", <<~ERB)
+        json.total total, typelize: "number"
+        json.left "a"
+      ERB
+      write_template("shared/_b.json.jbuilder", <<~ERB)
+        json.total "s", typelize: "string"
+        json.right "b"
+      ERB
+      write_template("posts/show.json.jbuilder", <<~ERB)
+        json.course do
+          json.partial! "shared/a", total: 1
+          json.partial! "shared/b"
+        end
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::PostsShow)
+
+      # SharedA & SharedB would assert total: number & string = never; the
+      # render is last-wins ("s"), so the block must fold inline instead.
+      expect(output).not_to match(/SharedA & SharedB/)
+      expect(output).to include("left: string;")
+      expect(output).to include("right: string;")
+    end
+
+    # Regression (grammar-v2 fuzzer, seed 1296): a child!-array CONCAT onto a
+    # composed collection block wrapped only the base interface into the
+    # element union while `#with` carried additional_types onto the merged
+    # prop — TS binds that intersection to the LAST union member only
+    # (`P1 | {…} & {extra}`), rejecting rendered elements from the first
+    # form. The intersection must flatten into one element Shape instead.
+    it "flattens a composed collection element when a child! array concatenates onto it" do
+      write_template("shared/_info.json.jbuilder", <<~ERB)
+        json.total total, typelize: "number"
+        json.source "partial"
+      ERB
+      write_template("posts/show.json.jbuilder", <<~ERB)
+        json.items @rows do |row|
+          json.can_edit true if @admin
+          json.partial! "shared/info", total: 1
+        end
+        json.items do
+          json.child! do
+            json.body "x"
+          end
+        end
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::PostsShow)
+
+      # Elements from the collection form carry the partial's keys AND the
+      # host's; elements from the child! form carry body — a member union of
+      # two self-contained shapes, no dangling intersection.
+      expect(output).not_to match(/\} & \{/)
+      expect(output).to match(/total: number/)
+      expect(output).to match(/source: string/)
+      expect(output).to match(/can_edit\?: boolean/)
+      expect(output).to match(/body: string/)
+    end
+
+    # Regression (grammar-v2 fuzzer, seed 5580): jbuilder DEEP-MERGES two
+    # same-key object blocks, but the fold only knew Shape+Shape pairs — a
+    # composed (interface-typed) side fell through to replacement, dropping
+    # the first block's keys from the type while they still render.
+    it "deep-merges a conditional composed block with a later composed block re-set" do
+      write_template("shared/_a.json.jbuilder", <<~ERB)
+        json.left "a"
+      ERB
+      write_template("shared/_b.json.jbuilder", <<~ERB)
+        json.right "b"
+      ERB
+      write_template("posts/show.json.jbuilder", <<~ERB)
+        if @flag
+          json.k1 do
+            json.partial! "shared/a"
+          end
+        end
+        json.k1 do
+          json.partial! "shared/b"
+        end
+      ERB
+
+      Typelizer::Jbuilder.discover(views_root)
+      output = render_interface(Typelizer::Jbuilder::Templates::PostsShow)
+
+      # @flag=true renders {left, right} (deep merge), @flag=false renders
+      # {right}: left is optional, right required, no bare named replacement.
+      expect(output).to match(/left\?: string;/)
+      expect(output).to match(/right: string;/)
+    end
+
     it "intersects partials when a block body is purely `json.partial!` calls" do
       write_template("courses/_course.json.jbuilder", <<~ERB)
         json.id course.id, typelize: "number"
