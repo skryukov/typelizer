@@ -65,7 +65,7 @@ module Typelizer
       type, multi =
         if members.size > 1
           [members, prop.multi]
-        elsif members.first.respond_to?(:typelizer_array_wrapper?) && members.first.typelizer_array_wrapper?
+        elsif TypeTraversal.array_wrapper?(members.first)
           [members.first.element, true]
         else
           [members.first, prop.multi]
@@ -91,8 +91,9 @@ module Typelizer
     # intersection members (`additional_types`, e.g. a jbuilder mixed
     # composed-partial block), as members of a union (Array type, e.g. a
     # jbuilder conditional re-set), and as elements of an array wrapper —
-    # applies the block to every Shape in all positions so transformation
-    # and inference run through the same walk.
+    # applies the block to every Shape in all positions (the type-tree walk
+    # itself is TypeTraversal's) so transformation and inference run through
+    # the same walk.
     def map_property_shapes(prop, &block)
       if prop.additional_types&.any?(Shape)
         prop = prop.with(additional_types: prop.additional_types.map { |t|
@@ -100,27 +101,8 @@ module Typelizer
         })
       end
 
-      case prop.type
-      when Shape
-        prop.with(type: yield(prop.type))
-      when Array
-        prop.with(type: prop.type.map { |member| map_shape_member(member, &block) })
-      else
-        return prop unless prop.type.respond_to?(:map_element_shape)
-
-        prop.with(type: prop.type.map_element_shape(&block))
-      end
-    end
-
-    # A union member (or a sole type) is an inline Shape, an array wrapper
-    # whose element may hold Shapes (duck-typed via `map_element_shape` —
-    # the jbuilder walker's lazily-loaded `ArrayOf`), or an opaque type left
-    # as-is.
-    def map_shape_member(member, &block)
-      case member
-      when Shape then yield member
-      else member.respond_to?(:map_element_shape) ? member.map_element_shape(&block) : member
-      end
+      mapped = TypeTraversal.map_shapes(prop.type, &block)
+      mapped.equal?(prop.type) ? prop : prop.with(type: mapped)
     end
 
     def infer_shape_types(shape)

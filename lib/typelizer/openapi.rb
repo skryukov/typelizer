@@ -159,10 +159,8 @@ module Typelizer
         end
       end
 
-      # The walker's lazy ArrayOf wrapper, matched by its marker (it lives
-      # in a lazily-loaded plugin file, so no constant reference from here).
       def array_wrapper?(type)
-        type.respond_to?(:typelizer_array_wrapper?) && type.typelizer_array_wrapper?
+        TypeTraversal.array_wrapper?(type)
       end
 
       # An ArrayOf element is a single member or an Array of union members

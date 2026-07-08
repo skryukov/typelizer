@@ -96,7 +96,7 @@ module Typelizer
         # test so typed leaves allocate nothing; an unknown-typed prop
         # never carries Shape members.
         child_path = path + [prop.name.to_s]
-        each_member_shape(prop.type) do |shape|
+        TypeTraversal.each_shape(prop.type) do |shape|
           shape.properties.each { |sub| warn_unknown_property(sub, path: child_path) }
         end
         prop.additional_types&.each do |member|
@@ -131,19 +131,6 @@ module Typelizer
         # `unknown | string` IS unknown in TS — an untypeable union member
         # must warn too, or strict builds pass on silently-unknown props.
         prop.type.is_a?(Array) && prop.type.any? { |m| !m.nil? && walker.class.unknown_type?(m) }
-      end
-
-      # Yields every inline Shape reachable from a property TYPE: the type
-      # itself, each union member (Array type), and array-wrapper elements
-      # (matched by marker — the walker's `ArrayOf`). Union members must
-      # warn too, or strict builds pass on silent unknowns inside them.
-      def each_member_shape(type, &block)
-        case type
-        when Shape then yield type
-        when Array then type.each { |member| each_member_shape(member, &block) }
-        else
-          each_member_shape(type.element, &block) if type.respond_to?(:typelizer_array_wrapper?) && type.typelizer_array_wrapper?
-        end
       end
 
       def walker

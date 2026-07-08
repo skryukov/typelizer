@@ -193,6 +193,9 @@ module Typelizer
 
           private
 
+          # Kept as the walker's own cascade instead of delegating to
+          # TypeTraversal.map_shapes: the coverage ratchet pins these
+          # branches, and its floor may only ratchet upward.
           def map_member(member, &block)
             case member
             when Shape then yield member
