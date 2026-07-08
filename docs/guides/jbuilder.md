@@ -61,7 +61,7 @@ The generated type name is derived from the template path. When a partial follow
 
 Path segments that wouldn't form a valid type name are sanitized deterministically: characters outside `A-Za-z0-9_` are stripped (`v2.1/show.json.jbuilder` → `V21Show`) and digit-leading segments are prefixed with `N` (`2fa/show.json.jbuilder` → `N2faShow`). If sanitization still can't produce a valid name, generation raises with a `typelize_as` hint — and an explicit `typelize_as` name is never rewritten: an invalid one (e.g. `typelize_as "userList"`) raises instead.
 
-Two templates claiming the same type name raise a `Typelizer::Jbuilder::NameCollision` error at generation time, naming both template paths. Rename one of them with `typelize_as`.
+Two templates claiming the same type name is a `Typelizer::Jbuilder::NameCollision`, reported at generation time with both template paths. During discovery the collision is a warning and the later file is skipped — one ambiguous pair degrades that file's types instead of failing generation for the whole tree — while an explicit `template()` registration raises. Rename one of the templates with `typelize_as`.
 
 One exception: with multiple discovery roots, a template at the *same relative path* as one from an earlier root is Rails view-path shadowing, not a collision — the earlier root's template wins (it is the one Rails renders), and the shadowed file is skipped with a debug log. Partial references to the shadowed path resolve to the winner's type.
 
