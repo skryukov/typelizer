@@ -127,20 +127,19 @@ module Typelizer
 
         _typelizer_strip_kwargs!(kwargs)
 
-        # Omit kwargs entirely when empty (jbuilder's `set!` has no `**kwargs`,
-        # so an empty Hash would become a positional value); otherwise splat so
-        # the next prepend in the chain receives real kwargs.
-        if kwargs.empty?
-          super(name, *args, &block)
-        else
-          super
-        end
+        # Bare `super` re-forwards the CURRENT parameter values — i.e. the
+        # stripped kwargs — and an emptied `**kwargs` splats to nothing
+        # (guaranteed since Ruby 3.0's keyword separation), so upstream `set!`
+        # — which has no `**kwargs` — never sees a positional {}; surviving
+        # kwargs reach the next prepend in the chain as real kwargs. Every
+        # emitter below forwards through this same strip-then-`super` tail.
+        super
       end
 
       # The non-`set!` emitters need the same protection: jbuilder's
       # `extract!`/`array!`/`call` declare no `**kwargs`, so a `typelize:`
       # annotation would pack into the positional list and crash. Same
-      # sole-hash re-pack and strip-then-omit-if-empty rules as `set!`. (The
+      # sole-hash re-pack and strip-then-splat rules as `set!`. (The
       # walker ignores `typelize:` here — it has no per-field meaning on
       # these.) `*args` instead of upstream's `(object, *attributes)` so a
       # vanilla sole-hash call (`json.extract!(a: 1)` — the hash is the
@@ -150,12 +149,7 @@ module Typelizer
         return super(kwargs) if args.empty?
 
         _typelizer_strip_kwargs!(kwargs)
-
-        if kwargs.empty?
-          super(*args)
-        else
-          super
-        end
+        super
       end
 
       def array!(*args, **kwargs, &block)
@@ -163,12 +157,7 @@ module Typelizer
         return super(kwargs) if args.empty? && block.nil?
 
         _typelizer_strip_kwargs!(kwargs)
-
-        if kwargs.empty?
-          super(*args, &block)
-        else
-          super
-        end
+        super
       end
 
       def call(*args, **kwargs, &block)
@@ -177,18 +166,14 @@ module Typelizer
 
         _typelizer_strip_kwargs!(kwargs)
 
-        if kwargs.empty?
-          # Stripping can leave a block-only call (`json.(typelize: "T") { }`
-          # — a block is guaranteed here, the blockless sole-hash form
-          # returned above). Upstream `call(object, *attributes)` has no
-          # default for `object` (unlike `array!`), so forward an empty
-          # collection: renders `[]`, mirroring the stripped `array!` form.
-          return super([], &block) if args.empty?
+        # Stripping can leave a block-only call (`json.(typelize: "T") { }` —
+        # a block is guaranteed here, the blockless sole-hash form returned
+        # above). Upstream `call(object, *attributes)` has no default for
+        # `object` (unlike `array!`), so forward an empty collection: renders
+        # `[]`, mirroring the stripped `array!` form.
+        return super([], &block) if kwargs.empty? && args.empty?
 
-          super(*args, &block)
-        else
-          super
-        end
+        super
       end
 
       # `merge!(object)` takes exactly one positional and no `**kwargs`, so a
@@ -204,12 +189,7 @@ module Typelizer
         end
 
         _typelizer_strip_kwargs!(kwargs)
-
-        if kwargs.empty?
-          super(*args)
-        else
-          super
-        end
+        super
       end
 
       # `child!` appends the current block's object to the target array; it
@@ -220,12 +200,7 @@ module Typelizer
         return super(*args, &block) if kwargs.empty?
 
         _typelizer_strip_kwargs!(kwargs)
-
-        if kwargs.empty?
-          super(*args, &block)
-        else
-          super
-        end
+        super
       end
 
       # jbuilder's `partial!` has no `**kwargs`, so a `typelize:` annotation
@@ -241,12 +216,7 @@ module Typelizer
         return super(*args, &block) if kwargs.empty?
 
         _typelizer_strip_kwargs!(kwargs)
-
-        if kwargs.empty?
-          super(*args, &block)
-        else
-          super
-        end
+        super
       end
 
       private
