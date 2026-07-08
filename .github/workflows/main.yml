@@ -25,6 +25,33 @@ jobs:
       - name: Run StandardRB
         run: bundle exec standardrb
 
+  no-prism:
+    runs-on: ubuntu-latest
+    name: No-prism load safety (Ruby ${{ matrix.ruby }})
+    env:
+      BUNDLE_JOBS: 4
+      BUNDLE_RETRY: 3
+      BUNDLE_GEMFILE: gemfiles/no_prism.gemfile
+    strategy:
+      matrix:
+        ruby:
+          - "4.0"
+          - "3.4"
+          - "3.3"
+          - "3.2"
+          - "3.1"
+          - "3.0"
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler: latest
+          bundler-cache: true
+      - name: Verify load safety without the prism gem
+        run: bundle exec ruby spec/support/no_prism_check.rb
+
   build:
     services:
       postgres:

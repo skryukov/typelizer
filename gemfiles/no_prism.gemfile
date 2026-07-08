@@ -1,0 +1,12 @@
+# frozen_string_literal: true
+
+# No-prism CI lane: the bundle deliberately has NO prism gem, so
+# spec/support/no_prism_check.rb proves load safety and the walker's
+# activation error against real absence — the only prism reachable is
+# Ruby's own bundled default gem, where one exists (0.19 on 3.3, >= 1.0
+# on 3.4+), exactly what a real app that forgot the gem would see.
+source "https://rubygems.org"
+
+gemspec path: ".."
+
+gem "jbuilder"
