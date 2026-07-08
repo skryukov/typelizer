@@ -8,6 +8,7 @@ require "set"
 # Coverage.start under the fuzz coverage ratchet).
 require_relative "walker/array_of"
 require_relative "walker/deferred_inference"
+require_relative "walker/ast_helpers"
 
 # Loaded lazily via `Jbuilder.activate_walker!`, never on the eager require
 # chain: all `Prism::*` references live here so `require "typelizer"` stays
@@ -16,6 +17,9 @@ module Typelizer
   module SerializerPlugins
     class Jbuilder
       class Walker
+        include AstHelpers
+        extend AstHelpers
+
         # Shared Prism parse per template (eager metadata extraction + lazy
         # property walk).
         @parse_cache = {}
@@ -116,19 +120,6 @@ module Typelizer
             @walks_in_progress = Set.new
             @warned_empty_partials = Set.new
             @warned_syntax_errors = Set.new
-          end
-
-          # A value spelled with a space before its parens (`json.x (expr)`)
-          # parses as a ParenthesesNode argument — unwrap single-statement
-          # bodies so the inner expression infers exactly like the tight
-          # spelling `json.x(expr)`.
-          def unwrap_parens(node)
-            while node.is_a?(Prism::ParenthesesNode)
-              stmts = node.body.is_a?(Prism::StatementsNode) ? node.body.body : nil
-              break unless stmts&.size == 1
-              node = stmts.first
-            end
-            node
           end
 
           private
@@ -871,7 +862,7 @@ module Typelizer
           kwargs = keyword_args(node)
           optional ||= kwargs.any? { |key, value| OPTIONAL_KWARG_RESOLVERS[key]&.call(value) }
 
-          value = self.class.unwrap_parens(args.first)
+          value = unwrap_parens(args.first)
           if (resolver = value_node_resolver(value))
             optional ||= resolver[:widening].include?(value.name)
             # The resolver block is arbitrary Ruby returning a plain value
@@ -1260,7 +1251,7 @@ module Typelizer
 
         def collection_attr_shortcut(args)
           return nil if args.size < 2
-          first = self.class.unwrap_parens(args.first)
+          first = unwrap_parens(args.first)
           return nil unless first.is_a?(Prism::InstanceVariableReadNode) || first.is_a?(Prism::CallNode)
           props = symbol_args_to_properties(args)
           props.empty? ? nil : props
@@ -1319,7 +1310,7 @@ module Typelizer
         # infer from the name (plural → array), falling back to known
         # collection method names on the argument.
         def looks_like_collection?(name, node)
-          node = self.class.unwrap_parens(node)
+          node = unwrap_parens(node)
           return true if node.is_a?(Prism::CallNode) && COLLECTION_METHODS.include?(node.name)
           plural_name?(name)
         end
@@ -1550,36 +1541,6 @@ module Typelizer
           @root_conditional = prev
         end
 
-        def collect_branches(node)
-          # `unless` has no elsif chain — only an optional `else_clause` (Prism
-          # exposes it as `else_clause`, not `subsequent`); branches are
-          # symmetric for merging.
-          if node.is_a?(Prism::UnlessNode)
-            branches = [node.statements&.body || []]
-            if (else_clause = node.else_clause)
-              branches << (else_clause.statements&.body || [])
-              return [branches, true]
-            end
-            return [branches, false]
-          end
-
-          branches = [node.statements&.body || []]
-          current = node
-          while (sub = current.subsequent)
-            case sub
-            when Prism::ElseNode
-              branches << (sub.statements&.body || [])
-              return [branches, true]
-            when Prism::IfNode
-              branches << (sub.statements&.body || [])
-              current = sub
-            else
-              break
-            end
-          end
-          [branches, false]
-        end
-
         # Merges same-name props across branches: only ONE branch runs at
         # render, so disagreeing branch types UNION (`json.k 20` vs
         # `json.k @dynamic` renders either) — through the same member
@@ -1782,7 +1743,7 @@ module Typelizer
         # what the template demonstrably renders), and whether a conditional
         # arm contributes `null`.
         def infer_value(node, name:)
-          node = self.class.unwrap_parens(node)
+          node = unwrap_parens(node)
           return {type: "null", nullable: false, locked: true} if node.is_a?(Prism::NilNode)
           if TYPE_BY_LITERAL.key?(node.class)
             return {type: TYPE_BY_LITERAL[node.class], nullable: false, locked: true}
@@ -1907,7 +1868,7 @@ module Typelizer
         # hint (`is_active`). A bare attribute (`@x.active`) is undecidable
         # statically and treated as object-valued.
         def boolean_guard?(node)
-          node = self.class.unwrap_parens(node)
+          node = unwrap_parens(node)
           case node
           when Prism::TrueNode, Prism::FalseNode then true
           when Prism::CallNode
@@ -1966,43 +1927,6 @@ module Typelizer
         def json_alias?(name)
           frame = @json_aliases&.reverse_each&.find { |f| f[:name] == name }
           !!frame && frame[:kind] == :alias
-        end
-
-        def contains_json_call?(node)
-          return true if json_call?(node)
-          node.compact_child_nodes.any? { |child| contains_json_call?(child) }
-        end
-
-        def positional_args(node)
-          (node.arguments&.arguments || []).reject { |a| a.is_a?(Prism::KeywordHashNode) }
-        end
-
-        def keyword_args(node)
-          kw = (node.arguments&.arguments || []).find { |a| a.is_a?(Prism::KeywordHashNode) }
-          kw ? assoc_pairs(kw.elements) : {}
-        end
-
-        def literal_value(node)
-          case node
-          when Prism::StringNode then node.unescaped
-          when Prism::SymbolNode then node.unescaped.to_sym
-          when Prism::IntegerNode, Prism::FloatNode then node.value
-          when Prism::TrueNode then true
-          when Prism::FalseNode then false
-          when Prism::ArrayNode then node.elements.map { |el| literal_value(el) }
-          when Prism::HashNode then assoc_pairs(node.elements)
-          when Prism::ParenthesesNode
-            unwrapped = self.class.unwrap_parens(node)
-            unwrapped.equal?(node) ? node : literal_value(unwrapped)
-          else node
-          end
-        end
-
-        def assoc_pairs(elements)
-          elements.each_with_object({}) do |el, h|
-            next unless el.is_a?(Prism::AssocNode) && el.key.is_a?(Prism::SymbolNode)
-            h[el.key.unescaped.to_sym] = literal_value(el.value)
-          end
         end
       end
     end
