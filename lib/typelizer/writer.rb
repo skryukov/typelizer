@@ -98,7 +98,7 @@ module Typelizer
     # `PostResource` alongside `posts/_post.json.jbuilder`, both → `Post`)
     # the duplicate sources legitimately coexist in separate writers; the
     # warning fires only when they share ONE index, naming both sources so
-    # the writer scoping (`reject_class`) or `typelize_as` can be fixed.
+    # the writer scoping (`reject_class`) or the name can be fixed.
     def warn_duplicate_exports(interfaces)
       duplicate_groups = interfaces.group_by(&:name).select { |_, group| group.size >= 2 }
 
@@ -121,7 +121,8 @@ module Typelizer
         sources = group.map(&:source_description).sort
         Typelizer.logger.warn(
           "Typelizer: duplicate exported type #{name.inspect} in #{File.join(config.output_dir.to_s, "index.ts")} — " \
-          "declared by #{sources.join(" and ")}; scope the writers' `reject_class` or rename one with `typelize_as`"
+          "declared by #{sources.join(" and ")}; scope the writers' `reject_class` or rename one " \
+            "(`typelize_as` in a jbuilder template, `serializer_name_mapper` for class serializers)"
         )
       end
     end

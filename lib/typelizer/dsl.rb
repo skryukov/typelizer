@@ -36,13 +36,6 @@ module Typelizer
         define_singleton_method(:_typelizer_model_name) { model }
       end
 
-      # Override the generated TypeScript type name for this serializer.
-      # Equivalent to setting a per-class `serializer_name_mapper` but local
-      # to the serializer file (the thing that actually owns its identity).
-      def typelize_as(name)
-        define_singleton_method(:_typelizer_type_name) { name.to_s }
-      end
-
       # save association of serializer attributes to type
       # can be invoked multiple times
       def typelize(type = nil, type_params = {}, **attributes)
@@ -120,7 +113,7 @@ module Typelizer
     end
 
     module Disabled
-      %i[typelize_from typelize_as typelize typelize_meta].each do |name|
+      %i[typelize_from typelize typelize_meta].each do |name|
         define_method(name) { |*, **| }
       end
     end

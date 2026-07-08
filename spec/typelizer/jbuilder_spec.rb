@@ -532,9 +532,9 @@ RSpec.describe Typelizer::Jbuilder do
         include Alba::Resource
         include Typelizer::DSL
 
-        typelize_as "Profile"
         attributes :id
       end
+      # The default mapper strips the trailing Resource: interface "Profile".
       stub_const("ProfileResource", profile)
 
       write_template("things/show.json.jbuilder", <<~RUBY)

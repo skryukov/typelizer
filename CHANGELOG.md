@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning].
 
 - OpenAPI schemas mirror root-array (jbuilder) interfaces as `{"type": "array"}` with the element schema under `items` — named element interfaces become `$ref`s — matching the TypeScript output instead of describing the element object as the root. ([@skryukov])
 
-- `typelize_as "Name"` is now available in every serializer (and inside jbuilder templates) to override the generated type name locally, without a custom `serializer_name_mapper`. ([@skryukov])
+- `typelize_as "Name"` inside a jbuilder template overrides the generated type name locally, without a custom `serializer_name_mapper`. ([@skryukov])
 
 - Duplicate exported type names in one `index.ts` (e.g. an Alba `PostResource` and a `posts/_post.json.jbuilder` both resolving to `Post`) now log a generation-time warning naming both sources. The same name across separate writers stays silent — that's the supported staged-migration setup. ([@skryukov])
 

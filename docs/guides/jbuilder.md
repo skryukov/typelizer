@@ -103,7 +103,7 @@ type Post = {
 }
 ```
 
-`typelize_as` is the same DSL method used in class-based serializers (Alba/AMS/Oj/Panko) — same semantics, just made available inside templates that don't have a class body.
+`typelize_as` is a template annotation: templates have no class body, so it takes the place a class-level DSL would (class-based serializers rename through `serializer_name_mapper` instead).
 
 ::: warning Declaration order matters
 `typelize_as` and `typelize_from` are read from the leading statements of the template, and reading stops at the first statement that isn't a bare DSL call. Place them **before the first `json.*` line** (comments are fine anywhere). Declarations placed after content are silently ignored.
@@ -653,7 +653,7 @@ config.reject_class = Typelizer::Jbuilder.exclude(/Resource\z/)
 Notes that make this safe:
 
 - **Cleanup never crosses writers.** Each writer's stale-file cleanup is scoped to its own output dir, even when one writer's dir is nested inside another's (`types/jbuilder` inside `types`).
-- **Duplicate exports warn.** If two sources resolve to the same exported type name in *one* index (Alba `PostResource` → `Post` alongside `posts/_post.json.jbuilder` → `Post`), generation logs a warning naming both sources. Scope the writers' `reject_class` or rename one side with `typelize_as`. The same name across *separate* writers is fine — that's the migration setup.
+- **Duplicate exports warn.** If two sources resolve to the same exported type name in *one* index (Alba `PostResource` → `Post` alongside `posts/_post.json.jbuilder` → `Post`), generation logs a warning naming both sources. Scope the writers' `reject_class`, or rename a side — `typelize_as` in the template, `serializer_name_mapper` for the class serializer. The same name across *separate* writers is fine — that's the migration setup.
 
 ## Plugin configuration
 
