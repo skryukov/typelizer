@@ -9,6 +9,8 @@ require "set"
 require_relative "walker/array_of"
 require_relative "walker/deferred_inference"
 require_relative "walker/ast_helpers"
+require_relative "walker/inertia_directives"
+require_relative "walker/typelize_override"
 
 # Loaded lazily via `Jbuilder.activate_walker!`, never on the eager require
 # chain: all `Prism::*` references live here so `require "typelizer"` stays
@@ -19,6 +21,8 @@ module Typelizer
       class Walker
         include AstHelpers
         extend AstHelpers
+        include InertiaDirectives
+        include TypelizeOverride
 
         # Shared Prism parse per template (eager metadata extraction + lazy
         # property walk).
@@ -158,42 +162,6 @@ module Typelizer
           /_count\z|_total\z|\Atotal\z|\Apage\z/ => "number",
           /\Ais_|\A(has|can|should|was)_/ => "boolean"
         }.freeze
-
-        # Internal widening registries. Table-driven (a second adapter is one
-        # entry away) but module-private — no registration API until one
-        # exists. The vocabulary mirrors jbuilder-inertia's
-        # `PropBuilder::KNOWN_DIRECTIVES`; only `defer`/`optional` can omit a
-        # key from the initial Inertia load, so only they widen to optional.
-        INERTIA_WIDENING_DIRECTIVES = %i[defer optional].freeze
-        private_constant :INERTIA_WIDENING_DIRECTIVES
-
-        # kwarg → lambda deciding optionality from its literal value, across
-        # the symbol (`inertia: :defer`), array, and hash
-        # (`inertia: {defer: {...}}`) forms. Non-widening directives and
-        # unrecognized shapes never widen.
-        OPTIONAL_KWARG_RESOLVERS = {
-          inertia: lambda do |value|
-            case value
-            when Symbol then INERTIA_WIDENING_DIRECTIVES.include?(value)
-            when Array then value.any? { |v| v.is_a?(Symbol) && INERTIA_WIDENING_DIRECTIVES.include?(v) }
-            when Hash then INERTIA_WIDENING_DIRECTIVES.any? { |directive| value.key?(directive) }
-            else false
-            end
-          end
-        }.freeze
-        private_constant :OPTIONAL_KWARG_RESOLVERS
-
-        # Resolver-object form: `json.stats JbuilderInertia.defer { ... }`.
-        # Namespace constant name → known constructor methods plus the subset
-        # that widens. Matched purely syntactically — typelizer never loads
-        # the jbuilder-inertia gem.
-        VALUE_NODE_RESOLVERS = {
-          "JbuilderInertia" => {
-            methods: %i[defer optional merge deep_merge once always scroll].freeze,
-            widening: INERTIA_WIDENING_DIRECTIVES
-          }.freeze
-        }.freeze
-        private_constant :VALUE_NODE_RESOLVERS
 
         # Every type-distorting jbuilder API method warns through the logger
         # rather than being skipped silently (see the `extract_one` dispatch);
@@ -956,92 +924,6 @@ module Typelizer
           end
 
           note_unknown_candidate(node, handle_prop(node, optional: optional, name: key.unescaped, args: args.drop(1)))
-        end
-
-        def value_node_resolver(node)
-          return nil unless node.is_a?(Prism::CallNode)
-
-          namespace = resolver_namespace(node.receiver)
-          entry = namespace && VALUE_NODE_RESOLVERS[namespace]
-          (entry && entry[:methods].include?(node.name)) ? entry : nil
-        end
-
-        # Matches the top-level namespace constant in both spellings:
-        # `JbuilderInertia.defer` (ConstantReadNode) and
-        # `::JbuilderInertia.defer` (ConstantPathNode with no parent).
-        def resolver_namespace(receiver)
-          case receiver
-          when Prism::ConstantReadNode then receiver.name.to_s
-          when Prism::ConstantPathNode then receiver.parent.nil? ? receiver.name.to_s : nil
-          end
-        end
-
-        # The final expression of the resolver's block, if any — the value
-        # the resolver will produce at runtime. Block-argument forms
-        # (`JbuilderInertia.defer(&blk)`) carry no statically visible body.
-        def resolver_value_expression(node)
-          block = node.block
-          block.body&.body&.last if block.is_a?(Prism::BlockNode)
-        end
-
-        # `typelize:` is honored only for a literal type *string* — the
-        # documented form, e.g. `typelize: "{ id: number }"` (a Symbol is
-        # accepted as a bare type name). A Ruby hash/array value can't be
-        # turned into a TS type by TypeParser, so it falls through to the
-        # non-literal warning instead of stringifying into a broken type.
-        def literal_override?(value)
-          value.is_a?(String) || value.is_a?(Symbol)
-        end
-
-        DELIMITER_PAIRS = {"{" => "}", "[" => "]", "(" => ")", "<" => ">"}.freeze
-        private_constant :DELIMITER_PAIRS
-
-        # Cheap syntactic sanity check for a `typelize:` string: unbalanced
-        # brackets/braces/quotes. Skips quoted content (string-literal types
-        # may contain brackets), a backslash-escaped quote inside a string
-        # (`'don\'t'` stays open), and the `>` of `=>` arrows.
-        def unbalanced_override?(override)
-          stack = []
-          quote = nil
-          prev = nil
-          escaped = false
-          override.to_s.each_char do |ch|
-            if quote
-              if escaped
-                escaped = false
-              elsif ch == "\\"
-                escaped = true
-              elsif ch == quote
-                quote = nil
-              end
-            elsif ch == "'" || ch == '"' || ch == "`"
-              quote = ch
-            elsif DELIMITER_PAIRS.key?(ch)
-              stack << DELIMITER_PAIRS[ch]
-            elsif DELIMITER_PAIRS.value?(ch)
-              arrow = ch == ">" && prev == "="
-              return true if !arrow && stack.pop != ch
-            end
-            prev = ch
-          end
-          !stack.empty? || !quote.nil?
-        end
-
-        # Routes `typelize:` overrides through TypeParser so shortcuts
-        # (`string?`, `number[]`) expand into real TS. Flagged `user_asserted`
-        # so `Interface#infer_types` skips model inference for this exact
-        # property at this nesting level. Optionality merges the assertion
-        # (`string?`) with structural optionality so `merge_branches` can widen.
-        def property_from_override(name, override, optional:)
-          parsed = TypeParser.parse_declaration(override)
-          build_property(
-            name,
-            type: parsed[:type] || override.to_s,
-            nullable: parsed[:nullable] || false,
-            multi: parsed[:multi] || false,
-            optional: optional || parsed[:optional] || false,
-            user_asserted: true
-          )
         end
 
         # Composed-partial blocks emit named intersections — jbuilder's
