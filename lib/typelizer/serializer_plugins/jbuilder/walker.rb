@@ -162,6 +162,13 @@ module Typelizer
             freeze
           end
 
+          # How eager-loaded consumers (Interface, OpenAPI, TypeInference)
+          # detect this wrapper without referencing the lazily-loaded class
+          # (same marker pattern as `typelizer_deferred_inference?`).
+          def typelizer_array_wrapper?
+            true
+          end
+
           # Recursive: a nested wrapper (`ArrayOf(ArrayOf(Shape))`, from
           # `json.child!` inside a collection-value block folded into a
           # union) must still expose its inner Shapes to type inference and

@@ -301,10 +301,11 @@ module Typelizer
       end
     end
 
-    # The jbuilder walker's lazy array wrapper, matched by duck — it lives
-    # in a lazily-loaded plugin file, so no constant reference from here.
+    # The jbuilder walker's lazy array wrapper, matched by its marker — it
+    # lives in a lazily-loaded plugin file, so no constant reference from
+    # here.
     def array_wrapper?(type)
-      type.respond_to?(:element) && type.respond_to?(:map_element_shape)
+      type.respond_to?(:typelizer_array_wrapper?) && type.typelizer_array_wrapper?
     end
 
     # The name this serializer uses to reference ITSELF in typelize

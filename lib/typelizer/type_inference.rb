@@ -65,7 +65,7 @@ module Typelizer
       type, multi =
         if members.size > 1
           [members, prop.multi]
-        elsif members.first.respond_to?(:element)
+        elsif members.first.respond_to?(:typelizer_array_wrapper?) && members.first.typelizer_array_wrapper?
           [members.first.element, true]
         else
           [members.first, prop.multi]

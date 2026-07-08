@@ -135,14 +135,14 @@ module Typelizer
 
       # Yields every inline Shape reachable from a property TYPE: the type
       # itself, each union member (Array type), and array-wrapper elements
-      # (duck-typed via `element` — the walker's `ArrayOf`). Union members
-      # must warn too, or strict builds pass on silent unknowns inside them.
+      # (matched by marker — the walker's `ArrayOf`). Union members must
+      # warn too, or strict builds pass on silent unknowns inside them.
       def each_member_shape(type, &block)
         case type
         when Shape then yield type
         when Array then type.each { |member| each_member_shape(member, &block) }
         else
-          each_member_shape(type.element, &block) if type.respond_to?(:element)
+          each_member_shape(type.element, &block) if type.respond_to?(:typelizer_array_wrapper?) && type.typelizer_array_wrapper?
         end
       end
 
