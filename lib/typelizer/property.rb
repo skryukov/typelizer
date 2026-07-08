@@ -3,6 +3,8 @@ module Typelizer
     :name, :type, :optional, :nullable,
     :multi, :column_name, :column_type, :comment, :enum, :enum_type_name, :deprecated,
     :with_traits, :additional_types, :user_asserted, :inference_locked,
+    # jbuilder-walker private (the column_type precedent: add-only,
+    # fingerprint-excluded); other plugins must not read or set it.
     :merge_block_array,
     keyword_init: true
   ) do
