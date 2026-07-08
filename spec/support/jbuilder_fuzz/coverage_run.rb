@@ -19,18 +19,25 @@
 #
 # Ruby's Coverage only instruments files compiled AFTER Coverage.start, so
 # the ordering below is load-bearing: boot the dummy app first (walker.rb
-# loads lazily via activate_walker!, so it is NOT yet compiled), then start
-# Coverage, then let the first seed pull the walker in — instrumented.
+# and its walker/ collaborators load lazily via activate_walker!, so they
+# are NOT yet compiled), then start Coverage, then let the first seed pull
+# the walker in — instrumented.
 ENV["TYPELIZER"] ||= "true"
 ENV["RAILS_ENV"] ||= "test"
 require File.expand_path("../../app/config/environment", __dir__)
 
-WALKER_PATH = File.expand_path("../../../lib/typelizer/serializer_plugins/jbuilder/walker.rb", __dir__)
+# The walker facade plus every extracted collaborator under walker/ — the
+# measured line set is the same code that used to live in walker.rb alone,
+# so the ratchet percentages stay comparable across the decomposition.
+WALKER_DIR = File.expand_path("../../../lib/typelizer/serializer_plugins/jbuilder", __dir__)
+WALKER_PATHS = ([File.join(WALKER_DIR, "walker.rb")] +
+  Dir[File.join(WALKER_DIR, "walker", "*.rb")]).sort
 RATCHET_PATH = File.join(__dir__, "coverage_ratchet.json")
 
-if $LOADED_FEATURES.include?(WALKER_PATH)
-  abort "walker.rb was compiled before Coverage.start — coverage would be blind. " \
-    "Something in the dummy app boot now activates the walker eagerly; fix that first."
+if (preloaded = WALKER_PATHS.select { |path| $LOADED_FEATURES.include?(path) }).any?
+  abort "#{preloaded.map { |p| File.basename(p) }.join(", ")} compiled before Coverage.start — " \
+    "coverage would be blind. Something in the dummy app boot now activates the walker " \
+    "eagerly; fix that first."
 end
 
 require "coverage"
@@ -53,42 +60,51 @@ rescue
 end
 FileUtils.rm_rf(views_root)
 
-walker = Coverage.result[WALKER_PATH]
-abort "no coverage recorded for walker.rb — was it never loaded?" unless walker
+coverage = Coverage.result
+if (unrecorded = WALKER_PATHS.reject { |path| coverage.key?(path) }).any?
+  abort "no coverage recorded for #{unrecorded.map { |p| File.basename(p) }.join(", ")} — " \
+    "was the walker never loaded?"
+end
 
-lines = walker[:lines]
-executable = lines.count { |hits| !hits.nil? }
-covered_lines = lines.count { |hits| hits && hits > 0 }
-line_pct = (100.0 * covered_lines / executable).round(2)
-
+executable = 0
+covered_lines = 0
 branch_total = 0
 branch_taken = 0
 uncovered = []
-walker[:branches].each do |site, branches|
-  branches.each do |branch, count|
-    branch_total += 1
-    if count > 0
-      branch_taken += 1
-    else
-      type, _id, start_line, = branch
-      site_type, _sid, site_line, = site
-      uncovered << [start_line, "#{type} of #{site_type}@#{site_line}"]
+WALKER_PATHS.each do |path|
+  data = coverage.fetch(path)
+  lines = data[:lines]
+  executable += lines.count { |hits| !hits.nil? }
+  covered_lines += lines.count { |hits| hits && hits > 0 }
+
+  file = File.basename(path)
+  source_lines = File.readlines(path)
+  data[:branches].each do |site, branches|
+    branches.each do |branch, count|
+      branch_total += 1
+      if count > 0
+        branch_taken += 1
+      else
+        type, _id, start_line, = branch
+        site_type, _sid, site_line, = site
+        uncovered << [file, start_line, "#{type} of #{site_type}@#{site_line}", source_lines[start_line - 1].strip]
+      end
     end
   end
 end
+line_pct = (100.0 * covered_lines / executable).round(2)
 branch_pct = (100.0 * branch_taken / branch_total).round(2)
 
-source_lines = File.readlines(WALKER_PATH)
 puts "walker coverage — fuzz seeds #{from}..#{to} " \
   "(#{severity_a} SEVERITY-A divergences, #{harness_errors} harness errors)"
 puts "  lines:    #{covered_lines}/#{executable} (#{line_pct}%)"
 puts "  branches: #{branch_taken}/#{branch_total} (#{branch_pct}%)"
 puts
 puts "=== #{uncovered.size} uncovered branches (grammar-gap worklist) ==="
-uncovered.sort.chunk_while { |a, b| a[0] == b[0] }.each do |group|
-  line = group[0][0]
-  labels = group.map { |_, label| label }.join(", ")
-  puts format("  L%-5d %-28s %s", line, labels, source_lines[line - 1].strip)
+uncovered.sort.chunk_while { |a, b| a[0] == b[0] && a[1] == b[1] }.each do |group|
+  file, line, _, source = group[0]
+  labels = group.map { |entry| entry[2] }.join(", ")
+  puts format("  %s:L%-5d %-28s %s", file, line, labels, source)
 end
 
 if update

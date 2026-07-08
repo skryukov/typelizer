@@ -3,6 +3,12 @@
 require "digest"
 require "set"
 
+# Walker collaborators live in walker/ and are loaded only from here, so
+# they stay behind the same lazy `activate_walker!` gate (and compile after
+# Coverage.start under the fuzz coverage ratchet).
+require_relative "walker/array_of"
+require_relative "walker/deferred_inference"
+
 # Loaded lazily via `Jbuilder.activate_walker!`, never on the eager require
 # chain: all `Prism::*` references live here so `require "typelizer"` stays
 # safe without the prism gem (or with Ruby's bundled prism < 1.0).
@@ -141,128 +147,6 @@ module Typelizer
             when Prism::ConstantPathNode
               [constant_path(node.parent), node.name.to_s].compact.join("::")
             end
-          end
-        end
-
-        # A rendered array type for the spots where the Property-level `multi`
-        # flag can't express array-ness: one side of a re-set union (an array
-        # block conditionally re-set with a scalar renders
-        # `Array<X> | string`, never `Array<X | string>`) and the element of
-        # a nested array (`json.child!` inside a collection-value block —
-        # `Array<Array<X>>`). Renders as `Array<element>` via `to_s`;
-        # `map_element_shape` lets type inference and the post-inference
-        # unknown warning recurse into a Shape element the same way they walk
-        # plain Shape members (duck-typed, so nothing eager-loaded needs this
-        # lazily-loaded class).
-        class ArrayOf
-          attr_reader :element
-
-          def initialize(element)
-            @element = element
-            freeze
-          end
-
-          # How eager-loaded consumers (Interface, OpenAPI, TypeInference)
-          # detect this wrapper without referencing the lazily-loaded class
-          # (same marker pattern as `typelizer_deferred_inference?`).
-          def typelizer_array_wrapper?
-            true
-          end
-
-          # Recursive: a nested wrapper (`ArrayOf(ArrayOf(Shape))`, from
-          # `json.child!` inside a collection-value block folded into a
-          # union) must still expose its inner Shapes to type inference and
-          # the post-inference unknown warning.
-          def map_element_shape(&block)
-            self.class.new(map_member(element, &block))
-          end
-
-          def to_s
-            members = element.is_a?(Array) ? element : [element]
-            "Array<#{members.map { |m| render_member(m) }.join(" | ")}>"
-          end
-
-          def ==(other)
-            other.is_a?(self.class) && element == other.element
-          end
-          alias_method :eql?, :==
-
-          def hash
-            [self.class, element].hash
-          end
-
-          private
-
-          # Kept as the walker's own cascade instead of delegating to
-          # TypeTraversal.map_shapes: the coverage ratchet pins these
-          # branches, and its floor may only ratchet upward.
-          def map_member(member, &block)
-            case member
-            when Shape then yield member
-            when Array then member.map { |m| map_member(m, &block) }
-            when self.class then member.map_element_shape(&block)
-            else member
-            end
-          end
-
-          def render_member(member)
-            case member
-            when Shape then member.to_s
-            when nil then "unknown"
-            else member.respond_to?(:name) ? member.name : member.to_s
-            end
-          end
-        end
-
-        # A union member whose type is delegated to model inference: an
-        # occurrence the walker folded in with `type: nil` (an `extract!`-ed
-        # column unioned with, say, a conditional literal). Dropping it (or
-        # locking the merged prop) silently narrowed the union to the literal
-        # side — the column's real type must survive.
-        #
-        # INTERNAL ONLY: `TypeInference#resolve_deferred_members` (which we
-        # also own) replaces every marker with the model-inferred column type
-        # before `Interface`-level consumers (render, imports, fingerprint,
-        # OpenAPI) ever see the property, honoring the union-member contract
-        # (String/Symbol/Shape/ArrayOf/Interface). The duck method
-        # `typelizer_deferred_inference?` is how that eager-loaded module
-        # detects markers without referencing this lazily-loaded class;
-        # `to_s` is a pure safety net.
-        class DeferredInference
-          attr_reader :column_name
-
-          def initialize(column_name)
-            @column_name = column_name.to_s
-            freeze
-          end
-
-          def typelizer_deferred_inference?
-            true
-          end
-
-          # Maps the model-inferred probe property back to a contract-safe
-          # union member: the column type (array columns keep their wrapper),
-          # or "unknown" when inference came up empty — the plugin's
-          # post-inference warning picks those up.
-          def resolved_member(probe)
-            type = probe.type
-            return "unknown" if type.nil?
-
-            type = type.to_s if type.is_a?(Symbol)
-            probe.multi ? ArrayOf.new(type) : type
-          end
-
-          def ==(other)
-            other.is_a?(self.class) && column_name == other.column_name
-          end
-          alias_method :eql?, :==
-
-          def hash
-            [self.class, column_name].hash
-          end
-
-          def to_s
-            "unknown"
           end
         end
 
