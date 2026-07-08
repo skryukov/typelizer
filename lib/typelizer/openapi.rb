@@ -60,28 +60,21 @@ module Typelizer
 
       private
 
-      # Mirrors interface.ts.erb's root-array rendering (`type X =
-      # Array<Element | XData>`): a NAMED element interface becomes a $ref (or
-      # an inline object schema) and the interface's own properties become an
-      # inline object schema; a template that mixes both forms `anyOf`s them,
-      # matching the TypeScript union instead of dropping either side.
+      # Renders Interface#root_array_members in OpenAPI terms (interface.ts.erb
+      # renders the same members as `type X = Array<Element | XData>`): the
+      # named element becomes a $ref (or an inline object schema) and `...Data`
+      # an inline object schema; a template that mixes both forms `anyOf`s them.
       def root_array_items(interface, openapi_version:, type_mapping:)
-        element = interface.respond_to?(:root_array_element) ? interface.root_array_element : nil
-        members = []
-
-        if element
-          members << if element.respond_to?(:properties) && element.respond_to?(:inline?) && element.inline?
-            schema_for(element, openapi_version: openapi_version)
+        members = interface.respond_to?(:root_array_members) ? interface.root_array_members : [:data]
+        schemas = members.map do |member|
+          if member == :element
+            union_member_schema(interface.root_array_element, openapi_version: openapi_version, type_mapping: type_mapping)
           else
-            union_member_schema(element, openapi_version: openapi_version, type_mapping: type_mapping)
+            object_schema(interface.properties, openapi_version: openapi_version, type_mapping: type_mapping)
           end
         end
-        unless interface.properties.empty?
-          members << object_schema(interface.properties, openapi_version: openapi_version, type_mapping: type_mapping)
-        end
-        members << object_schema(interface.properties, openapi_version: openapi_version, type_mapping: type_mapping) if members.empty?
 
-        (members.size == 1) ? members.first : {anyOf: members}
+        (schemas.size == 1) ? schemas.first : {anyOf: schemas}
       end
 
       def ref_schema(ref, property, openapi_version:)

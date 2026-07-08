@@ -2,7 +2,7 @@
 import type {<%= interface.imports.join(", ") %>} from <%= interface.quote(interface.config.types_import_path) %>
 <% end -%>
 
-<% unless interface.root_array_element_name && interface.properties_to_print.empty? -%>
+<% if interface.root_array_members.include?(:data) -%>
 type <%= interface.name %><%= "Data" if interface.wrapped? %> = <%=
 render("inheritance.ts.erb", interface: interface).strip if interface.parent_interface
 -%>

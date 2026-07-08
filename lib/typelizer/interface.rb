@@ -115,17 +115,25 @@ module Typelizer
       end
     end
 
-    # The element type rendered inside `Array<...>`: the named partial element
-    # and/or the inline `...Data` alias. A template that MIXES both forms
+    # The members of the root-array element type: the named partial element
+    # (`:element`) and/or the interface's own `...Data` alias (`:data`, also
+    # the fallback when neither is present). A template that MIXES both forms
     # (a blockless `json.array! @a, partial: "..."` plus a block/attrs form)
-    # unions them (`Array<Post | XData>`) instead of silently narrowing to the
-    # partial alone and orphaning an unreferenced `XData`.
-    def root_array_element_type
+    # gets both (`Array<Post | XData>`) instead of silently narrowing to the
+    # partial alone and orphaning an unreferenced `XData`. This is the single
+    # source of that decision for interface.ts.erb (both the union and the
+    # `...Data` alias emission gate) and the OpenAPI writer.
+    def root_array_members
       members = []
-      members << root_array_element_name if root_array_element_name
-      members << "#{name}Data" unless properties_to_print.empty?
-      members << "#{name}Data" if members.empty?
-      members.uniq.join(" | ")
+      members << :element if root_array_element_name
+      members << :data unless root_array_element_name && properties_to_print.empty?
+      members
+    end
+
+    def root_array_element_type
+      root_array_members
+        .map { |member| (member == :element) ? root_array_element_name : "#{name}Data" }
+        .join(" | ")
     end
 
     def wrapped?
