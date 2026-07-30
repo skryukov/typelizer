@@ -14,9 +14,10 @@ RSpec.describe Typelizer::Configuration, type: :typelizer do
   end
 
   around do |ex|
+    state = TypelizerConfigurationState.snapshot(configuration)
     restore_defaults!
     ex.call
-    restore_defaults!
+    TypelizerConfigurationState.restore(state, configuration)
   end
 
   describe "#writer" do

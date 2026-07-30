@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "stats": {
+      "type": "object"
+    },
+    "metrics": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "title"
+  ]
+}

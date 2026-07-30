@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "comments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/Comment"
+      }
+    }
+  },
+  "required": [
+    "comments"
+  ]
+}

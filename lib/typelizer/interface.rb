@@ -56,8 +56,71 @@ module Typelizer
       serializer_plugin.root_key
     end
 
+    # Human-readable origin of this interface for warnings: the template
+    # path for jbuilder-template-backed serializers, the class name
+    # otherwise.
+    def source_description
+      if serializer.respond_to?(:_template_path)
+        serializer._template_path.to_s
+      else
+        serializer.name.to_s
+      end
+    end
+
+    # Feature-detected (like `trait_interfaces`) so duck-typed third-party
+    # plugins that don't inherit from SerializerPlugins::Base keep working.
+    def root_is_array
+      serializer_plugin.respond_to?(:root_is_array) && serializer_plugin.root_is_array
+    end
+
+    # A root-array template whose element type resolved to a NAMED interface
+    # (jbuilder `json.array! @xs, partial: "xs/x"`): rendering references —
+    # and imports — that name (`type X = Array<Element>;`) instead of
+    # inlining a `...Data` alias. May also be a plain type string (e.g.
+    # "unknown" for an unresolvable element). Feature-detected like
+    # `root_is_array` so duck-typed plugins keep working.
+    def root_array_element
+      return nil unless serializer_plugin.respond_to?(:root_array_element)
+
+      serializer_plugin.root_array_element
+    end
+
+    def root_array_element_name
+      case (element = root_array_element)
+      when Interface then element.name
+      when String then element
+      end
+    end
+
+    # The members of the root-array element type: the named partial element
+    # (`:element`) and/or the interface's own `...Data` alias (`:data`, also
+    # the fallback when neither is present). A template that MIXES both forms
+    # (a blockless `json.array! @a, partial: "..."` plus a block/attrs form)
+    # gets both (`Array<Post | XData>`) instead of silently narrowing to the
+    # partial alone and orphaning an unreferenced `XData`. This is the single
+    # source of that decision for interface.ts.erb (both the union and the
+    # `...Data` alias emission gate) and the OpenAPI writer.
+    def root_array_members
+      members = []
+      members << :element if root_array_element_name
+      members << :data unless root_array_element_name && properties_to_print.empty?
+      members
+    end
+
+    def root_array_element_type
+      root_array_members
+        .map { |member| (member == :element) ? root_array_element_name : "#{name}Data" }
+        .join(" | ")
+    end
+
+    def wrapped?
+      root_key || root_is_array
+    end
+
     def empty?
-      meta_fields.empty? && properties.empty?
+      # A named-element root array carries no own properties, but its
+      # `type X = Array<Element>;` alias is real output — never drop it.
+      meta_fields.empty? && properties.empty? && root_array_element_name.nil?
     end
 
     def meta_fields
@@ -88,6 +151,11 @@ module Typelizer
       @properties ||= begin
         props = serializer_plugin.properties
         props = infer_types(props)
+        # Post-inference hook: plugins whose property sources carry no class
+        # body (e.g. jbuilder templates) can only judge an `unknown` fallback
+        # honestly AFTER model inference had its chance to fill types in.
+        # Feature-detected for duck-typed plugins (trait_interfaces pattern).
+        serializer_plugin.after_type_inference(props) if serializer_plugin.respond_to?(:after_type_inference)
         props = transform_properties(props)
         PropertySorter.sort(props, config.properties_sort_order)
       end
@@ -125,8 +193,11 @@ module Typelizer
         # recursively including nested sub-properties
         all_properties = collect_all_properties(properties_to_print + trait_interfaces.flat_map(&:properties))
 
-        flat_types = all_properties.filter_map(&:type)
-          .flat_map { |t| Array(t) }
+        # Shapes never reach the token pass: their nested properties are
+        # walked structurally (collect_all_properties), never string-tokenized,
+        # so a rendered `{ author: User; }` body can't leak `User;` into imports.
+        flat_types = (all_properties.filter_map(&:type) + all_properties.flat_map { |p| p.additional_types || [] })
+          .flat_map { |t| TypeTraversal.flat_members(t) }
           .reject { |t| t.is_a?(Shape) }
           .uniq
         association_serializers, attribute_types = flat_types.partition { |type| type.is_a?(Interface) }
@@ -148,7 +219,8 @@ module Typelizer
         # Collect enum type names from properties
         enum_imports = all_properties.filter_map(&:enum_type_name)
 
-        result = (custom_type_imports + serializer_types + trait_imports + enum_imports + Array(parent_interface&.name)).uniq - [self_type_name, name]
+        result = (custom_type_imports + serializer_types + trait_imports + enum_imports +
+          Array(parent_interface&.name) + Array(root_array_element_import)).uniq - [self_type_name, name]
         ImportSorter.sort(result, config.imports_sort_order)
       end
     end
@@ -158,7 +230,7 @@ module Typelizer
     end
 
     def fingerprint
-      [
+      parts = [
         name,
         properties_to_print.map(&:fingerprint),
         parent_interface&.name,
@@ -166,7 +238,12 @@ module Typelizer
         meta_fields.map(&:fingerprint),
         trait_interfaces.map { |t| [t.name, t.properties.map(&:fingerprint)] },
         CONFIGS_AFFECTING_OUTPUT.map { |key| config.public_send(key) }
-      ].inspect
+      ]
+      # Appended only for root arrays, so non-array interfaces keep the exact
+      # fingerprint they had before jbuilder existed — no digest churn for
+      # existing serializers on upgrade.
+      parts << [:root_array, root_array_element_name || true] if root_is_array
+      parts.inspect
     end
 
     def quote(str)
@@ -175,22 +252,39 @@ module Typelizer
 
     private
 
+    # Import and enum collection both walk through TypeTraversal here, so an
+    # Interface referenced inside a union-member Shape (or an array element
+    # Shape) is still reached.
     def collect_all_properties(props)
       props.flat_map do |prop|
-        children = nested_properties_of(prop.type)
-        children ? [prop] + collect_all_properties(children) : [prop]
+        children = ([prop.type] + Array(prop.additional_types))
+          .flat_map { |type| TypeTraversal.nested_properties(type) }
+        children.any? ? [prop] + collect_all_properties(children) : [prop]
       end
     end
 
-    def nested_properties_of(type)
-      case type
-      when Shape then type.properties
-      when Interface then type.properties if type.inline?
-      end
-    end
-
+    # The name this serializer uses to reference ITSELF in typelize
+    # declarations (excluded from imports). Derived from the demodulized
+    # serializer_name_mapper output — the same name the interface actually
+    # exports — so it tracks whatever suffix policy the mapper applies: the
+    # default mapper already strips a trailing Serializer/Resource
+    # (`AResourceFoo::UserSerializer` → "User", and only trailing — a
+    # leftmost scan would stop at "A(Resource…)"), while a non-stripping
+    # mapper (e.g. jbuilder's demodulize) keeps the full name, so a template
+    # `typelize_as "Post2Resource"` embedding a partial `typelize_as
+    # "Post2"` still imports Post2 instead of subtracting it as "self".
+    # Suffix-less names (jbuilder's `Templates::Post`) pass through
+    # unchanged.
     def self_type_name
-      serializer.name.match(/(\w+::)?(\w+)(Serializer|Resource)/)[2]
+      config.serializer_name_mapper.call(serializer).to_s.split("::").last.to_s
+    end
+
+    # Only a named interface element needs an import; plain type strings
+    # ("unknown") are global, and a self-referential element is excluded by
+    # the `- [self_type_name, name]` subtraction downstream.
+    def root_array_element_import
+      element = root_array_element
+      element.name if element.is_a?(Interface) && !element.inline?
     end
 
     def extract_typescript_types(type)
@@ -208,13 +302,29 @@ module Typelizer
       props.map do |prop|
         has_dsl = prop.lookup_in(dsl_attrs)&.any?
 
+        # `inference_locked` marks a type read off a source-code literal
+        # (e.g. jbuilder's `json.title 42`): a same-named model column must
+        # not overwrite it, and column metadata (comments, enums) describes
+        # the column's value, not the literal one.
         prop
           .then { |p| apply_dsl_type(p, dsl_attrs) }
-          .then { |p| has_dsl ? p : apply_model_inference(p) }
+          .then { |p| resolve_asserted_type(p) }
+          .then { |p| (has_dsl || p.user_asserted || p.inference_locked) ? p : apply_model_inference(p) }
           .then { |p| apply_multi_flag(p, multi_attrs) }
-          .then { |p| apply_metadata(p) }
+          .then { |p| p.inference_locked ? p : apply_metadata(p) }
           .then { |p| infer_nested_property_types(p) }
       end
+    end
+
+    # `user_asserted` properties (e.g. jbuilder `typelize:` kwargs) carry
+    # their type directly instead of going through the class-level
+    # `dsl_attrs` registry. Run them through the same class-name resolution
+    # `apply_dsl_type` performs so `typelize: "PostSerializer"` still
+    # resolves to an interface reference.
+    def resolve_asserted_type(prop)
+      return prop unless prop.user_asserted
+
+      prop.with(**resolve_class_type(type: prop.type))
     end
 
     def apply_dsl_type(prop, dsl_attrs)

@@ -8,7 +8,7 @@ Typelizer generates TypeScript types, route helpers, and OpenAPI schemas from yo
 
 - Automatic TypeScript interface generation from serializers
 - Type-safe route helpers from Rails routes
-- Supports Alba, ActiveModel::Serializer, Oj::Serializer, Panko::Serializer
+- Supports Alba, ActiveModel::Serializer, Jbuilder, Oj::Serializer, Panko::Serializer
 - OpenAPI 3.0/3.1 schema generation
 - Multiple output writers with layered configuration
 - File watching with automatic regeneration in development
@@ -45,6 +45,7 @@ rails typelizer:generate
 **Full documentation: https://typelizer.dev**
 
 - [Getting Started](https://typelizer.dev/getting-started)
+- [Jbuilder](https://typelizer.dev/guides/jbuilder)
 - [Manual Typing](https://typelizer.dev/guides/manual-typing)
 - [Route Helpers](https://typelizer.dev/guides/routes)
 - [Configuration](https://typelizer.dev/reference/configuration)

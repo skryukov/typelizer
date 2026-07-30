@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "cloudpayments",
+        "tiptoppay"
+      ]
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "lookup": {
+      "type": "object"
+    },
+    "pair": {
+      "type": "object"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "object"
+        }
+      ]
+    },
+    "nullable_config": {
+      "type": "object",
+      "nullable": true
+    }
+  },
+  "required": [
+    "provider",
+    "metadata",
+    "lookup",
+    "pair",
+    "result",
+    "nullable_config"
+  ]
+}

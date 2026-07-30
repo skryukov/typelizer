@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "json"
+require "json_schemer"
+
 RSpec.describe Typelizer do
   describe ".interfaces" do
     it "returns an array of Interface objects" do
@@ -63,10 +66,18 @@ RSpec.describe Typelizer do
     it "returns empty array when no serializers are registered" do
       original = Typelizer.base_classes.dup
       Typelizer.send(:base_classes=, Set.new)
+      # Generation cycles re-discover jbuilder templates (which would
+      # re-register serializers) — disable the plugin for this premise.
+      Typelizer.configuration.jbuilder_enabled = false
 
       expect(Typelizer.interfaces).to eq([])
     ensure
-      Typelizer.send(:base_classes=, original)
+      Typelizer.configuration.jbuilder_enabled = nil
+      # Union, not overwrite: DSL registration is a one-shot load-time side
+      # effect, so any first-time file loads triggered inside this example
+      # register into the swapped-in Set — overwriting with the pre-example
+      # snapshot would discard them for the rest of the process.
+      Typelizer.send(:base_classes=, original | Typelizer.base_classes)
     end
 
     it "uses per-writer reject_class when writer_name is given" do
@@ -150,8 +161,12 @@ RSpec.describe Typelizer do
       schemas.each do |name, schema|
         expect(name).to be_a(String)
         expect(schema).to be_a(Hash)
-        expect(schema[:type]).to eq(:object)
-        expect(schema[:properties]).to be_a(Hash)
+        expect([:object, :array]).to include(schema[:type])
+        if schema[:type] == :array
+          expect(schema[:items]).to be_a(Hash)
+        else
+          expect(schema[:properties]).to be_a(Hash)
+        end
       end
     end
   end
@@ -195,10 +210,172 @@ RSpec.describe Typelizer::OpenAPI do
 
     it "omits required key when all properties are optional" do
       prop = Typelizer::Property.new(name: :field, type: :string, optional: true)
-      interface = instance_double(Typelizer::Interface, properties: [prop])
+      interface = instance_double(Typelizer::Interface, properties: [prop], root_is_array: false)
 
       schema = described_class.schema_for(interface)
       expect(schema).not_to have_key(:required)
+    end
+  end
+
+  describe ".schema_for with root arrays" do
+    let(:context) { Typelizer::WriterContext.new }
+
+    # Mirrors the duck-typed plugin pattern: stub the serializer plugin so
+    # the interface reports a root array, the way jbuilder's
+    # `json.array!` templates do.
+    def root_array_interface(element:, props: [])
+      interface = Typelizer::Interface.new(serializer: Alba::PostSerializer, context: context)
+      plugin = Object.new
+      plugin.define_singleton_method(:properties) { props }
+      plugin.define_singleton_method(:root_key) { nil }
+      plugin.define_singleton_method(:meta_fields) { nil }
+      plugin.define_singleton_method(:root_is_array) { true }
+      plugin.define_singleton_method(:root_array_element) { element }
+      allow(interface).to receive(:serializer_plugin).and_return(plugin)
+      interface
+    end
+
+    it "wraps the interface's own properties when the element is inline (mirrors `type X = Array<XData>`)" do
+      props = [
+        Typelizer::Property.new(name: "code", type: :number, column_name: "code"),
+        Typelizer::Property.new(name: "label", type: :string, column_name: "label", optional: true)
+      ]
+      interface = root_array_interface(element: nil, props: props)
+
+      schema = described_class.schema_for(interface)
+      expect(schema).to eq(
+        type: :array,
+        items: {
+          type: :object,
+          properties: {"code" => {type: :number}, "label" => {type: :string}},
+          required: ["code"]
+        }
+      )
+    end
+
+    it "emits a $ref for a NAMED element interface (mirrors `type X = Array<Element>`)" do
+      element = context.interface_for(Alba::UserSerializer)
+      interface = root_array_interface(element: element)
+
+      schema = described_class.schema_for(interface)
+      expect(schema).to eq(
+        type: :array,
+        items: {"$ref" => "#/components/schemas/AlbaUser"}
+      )
+    end
+
+    it "maps a plain type-string element the way bare types map elsewhere" do
+      interface = root_array_interface(element: "unknown")
+
+      schema = described_class.schema_for(interface)
+      expect(schema).to eq(type: :array, items: {type: :object})
+    end
+  end
+
+  # The jbuilder walker's same-level fold produces union types whose members
+  # can be Shapes (inline object types) and ArrayOf wrappers (rendered array
+  # types), and direct ArrayOf types (child! inside a collection block →
+  # Array<Array<...>>). The OpenAPI writer must emit structural schemas for
+  # all of them — never crash, never collapse to a bare object.
+  describe "fold-produced union and array types (jbuilder templates)" do
+    let(:views_root) { Dir.mktmpdir("typelizer-openapi-folds") }
+
+    before { Typelizer::Jbuilder.reset! }
+
+    after do
+      Typelizer::Jbuilder.reset!
+      FileUtils.rm_rf(views_root)
+    end
+
+    def template_interface(body)
+      full = File.join(views_root, "things/show.json.jbuilder")
+      FileUtils.mkdir_p(File.dirname(full))
+      File.write(full, body)
+      Typelizer::Jbuilder.discover(views_root)
+      Typelizer::WriterContext.new(writer_name: nil).interface_for(Typelizer::Jbuilder::Templates::ThingsShow)
+    end
+
+    # Validates the schema inside a minimal OpenAPI document for the given
+    # dialect (same json_schemer pattern as spec/openapi_validation_spec.rb).
+    def expect_valid_openapi!(schema, version)
+      document = {
+        openapi: (version == "3.0") ? "3.0.3" : "3.1.0",
+        info: {title: "Typelizer Test", version: "0.0.1"},
+        paths: {},
+        components: {schemas: {"ThingsShow" => schema}}
+      }
+      errors = JSONSchemer.openapi(JSON.parse(JSON.generate(document))).validate.to_a
+      expect(errors).to be_empty, -> { "OpenAPI #{version} validation errors:\n" + errors.map { |e| "  #{e["data_pointer"]}: #{e["error"]}" }.join("\n") }
+    end
+
+    %w[3.0 3.1].each do |version|
+      context "with OpenAPI #{version}" do
+        it "inlines an object schema for a Shape union member" do
+          interface = template_interface(<<~RUBY)
+            json.author do
+              json.id 1
+            end
+            json.author "anon" if @hide
+          RUBY
+
+          schema = Typelizer::OpenAPI.schema_for(interface, openapi_version: version)
+          expect(schema[:properties]["author"][:anyOf]).to contain_exactly(
+            {type: :object, properties: {"id" => {type: :number}}, required: ["id"]},
+            {type: :string}
+          )
+          expect_valid_openapi!(schema, version)
+        end
+
+        it "recurses into nested unions inside a Shape union member" do
+          interface = template_interface(<<~RUBY)
+            json.author do
+              json.flag 1
+              json.flag "x" if @y
+            end
+            json.author "anon" if @hide
+          RUBY
+
+          schema = Typelizer::OpenAPI.schema_for(interface, openapi_version: version)
+          shape_member = schema[:properties]["author"][:anyOf].find { |s| s[:type] == :object }
+          expect(shape_member[:properties]["flag"][:anyOf]).to contain_exactly({type: :number}, {type: :string})
+          expect_valid_openapi!(schema, version)
+        end
+
+        it "emits an array schema for an ArrayOf union member" do
+          interface = template_interface(<<~RUBY)
+            json.items @xs do |x|
+              json.id 1
+            end
+            json.items "none" if @y
+          RUBY
+
+          schema = Typelizer::OpenAPI.schema_for(interface, openapi_version: version)
+          expect(schema[:properties]["items"][:anyOf]).to contain_exactly(
+            {type: :array, items: {type: :object, properties: {"id" => {type: :number}}, required: ["id"]}},
+            {type: :string}
+          )
+          expect_valid_openapi!(schema, version)
+        end
+
+        it "emits a nested array schema for a direct ArrayOf type (child! in a collection block)" do
+          interface = template_interface(<<~RUBY)
+            json.grid @rows do |r|
+              json.child! do
+                json.v 1
+              end
+            end
+          RUBY
+
+          schema = Typelizer::OpenAPI.schema_for(interface, openapi_version: version)
+          grid = schema[:properties]["grid"]
+          expect(grid).to include(type: :array)
+          expect(grid[:items]).to eq(
+            type: :array,
+            items: {type: :object, properties: {"v" => {type: :number}}, required: ["v"]}
+          )
+          expect_valid_openapi!(schema, version)
+        end
+      end
     end
   end
 

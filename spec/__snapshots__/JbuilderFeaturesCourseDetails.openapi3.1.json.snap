@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string"
+    },
+    "lessons_count": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "description",
+    "lessons_count"
+  ]
+}

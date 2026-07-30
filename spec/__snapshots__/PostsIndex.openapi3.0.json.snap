@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "total_count": {
+      "type": "number"
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/Post"
+      }
+    }
+  },
+  "required": [
+    "title",
+    "total_count",
+    "posts"
+  ]
+}

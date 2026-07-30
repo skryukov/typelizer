@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
+require_relative "error"
+require_relative "generation_lock"
+
 module Typelizer
-  class TypeGenerationError < StandardError; end
+  class TypeGenerationError < Error; end
 
   class Middleware
     class << self
@@ -10,14 +13,16 @@ module Typelizer
 
     def initialize(app)
       @app = app
-      @mutex = Mutex.new
       @pending = true
       self.class.instance = self
     end
 
     def call(env)
       if @pending
-        @mutex.synchronize do
+        # Shared (reentrant) lock instead of a per-instance mutex: jbuilder
+        # re-discovery and listen-triggered cycles synchronize on the same
+        # lock, so generation never interleaves with a destructive `reset!`.
+        GenerationLock.synchronize do
           generate! if @pending
         end
       end
@@ -30,13 +35,18 @@ module Typelizer
 
     private
 
+    # Recoverable generation failures (database not ready, template-level
+    # errors like a jbuilder NameCollision) re-raise as TypeGenerationError —
+    # a readable dev-mode error page instead of a raw 500 — and leave
+    # @pending set so the next request retries after the user fixes the
+    # issue. Anything else (genuine bugs) propagates untouched.
     def generate!
       Generator.new.call
       RouteGenerator.call
       @pending = false
-    rescue *db_error_classes => e
+    rescue *db_error_classes, Typelizer::Error => e
       raise TypeGenerationError, "Typelizer could not generate types: #{e.message}\n" \
-        "Fix the database issue, then reload the page."
+        "Fix the error, then reload the page."
     end
 
     def db_error_classes

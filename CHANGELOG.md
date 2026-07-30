@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- **Jbuilder support**: each `.json.jbuilder` template becomes its own TypeScript interface — no serializer library required. Templates are parsed statically with [Prism](https://github.com/ruby/prism) (>= 1.0, activated lazily at generation time, never at boot or render time), so existing templates work unchanged: `extract!`, partials (including named-intersection composition for trait-style partial stacking), blocks, root arrays, caching blocks, and conditional fields (optional keys, with nullability and optionality widened across `if`/`elsif`/`else` and `unless`/`else` branches, types unioned when branches or re-sets write the same key, and `| null` derived from explicit nil signals like `&.`, `try`, and `.presence`). Types come from literals, name heuristics, and — via a top-of-file `typelize_from Model` binding — the same ActiveRecord column/association/enum inference class-based serializers use; the `typelize:` kwarg pins anything the walker can't infer (assertions are tracked per property at their exact nesting level — never via serializer-class mutation, and without affecting fingerprints). Enable by setting discovery roots; see the [Jbuilder guide](https://typelizer.dev/guides/jbuilder). ([@skryukov])
+
+  ```ruby
+  # config/initializers/typelizer.rb
+  Typelizer.configure do |config|
+    config.jbuilder_views = [Rails.root.join("app", "views")]
+  end
+  ```
+
+  ```ruby
+  # app/views/posts/_post.json.jbuilder
+  typelize_from Post
+
+  json.extract! post, :id, :title, :published_at
+  json.comments_count post.comments.size
+  json.permalink post_url(post), typelize: "string"
+  ```
+
+  ```typescript
+  // app/javascript/types/serializers/Post.ts
+  type Post = {
+    id: number;
+    title: string | null;
+    published_at: string | null;
+    comments_count: number;
+    permalink: string;
+  }
+  ```
+
+  Development loop: templates are re-discovered at the start of every generation cycle, and `jbuilder_views` roots participate in Listen-mode watching — template adds/edits/renames/deletes are reflected without a server restart. Production boots perform no template discovery or parsing, and template annotations (`typelize_as` / `typelize_from` / `typelize:`) are render-time no-ops whenever the jbuilder gem is present. Unsupported dynamic constructs (`json.merge!`, dynamic `json.set!`, unresolvable partials, iteration wrapping json calls, splat attribute lists, `json.key_format!` / `json.ignore_nil!`) and properties whose final type stays `unknown` after model inference log warnings with template path and line through `Typelizer.logger` instead of failing (or lying) silently. ([@skryukov])
+
+- **Inertia props widening for jbuilder templates**: the walker statically recognizes [jbuilder-inertia](https://github.com/skryukov/jbuilder-inertia) annotations — both the `inertia:` kwarg (symbol/array/hash forms) and the `JbuilderInertia.defer { ... }` resolver-object form — and widens `defer`/`optional` props to optional TypeScript keys (`stats?: T`), matching what the initial Inertia page load actually contains (`merge`/`once`/`always`/`scroll` affect delivery, not presence, and stay required). Without jbuilder-inertia installed, `inertia:` kwargs are stripped at render time with a one-time warning instead of crashing the render; with it installed they pass through untouched, regardless of gem load order. ([@skryukov])
+
+- **Jbuilder `json.child!` arrays and literal `json.set!` keys**: a `json.<name> do ... end` block built from `json.child!` calls is typed as an array — the element type merges every child's shape, keeping keys present in all children required and widening the rest to optional (mixing `child!` with named properties warns and types the array elements only; a `child!` with no enclosing block warns and is skipped). `json.set!` with a literal String or Symbol key now flows through normal property typing instead of the dynamic-key warning, and property names that aren't valid JS identifiers (e.g. `json.set! "kebab-key", ...`) render quoted (`'kebab-key': string;`) wherever properties are rendered. ([@skryukov])
+
+- **Jbuilder root `json.array!` with `partial:` and multi-root partial resolution**: a root `json.array! @xs, partial: "xs/x", as: :x` now types the template as an array of the partial's named, imported interface (`type XsIndex = Array<X>;` — dynamic references keep their warning; unresolvable or empty partials degrade to `Array<unknown>`), and partial resolution falls back to every other registered views root in registration order after the template's own root misses (e.g. a core root and an overlay root referencing each other's partials — a cross-root partial registers, and derives its type name, relative to the root it lives in). ([@skryukov])
+
+- OpenAPI schemas mirror root-array (jbuilder) interfaces as `{"type": "array"}` with the element schema under `items` — named element interfaces become `$ref`s — matching the TypeScript output instead of describing the element object as the root. ([@skryukov])
+
+- `typelize_as "Name"` inside a jbuilder template overrides the generated type name locally, without a custom `serializer_name_mapper`. ([@skryukov])
+
+- Duplicate exported type names in one `index.ts` (e.g. an Alba `PostResource` and a `posts/_post.json.jbuilder` both resolving to `Post`) now log a generation-time warning naming both sources. The same name across separate writers stays silent — that's the supported staged-migration setup. ([@skryukov])
+
+- `_show.json.jbuilder` next to `show.json.jbuilder` (same directory) now derives a `…ShowPartial` type name instead of raising `NameCollision`; any remaining discovery-time collision logs a warning naming both files and skips the later one instead of aborting type generation for the whole views tree. Explicit `Typelizer::Jbuilder.template` registrations still raise. ([@skryukov])
+
+### Changed
+
+- `Typelizer::Error` is now the gem's base exception class: `Typelizer::TypeGenerationError`, `Typelizer::Writer::WriterError` (previously a bare `StandardError` descendant), and the new Jbuilder errors all inherit from it, so `rescue Typelizer::Error` catches every Typelizer-raised failure from one root. ([@skryukov])
+
+- Every generation cycle now runs behind a single process-wide reentrant lock (`GenerationLock`), shared by the request middleware, rake tasks, and Listen-triggered regeneration, so concurrent triggers serialize instead of interleaving. ([@skryukov])
+
+- **No digest churn for existing serializers**: interface fingerprints gain a root-array component only for root-array (jbuilder) templates, and internal self-type-name resolution was hardened for serializers whose names don't end in `Serializer`/`Resource` — existing generated files keep byte-identical digests and content on upgrade, with the exceptions below. Run `rails typelizer:types:refresh` once after upgrading to rewrite the affected files in a single pass. ([@skryukov])
+
+- Property names outside the ASCII-identifier set now render quoted wherever they appear as object keys (and their fingerprints change accordingly, so affected files are rewritten once on the next generation). For most such names (e.g. `kebab-key`) this replaces previously invalid TypeScript. Two kinds of names were valid TS before and still get a one-time rewrite: names ending in `?` (e.g. `admin?`) previously rendered as `admin?: boolean` — a valid declaration, but of an *optional* `admin` property rather than a key literally named `admin?`; quoting (`'admin?': boolean;`) fixes the semantics. Non-ASCII identifier names (e.g. `café`) were valid unquoted and are now quoted anyway — always-valid ASCII-only output is preferred over avoiding a single rewrite. Plain ASCII identifier names are unaffected. ([@skryukov])
+
+- `typelize` union strings with a trailing `?` on the last member (e.g. `typelize "Foo | Bar?"`) now consistently mean an *optional property* of the union type (`foo?: Foo | Bar`), matching the single-type shortcut (`"Bar?"`), instead of emitting the invalid TS `foo: Foo | Bar?`. Affected annotations are rewritten once on the next generation. ([@skryukov])
+
+- `Typelizer::Generator#call` now materializes every writer's interfaces before writing any files (so a failing serializer in one writer no longer leaves another writer partially written first) and returns writer batches instead of a writers hash. ([@skryukov])
+
+- Model inference now only ever **widens** a property's nullability/optionality, never narrows it: a plugin (or the jbuilder walker) that already proved a value nullable/optional keeps that flag even against a `NOT NULL` column. This fixes jbuilder templates whose walker-proven `| null` was erased by a same-named column, but it is also a behavior change for **existing class-based serializers** whose plugin set `nullable: true` (or an optional attribute) on a value backed by a `NOT NULL` column — e.g. an Alba custom type registered with `auto_convert: false`, or an `oj_serializers` attribute passed `nullable: true`. Such a property rendered without `| null` before and renders with it now; the affected file is rewritten once on the next generation. This is the one exception to the byte-identical-digest note above beyond the two quoting cases; plain column-backed attributes are unaffected. ([@skryukov])
+
+### Fixed
+
+- Per-writer stale-file cleanup no longer crosses writers: a writer whose `output_dir` is nested inside another writer's (e.g. `types/jbuilder` under `types`) keeps its files instead of having them collected as stale by the outer writer. ([@skryukov])
+
+- Imports are now collected from trailing intersection members (`additional_types`), so named-intersection properties import all of their member types. ([@skryukov])
+
 ## [0.13.1] - 2026-05-18
 
 ### Added

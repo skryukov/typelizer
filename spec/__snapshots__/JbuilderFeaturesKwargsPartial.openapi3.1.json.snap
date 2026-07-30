@@ -1,0 +1,45 @@
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "integer"
+      },
+      "title": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "body": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "published_at": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "news",
+          "article",
+          "blog"
+        ]
+      }
+    },
+    "required": [
+      "id",
+      "title",
+      "body",
+      "published_at",
+      "category"
+    ]
+  }
+}

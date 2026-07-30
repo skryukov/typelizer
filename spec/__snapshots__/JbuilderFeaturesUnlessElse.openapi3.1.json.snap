@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "full_name": {
+      "type": "string"
+    },
+    "theme": {
+      "type": "string"
+    },
+    "compact": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "theme"
+  ]
+}

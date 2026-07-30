@@ -1,7 +1,7 @@
 # Configuration
 
 ::: info Supported serializers
-Typelizer works with Alba, ActiveModel::Serializer, Oj::Serializer, and Panko::Serializer. jbuilder, `as_json`, and JSONAPI::Serializer are not currently supported.
+Typelizer works with Alba, ActiveModel::Serializer, Jbuilder, Oj::Serializer, and Panko::Serializer. `as_json` and JSONAPI::Serializer are not currently supported.
 :::
 
 ## Global Settings
@@ -21,6 +21,23 @@ Typelizer.logger = Logger.new($stdout, level: :info)
 # Force enable or disable file watching with Listen
 Typelizer.listen = nil
 ```
+
+Jbuilder template discovery is also configured at this level (the settings scope discovery, not per-writer output, so they live next to `dirs` and `listen` rather than in writer configs). Set them inside the `Typelizer.configure` block:
+
+```ruby
+Typelizer.configure do |config|
+  # Jbuilder template discovery roots. Setting this enables the Jbuilder
+  # plugin; templates are re-discovered at the start of every generation
+  # cycle (never at boot). See the Jbuilder guide.
+  config.jbuilder_views = [Rails.root.join("app", "views")]
+
+  # Explicit enablement override for the Jbuilder plugin.
+  # Default nil = auto-detect (enabled when jbuilder_views is set).
+  config.jbuilder_enabled = nil
+end
+```
+
+See the [Jbuilder guide](/guides/jbuilder) for discovery semantics, the prism requirement, and render-safety behavior.
 
 ## Configuration Layers
 

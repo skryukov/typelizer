@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
 require_relative "typelizer/version"
+require_relative "typelizer/error"
+require_relative "typelizer/generation_lock"
 require_relative "typelizer/union_type_sorter"
 require_relative "typelizer/shape"
+require_relative "typelizer/type_traversal"
 require_relative "typelizer/property"
 require_relative "typelizer/model_plugins/auto"
 require_relative "typelizer/serializer_plugins/auto"
@@ -29,6 +32,8 @@ require_relative "typelizer/serializer_plugins/oj_serializers"
 require_relative "typelizer/serializer_plugins/alba"
 require_relative "typelizer/serializer_plugins/ams"
 require_relative "typelizer/serializer_plugins/panko"
+require_relative "typelizer/serializer_plugins/jbuilder"
+require_relative "typelizer/jbuilder"
 
 require_relative "typelizer/model_plugins/active_record"
 require_relative "typelizer/model_plugins/poro"
@@ -43,10 +48,10 @@ module Typelizer
     extend Forwardable
 
     # readers
-    def_delegators :configuration, :dirs, :reject_class, :listen, :writer
+    def_delegators :configuration, :dirs, :reject_class, :listen, :writer, :jbuilder_views, :jbuilder_enabled
 
     # writers
-    def_delegators :configuration, :dirs=, :reject_class=, :listen=
+    def_delegators :configuration, :dirs=, :reject_class=, :listen=, :jbuilder_views=, :jbuilder_enabled=
 
     # Is Typelizer active?
     #
@@ -71,12 +76,20 @@ module Typelizer
       yield configuration
     end
 
+    # Every interface collection is a generation cycle: it runs behind the
+    # shared GenerationLock and starts by re-running jbuilder template
+    # discovery from a clean slate (`Jbuilder.refresh!` is a no-op unless
+    # `jbuilder_views` discovery roots are configured), so template changes
+    # are reflected without a process restart.
     def interfaces(writer_name: nil)
-      load_serializers
-      context = WriterContext.new(writer_name: writer_name)
-      target_serializers(context.writer_config.reject_class)
-        .map { |klass| context.interface_for(klass) }
-        .reject(&:empty?)
+      GenerationLock.synchronize do
+        Jbuilder.refresh!
+        load_serializers
+        context = WriterContext.new(writer_name: writer_name)
+        target_serializers(context.writer_config.reject_class)
+          .map { |klass| context.interface_for(klass) }
+          .reject(&:empty?)
+      end
     end
 
     def openapi_schemas(writer_name: nil, openapi_version: "3.0")

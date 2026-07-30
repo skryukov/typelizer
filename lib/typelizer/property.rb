@@ -2,7 +2,10 @@ module Typelizer
   Property = Struct.new(
     :name, :type, :optional, :nullable,
     :multi, :column_name, :column_type, :comment, :enum, :enum_type_name, :deprecated,
-    :with_traits,
+    :with_traits, :additional_types, :user_asserted, :inference_locked,
+    # jbuilder-walker private (the column_type precedent: add-only,
+    # fingerprint-excluded); other plugins must not read or set it.
+    :merge_block_array,
     keyword_init: true
   ) do
     def with(**attrs)
@@ -42,8 +45,9 @@ module Typelizer
     def render(sort_order: :none, prefer_double_quotes: false)
       type_str = type_name(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
 
-      trait_types = trait_type_names
-      type_str = ([type_str] + trait_types).join(" & ") if trait_types.any?
+      # Intersection members: own type & trait types & additional types.
+      extra = Array(additional_types).map { |t| render_member(t, sort_order: sort_order, prefer_double_quotes: prefer_double_quotes) }
+      type_str = ([type_str] + trait_type_names + extra).join(" & ")
 
       type_str = "Array<#{type_str}>" if multi
 
@@ -53,16 +57,32 @@ module Typelizer
       # Add nullable at the end (null should always be last in sorted output)
       type_str = "#{type_str} | null" if nullable
 
-      "#{name}#{"?" if optional}: #{type_str}"
+      "#{js_key(name.to_s, prefer_double_quotes)}#{"?" if optional}: #{type_str}"
     end
 
     def fingerprint
       # Use array format for consistent output across Ruby versions
       # (Hash#inspect format changed in Ruby 3.4).
-      # column_type is excluded because it only informs inference, not output.
-      to_h.except(:column_type)
+      # column_type, user_asserted, inference_locked, and merge_block_array
+      # are excluded because they only inform inference/merge behavior, not
+      # output.
+      # additional_types is excluded from to_h to avoid changing fingerprints
+      # for properties that don't use it; when present, its rendered names are
+      # merged back in (it affects generated output).
+      # A non-identifier name (quoted in the rendered TS by `js_key`) changes
+      # the fingerprint the same one time its rendering changed — otherwise
+      # the digest short-circuit in Writer#write_file would preserve a stale
+      # unquoted (invalid-TS) file forever. Identifier names keep their
+      # ORIGINAL object (String or Symbol) so existing digests stay
+      # byte-identical.
+      quoted_name = js_key(name.to_s, false)
+      hash = to_h.except(:column_type, :additional_types, :user_asserted, :inference_locked, :merge_block_array)
         .merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
-        .to_a.inspect
+      hash = hash.merge(name: quoted_name) unless quoted_name == name.to_s
+      if additional_types&.any?
+        hash = hash.merge(additional_types: additional_types.map { |t| render_member(t) })
+      end
+      hash.to_a.inspect
     end
 
     # Generates a TypeScript type definition for named enums
@@ -89,15 +109,39 @@ module Typelizer
 
     private
 
+    # Renders one type member (an intersection/union participant): inline
+    # `Shape`s render structurally, named references (Interfaces, classes)
+    # render by name, everything else by `to_s`. With the default arguments
+    # this matches `Shape#to_s`, so fingerprints stay byte-identical.
+    def render_member(type, sort_order: :none, prefer_double_quotes: false)
+      if type.is_a?(Shape)
+        type.render(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
+      elsif type.respond_to?(:name)
+        type.name
+      else
+        type.to_s
+      end
+    end
+
     def sorted_enum_keys(sort_order)
       keys = enum.map(&:to_s)
       (sort_order == :alphabetical) ? keys.sort_by(&:downcase) : keys
     end
 
+    # Escapes the quote character and backslashes so a name or enum value
+    # containing them (e.g. a `json.set! "it's"` key) emits a valid TS string
+    # literal instead of `'it's'`, which is a syntax error that breaks the
+    # whole generated file. Names without those characters are byte-identical.
     def quote_string(str, prefer_double_quotes)
-      prefer_double_quotes ? "\"#{str}\"" : "'#{str}'"
+      quote = prefer_double_quotes ? "\"" : "'"
+      escaped = str.to_s.gsub(/[\\#{quote}]/) { |char| "\\#{char}" }
+      "#{quote}#{escaped}#{quote}"
     end
 
+    # A name that isn't a valid JS identifier (e.g. "kebab-key") must be
+    # quoted wherever it appears as an object key — both in rendered TS
+    # property positions (`render`) and in enum runtime constants. Normal
+    # identifier names pass through byte-identical.
     def js_key(str, prefer_double_quotes)
       str.match?(/\A[A-Za-z_$][\w$]*\z/) ? str : quote_string(str, prefer_double_quotes)
     end
@@ -118,7 +162,7 @@ module Typelizer
       when Shape
         type.render(sort_order: sort_order, prefer_double_quotes: prefer_double_quotes)
       when Array
-        type.map { |t| t.respond_to?(:name) ? t.name : t.to_s }.join(" | ")
+        type.map { |t| render_member(t) }.join(" | ")
       else
         type.respond_to?(:name) ? type.name : type&.to_s || "unknown"
       end

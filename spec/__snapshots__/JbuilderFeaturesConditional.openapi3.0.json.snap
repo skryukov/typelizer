@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "properties": {
+    "always": {
+      "type": "string"
+    },
+    "featured": {
+      "type": "boolean"
+    },
+    "badge": {
+      "type": "string"
+    },
+    "public_id": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "always"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "known": {
+      "type": "string"
+    },
+    "runtime_data": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "known",
+    "runtime_data"
+  ]
+}

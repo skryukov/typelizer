@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "course": {
+      "$ref": "#/components/schemas/JbuilderFeaturesCourse"
+    },
+    "course_with_progress": {
+      "$ref": "#/components/schemas/JbuilderFeaturesCourse"
+    }
+  },
+  "required": [
+    "course",
+    "course_with_progress"
+  ]
+}

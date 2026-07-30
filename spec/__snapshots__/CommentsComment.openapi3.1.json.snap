@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "number"
+    },
+    "body": {
+      "type": "string"
+    },
+    "replies": {
+      "$ref": "#/components/schemas/CommentsComment"
+    }
+  },
+  "required": [
+    "id",
+    "body",
+    "replies"
+  ]
+}

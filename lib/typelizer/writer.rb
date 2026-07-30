@@ -2,13 +2,32 @@
 
 require "fileutils"
 
+require_relative "error"
+
 module Typelizer
   class Writer
-    class WriterError < StandardError; end
+    class WriterError < Typelizer::Error; end
 
-    def initialize(config)
+    # `protected_output_dirs` is the full set of writer output dirs to shield
+    # from this writer's stale-file cleanup (the Generator passes every
+    # configured writer's dir). Defaults to reading them from the global
+    # configuration so direct `Writer.new(config)` construction keeps the
+    # current behavior.
+    def initialize(config, protected_output_dirs: nil)
       @template_cache = {}
       @config = config
+      @protected_output_dirs = protected_output_dirs
+    end
+
+    class << self
+      # Per-writer (keyed by output_dir — unique across writers) memo of the
+      # last duplicate-export name set we warned about, so the warning fires
+      # once per name-set instead of on every generation cycle, and fires
+      # again only when the colliding set changes. Class-level because Writer
+      # instances are recreated each cycle.
+      def warned_duplicate_exports
+        @warned_duplicate_exports ||= {}
+      end
     end
 
     def call(interfaces, force:)
@@ -43,13 +62,69 @@ module Typelizer
 
     attr_reader :config, :template_cache
 
+    # Stale cleanup never crosses writers: another writer's output_dir may be
+    # nested inside this writer's (e.g. a migration-period `types/jbuilder`
+    # under the default `types`), and its files must not be collected as
+    # stale here — each writer cleans up only its own output.
     def cleanup_stale_files(written_files, interfaces)
       output_dirs = output_dirs_for(interfaces)
+      foreign_dirs = foreign_output_dirs(output_dirs)
 
       existing_files = output_dirs.flat_map { |dir| Dir[File.join(dir, "**/*.ts")] }
+      existing_files = existing_files.reject { |file| foreign_dirs.any? { |dir| File.expand_path(file).start_with?(dir) } }
       stale_files = existing_files - written_files
 
       File.delete(*stale_files) unless stale_files.empty?
+    end
+
+    # Output dirs configured for OTHER writers (expanded, with a trailing
+    # separator so prefix matching can't cross sibling dirs that merely share
+    # a name prefix). A foreign dir that is an ancestor of one of our own
+    # dirs is dropped too: files under our own dirs are always ours, and an
+    # ancestor prefix would otherwise swallow them.
+    def foreign_output_dirs(own_dirs)
+      own = own_dirs.map { |dir| File.expand_path(dir.to_s) }
+      protected_dirs = @protected_output_dirs || Typelizer.configuration.writers.values.map(&:output_dir)
+      protected_dirs
+        .map { |dir| File.expand_path(dir.to_s) }
+        .uniq
+        .reject { |dir| own.include?(dir) || own.any? { |own_dir| own_dir.start_with?(dir + File::SEPARATOR) } }
+        .map { |dir| dir + File::SEPARATOR }
+    end
+
+    # Two serializers resolving to the same exported type name in one index
+    # produce duplicate `export` lines — invalid TS. This is a warning, not
+    # an error: during a staged cross-plugin migration (e.g. Alba
+    # `PostResource` alongside `posts/_post.json.jbuilder`, both → `Post`)
+    # the duplicate sources legitimately coexist in separate writers; the
+    # warning fires only when they share ONE index, naming both sources so
+    # the writer scoping (`reject_class`) or the name can be fixed.
+    def warn_duplicate_exports(interfaces)
+      duplicate_groups = interfaces.group_by(&:name).select { |_, group| group.size >= 2 }
+
+      # Dedup across cycles: generation re-runs on every request/file change,
+      # and re-warning about the same unchanged duplicate set on each cycle
+      # is noise. Re-warn only when the set of colliding names changes. An
+      # EMPTY set never touches the memo: two writers sharing an output_dir
+      # would otherwise ping-pong (the clean writer clearing the other's
+      # marker every cycle). Trade-off: a duplicate that is fixed and later
+      # reintroduced identically doesn't re-warn.
+      signature = duplicate_groups.keys.sort
+      return if signature.empty?
+
+      memo_key = config.output_dir.to_s
+      return if self.class.warned_duplicate_exports[memo_key] == signature
+
+      self.class.warned_duplicate_exports[memo_key] = signature
+
+      duplicate_groups.each do |name, group|
+        sources = group.map(&:source_description).sort
+        Typelizer.logger.warn(
+          "Typelizer: duplicate exported type #{name.inspect} in #{File.join(config.output_dir.to_s, "index.ts")} — " \
+          "declared by #{sources.join(" and ")}; scope the writers' `reject_class` or rename one " \
+            "(`typelize_as` in a jbuilder template, `serializer_name_mapper` for class serializers)"
+        )
+      end
     end
 
     def collect_enums(interfaces)
@@ -67,6 +142,8 @@ module Typelizer
     end
 
     def write_index(interfaces, enums: [])
+      warn_duplicate_exports(interfaces)
+
       fingerprint = [
         enums.map(&:enum_type_name),
         interfaces.map { |i|

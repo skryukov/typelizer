@@ -18,7 +18,12 @@ module Typelizer
   class Configuration
     DEFAULT_WRITER_NAME = :default
 
-    attr_accessor :dirs, :listen
+    # `jbuilder_views` / `jbuilder_enabled` configure jbuilder template
+    # discovery (see Typelizer::Jbuilder.enabled?). They live here — next to
+    # `dirs` and `listen` — rather than in the per-writer Config struct
+    # because they scope discovery, not per-interface output (and therefore
+    # don't participate in fingerprints).
+    attr_accessor :dirs, :listen, :jbuilder_views, :jbuilder_enabled
     attr_reader :writers, :global_settings
 
     def routes
@@ -28,6 +33,8 @@ module Typelizer
     def initialize
       @dirs = []
       @listen = nil
+      @jbuilder_views = nil
+      @jbuilder_enabled = nil
 
       default = Config.build
 

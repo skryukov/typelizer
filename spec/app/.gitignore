@@ -31,6 +31,9 @@
 
 /public/assets
 
+# Generated Typelizer output from the test suite.
+/app/javascript/types/
+
 # Ignore master key for decrypting credentials and more.
 /config/master.key
 

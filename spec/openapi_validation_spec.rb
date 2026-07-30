@@ -10,7 +10,6 @@ RSpec.describe "OpenAPI schema validation" do
     %w[
       AlphaSection
       BetaSection
-      Post
       TypeA
       TypeM
       TypeZ

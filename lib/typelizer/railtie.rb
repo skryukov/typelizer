@@ -19,6 +19,30 @@ module Typelizer
       Typelizer::DSL.disable! unless Typelizer.enabled?
     end
 
+    # Render-safety patches for jbuilder templates, installed whenever jbuilder
+    # is present — independent of whether the plugin is enabled (which gates
+    # only discovery). A `typelize:`/`typelize_as`/`typelize_from` annotation
+    # must never 500 a production render even where discovery is dev-only.
+    # `TemplateHelpers` no-ops the declarations; `SetExt` strips the kwargs
+    # (see their docs in jbuilder.rb).
+    initializer "typelizer.jbuilder_render_safety" do
+      ActiveSupport.on_load(:action_view) do
+        # Keyed on jbuilder being LOADED, not merely installed: an app with
+        # `gem "jbuilder", require: false` that never requires it must not
+        # have it force-loaded (and can't render jbuilder templates anyway).
+        next unless defined?(::Jbuilder)
+
+        begin
+          require "jbuilder/jbuilder_template"
+        rescue LoadError
+          next
+        end
+
+        include Typelizer::Jbuilder::TemplateHelpers
+        ::JbuilderTemplate.prepend(Typelizer::Jbuilder::SetExt)
+      end
+    end
+
     server do
       next unless Typelizer.enabled?
 

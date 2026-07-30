@@ -1,14 +1,14 @@
 # Getting Started
 
-Typelizer is for Rails apps that use a serializer library and a TypeScript-capable frontend (React, Vue, Svelte via Inertia, or a separate SPA). It generates TypeScript interfaces from your serializers and type-safe route helpers from your Rails routes.
+Typelizer is for Rails apps that use a serializer library (or Jbuilder) and a TypeScript-capable frontend (React, Vue, Svelte via Inertia, or a separate SPA). It generates TypeScript interfaces from your serializers and type-safe route helpers from your Rails routes.
 
-If you use jbuilder or `render json: model.as_json`, you'll need to adopt a serializer library first. If you use server-rendered views (ERB/Haml) without TypeScript, Typelizer's [route helpers](/guides/routes) and [OpenAPI schemas](/guides/openapi) may still be useful, but type generation won't apply.
+If you use `render json: model.as_json`, you'll need to adopt a serializer library first. Already rendering with Jbuilder templates? No serializer library is needed — Typelizer reads `.json.jbuilder` files directly; see the [Jbuilder guide](/guides/jbuilder). If you use server-rendered views (ERB/Haml) without TypeScript, Typelizer's [route helpers](/guides/routes) and [OpenAPI schemas](/guides/openapi) may still be useful, but type generation won't apply.
 
 ## Prerequisites
 
 - Ruby 3.0+
 - Rails 6.1+
-- A serializer library: [Alba](https://github.com/okuramasafumi/alba), [ActiveModel::Serializer](https://github.com/rails-api/active_model_serializers), [Oj::Serializer](https://github.com/ElMassimo/oj_serializers), or [Panko::Serializer](https://github.com/panko-serializer/panko_serializer). New to serializers? We recommend Alba.
+- A serializer library or template DSL: [Alba](https://github.com/okuramasafumi/alba), [ActiveModel::Serializer](https://github.com/rails-api/active_model_serializers), [Jbuilder](https://github.com/rails/jbuilder), [Oj::Serializer](https://github.com/ElMassimo/oj_serializers), or [Panko::Serializer](https://github.com/panko-serializer/panko_serializer). New to serializers? We recommend Alba.
 
 ## Installation
 
@@ -34,6 +34,12 @@ end
 ```ruby [AMS]
 class ApplicationSerializer < ActiveModel::Serializer
   include Typelizer::DSL
+end
+```
+```ruby [Jbuilder]
+# config/initializers/typelizer.rb
+Typelizer.configure do |config|
+  config.jbuilder_views = [Rails.root.join("app", "views")]
 end
 ```
 ```ruby [Oj::Serializer]
@@ -167,7 +173,7 @@ Autocompletion, compile-time checking, no string URLs. See the [Route Helpers gu
 ## Next Steps
 
 - [Manual Typing](/guides/manual-typing) -- annotate computed attributes with custom types
-- Serializer guides: [Alba](/guides/alba), [AMS](/guides/ams), [Oj](/guides/oj-serializer), [Panko](/guides/panko)
+- Serializer guides: [Alba](/guides/alba), [AMS](/guides/ams), [Jbuilder](/guides/jbuilder), [Oj](/guides/oj-serializer), [Panko](/guides/panko)
 - [Route Helpers](/guides/routes) -- type-safe route functions from Rails routes
 - [Multiple Writers](/guides/multiple-writers) -- emit different outputs (e.g., snake_case and camelCase)
 - [Configuration Reference](/reference/configuration) -- all available options

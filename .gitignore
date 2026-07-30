@@ -11,7 +11,11 @@
 .rspec_status
 
 Gemfile.lock
+/gemfiles/*.lock
 
 /node_modules/
 /docs/.vitepress/dist
 /docs/.vitepress/cache
+
+# Internal planning docs — not shipped, not pushed
+/docs/plans/

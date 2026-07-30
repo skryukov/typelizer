@@ -56,6 +56,23 @@ RSpec.describe Typelizer::Property do
       end
     end
 
+    describe "non-identifier names" do
+      it "quotes a name that is not a valid JS identifier" do
+        prop = described_class.new(name: "kebab-key", type: "string")
+        expect(prop.to_s).to eq("'kebab-key': string")
+      end
+
+      it "escapes an apostrophe in the name so the TS stays valid" do
+        prop = described_class.new(name: "it's", type: "number")
+        expect(prop.to_s).to eq("'it\\'s': number")
+      end
+
+      it "escapes the quote and backslashes under prefer_double_quotes" do
+        prop = described_class.new(name: "say \"hi\"\\x", type: "number")
+        expect(prop.render(prefer_double_quotes: true)).to eq("\"say \\\"hi\\\"\\\\x\": number")
+      end
+    end
+
     describe "nullable properties" do
       it "adds | null for nullable properties" do
         prop = described_class.new(name: "field", type: "string", nullable: true)
@@ -80,6 +97,40 @@ RSpec.describe Typelizer::Property do
         prop = described_class.new(name: "items", type: [:TypeZ, :TypeA], optional: true, nullable: true, multi: true)
         result = prop.render(sort_order: :alphabetical)
         expect(result).to eq("items?: Array<TypeA | TypeZ> | null")
+      end
+    end
+
+    describe "property name quoting" do
+      it "keeps valid JS identifier names byte-identical (bare)" do
+        %w[name _private $ref snake_case camelCase x1].each do |name|
+          prop = described_class.new(name: name, type: "string")
+          expect(prop.to_s).to eq("#{name}: string")
+        end
+      end
+
+      it "quotes names that are not valid JS identifiers" do
+        prop = described_class.new(name: "kebab-key", type: "string")
+        expect(prop.to_s).to eq("'kebab-key': string")
+      end
+
+      it "quotes digit-leading and spaced names" do
+        expect(described_class.new(name: "1st", type: "number").to_s).to eq("'1st': number")
+        expect(described_class.new(name: "two words", type: "string").to_s).to eq("'two words': string")
+      end
+
+      it "uses double quotes for the name when prefer_double_quotes is true" do
+        prop = described_class.new(name: "kebab-key", type: "string")
+        expect(prop.render(prefer_double_quotes: true)).to eq('"kebab-key": string')
+      end
+
+      it "places the optional marker outside the quotes" do
+        prop = described_class.new(name: "data-id", type: "string", optional: true)
+        expect(prop.to_s).to eq("'data-id'?: string")
+      end
+
+      it "renders a TS-parseable property for quoted names (quoted-name, optional marker, colon, type)" do
+        prop = described_class.new(name: "kebab-key", type: "string", optional: true, nullable: true)
+        expect(prop.to_s).to match(/\A(['"])kebab-key\1\?: string \| null\z/)
       end
     end
   end
@@ -514,6 +565,41 @@ RSpec.describe Typelizer::Property do
       expect(prop.enum_runtime_definition(prefer_double_quotes: true)).to eq(
         'const Status = { "pending-review": "pending-review", ok: "ok" } as const'
       )
+    end
+  end
+
+  describe "#fingerprint" do
+    it "excludes user_asserted (it informs inference, not output)" do
+      asserted = described_class.new(name: "field", type: "string", user_asserted: true)
+      inferred = described_class.new(name: "field", type: "string", user_asserted: false)
+
+      expect(asserted.fingerprint).to eq(inferred.fingerprint)
+      expect(asserted).to eql(inferred)
+    end
+
+    it "excludes inference_locked (it informs inference, not output)" do
+      locked = described_class.new(name: "field", type: "string", inference_locked: true)
+      plain = described_class.new(name: "field", type: "string")
+
+      expect(locked.fingerprint).to eq(plain.fingerprint)
+    end
+
+    it "keeps identifier names byte-identical whether String or Symbol" do
+      string_named = described_class.new(name: "field", type: "string")
+      expect(string_named.fingerprint).to include('[:name, "field"]')
+
+      symbol_named = described_class.new(name: :field, type: "string")
+      expect(symbol_named.fingerprint).to include("[:name, :field]")
+    end
+
+    it "changes for a non-identifier name exactly like its rendering did" do
+      prop = described_class.new(name: "kebab-key", type: "string")
+
+      # `render` quotes the key, so a pre-existing unquoted (invalid-TS)
+      # file must fail the digest check and be rewritten once.
+      expect(prop.render).to eq("'kebab-key': string")
+      expect(prop.fingerprint).to include("'kebab-key'")
+      expect(prop.fingerprint).not_to include('[:name, "kebab-key"]')
     end
   end
 
