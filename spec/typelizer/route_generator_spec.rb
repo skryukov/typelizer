@@ -146,6 +146,17 @@ RSpec.describe Typelizer::RouteGenerator, type: :typelizer do
       expect(controller).not_to match(%r{'/aliased/:id'})
     end
 
+    it "emits shallow member routes once when nested under several parents" do
+      generator.call(force: true)
+
+      index = File.read(output_dir.join("index.ts"))
+      controller = File.read(output_dir.join("CommentsController.ts"))
+      controller_keys = controller.scan(/^\s{2}([A-Za-z_$][\w$]*):\s/).flatten
+
+      expect(controller_keys).to eq(["show", "update"])
+      expect(index).to include("export const comment = _comments.show")
+    end
+
     it "skips generation when routes.enabled is false" do
       route_config.enabled = false
 
