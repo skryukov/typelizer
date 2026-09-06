@@ -49,6 +49,12 @@ module Typelizer
         .map { |r| [r[:controller], r[:action], r[:path]] }.to_set
       routes.reject! { |r| r[:verb] == "put" && patch_keys.include?([r[:controller], r[:action], r[:path]]) }
 
+      # Skip unnamed duplicates of a named route (Rails repeats member routes under each parent for `shallow: true`)
+      named_keys = routes.select { |r| r[:named] }
+        .map { |r| [r[:controller], r[:verb], r[:path]] }.to_set
+      routes.reject! { |r| !r[:named] && named_keys.include?([r[:controller], r[:verb], r[:path]]) }
+      routes.uniq!
+
       if config.include
         patterns = Array(config.include)
         routes = routes.select { |r| patterns.any? { |p| match_route?(r, p) } }

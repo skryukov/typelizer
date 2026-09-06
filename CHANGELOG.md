@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Fixed
+
+- A shallow-nested member route is now emitted once, rather than once per parent. Rails names only the first set, so the unnamed copies fell back to their action name and produced duplicate object keys in the generated controller. ([@visini])
+
 ## [0.13.1] - 2026-05-18
 
 ### Added
@@ -517,6 +521,7 @@ and this project adheres to [Semantic Versioning].
 [@rdavid1099]: https://github.com/rdavid1099
 [@skryukov]: https://github.com/skryukov
 [@ventsislaf]: https://github.com/ventsislaf
+[@visini]: https://github.com/visini
 
 [Unreleased]: https://github.com/skryukov/typelizer/compare/v0.13.1...HEAD
 [0.13.1]: https://github.com/skryukov/typelizer/compare/v0.13.0...v0.13.1
