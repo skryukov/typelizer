@@ -145,8 +145,12 @@ module Typelizer
     end
 
     def route_key(route, controller_routes)
-      collides = controller_routes.count { |r| r[:action] == route[:action] } > 1
-      camelize_key(collides ? route[:name] : route[:action])
+      same_action = controller_routes.select { |r| r[:action] == route[:action] }
+      return camelize_key(route[:action]) if same_action.one?
+      return camelize_key(route[:name]) if route[:named]
+      return camelize_key(route[:action]) if same_action.one? { |r| !r[:named] }
+
+      camelize_key("#{route[:action]}_#{route[:path_name]}")
     end
 
     def camelize_key(key)

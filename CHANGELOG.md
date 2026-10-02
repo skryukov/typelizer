@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning].
 
 ### Fixed
 
-- A shallow-nested member route is now emitted once, rather than once per parent. Rails names only the first set, so the unnamed copies fell back to their action name and produced duplicate object keys in the generated controller. ([@visini])
+- Generated route files no longer have duplicate keys when a resource is routed more than once, e.g. nested under several parents. ([@visini])
 
 ## [0.13.1] - 2026-05-18
 

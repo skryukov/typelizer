@@ -153,8 +153,17 @@ RSpec.describe Typelizer::RouteGenerator, type: :typelizer do
       controller = File.read(output_dir.join("CommentsController.ts"))
       controller_keys = controller.scan(/^\s{2}([A-Za-z_$][\w$]*):\s/).flatten
 
-      expect(controller_keys).to eq(["show", "update"])
+      expect(controller_keys).to include("show", "update", "destroy")
       expect(index).to include("export const comment = _comments.show")
+    end
+
+    it "emits unique keys in every controller file" do
+      generator.call(force: true)
+
+      output_dir.glob("**/*Controller.ts").each do |file|
+        keys = file.read.scan(/^\s{2}([A-Za-z_$][\w$]*):\s/).flatten
+        expect(keys).to eq(keys.uniq), "duplicate keys in #{file.basename}"
+      end
     end
 
     it "skips generation when routes.enabled is false" do

@@ -22,10 +22,16 @@ Rails.application.routes.draw do
 
   # Shallow nesting under two parents defines the same member routes twice
   resources :teams, only: [] do
-    resources :comments, only: [:show, :update], shallow: true
+    resources :comments, shallow: true
   end
   resources :groups, only: [] do
-    resources :comments, only: [:show, :update], shallow: true
+    resources :comments, shallow: true
+  end
+
+  # Same resource routed top-level and nested
+  resources :replies, only: [:show, :update, :destroy]
+  resources :teams, only: [] do
+    resources :replies, only: [:show, :update, :destroy]
   end
 
   mount BlogEngine::Engine, at: "/blog"

@@ -76,12 +76,12 @@ module Typelizer
     end
 
     def build_named_paths(named_routes, path_prefix: "")
-      named_routes.each_with_object(Set.new) do |(_name, route), paths|
+      named_routes.each_with_object({}) do |(name, route), paths|
         controller = route.requirements[:controller]
         action = route.requirements[:action]
         next unless controller && action
 
-        paths << [controller, path_prefix + strip_format(route.path.spec.to_s)]
+        paths[[controller, path_prefix + strip_format(route.path.spec.to_s)]] ||= name.to_s
       end
     end
 
@@ -97,7 +97,8 @@ module Typelizer
 
       if controller.present? && action.present?
         # Match by [controller, path] so unnamed aliases at distinct paths (e.g. ActiveStorage representations) don't inherit a sibling's name
-        name = route.name || (action if named_paths.include?([controller, path]))
+        path_name = named_paths[[controller, path]]
+        name = route.name || (action if path_name)
       elsif route.name.present?
         name = route.name.to_s
         controller = "_routes"
@@ -115,6 +116,7 @@ module Typelizer
       {
         name: name,
         named: !!route.name,
+        path_name: path_name,
         controller: controller,
         action: action,
         verb: verb,
