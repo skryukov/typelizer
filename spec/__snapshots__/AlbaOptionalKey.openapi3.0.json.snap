@@ -5,6 +5,9 @@
       "type": "string",
       "description": "Unique identifier"
     },
+    "username": {
+      "type": "string"
+    },
     "firstName": {
       "type": "string"
     },
