@@ -10,6 +10,7 @@ module Typelizer
 
       def infer_types(prop)
         infer_types_for_association(prop) ||
+          serializer_resolved_type?(prop) ||
           infer_types_for_column(prop) ||
           infer_types_for_association_ids(prop) ||
           infer_types_for_delegate(prop) ||
@@ -26,6 +27,7 @@ module Typelizer
       end
 
       def enum_for(prop)
+        return if serializer_resolved_type?(prop)
         return unless model_class&.defined_enums&.key?(prop.column_name.to_s)
 
         prop.enum = model_class.defined_enums[prop.column_name.to_s].keys
@@ -34,6 +36,12 @@ module Typelizer
       end
 
       private
+
+      # An association or nested attribute is already typed by the serializer;
+      # a same-named column describes a different value.
+      def serializer_resolved_type?(prop)
+        prop.type.is_a?(Interface) || prop.type.is_a?(Shape)
+      end
 
       def columns_hash
         return nil unless model_class
