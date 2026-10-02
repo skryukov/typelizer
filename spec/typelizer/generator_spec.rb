@@ -59,6 +59,23 @@ RSpec.describe Typelizer::Generator, type: :typelizer do
       FileUtils.rm_rf(default_output_dir.parent.join("generator_empty"))
     end
 
+    it "leaves files of a writer nested inside another writer's output_dir alone" do
+      outer_dir = default_output_dir.parent.join("generator_outer")
+      inner_dir = outer_dir.join("inner")
+      # The outer writer runs last, after the inner one has written its files
+      configuration.writer(:inner) { |c| c.output_dir = inner_dir }
+      configuration.writer(:outer) { |c| c.output_dir = outer_dir }
+
+      generator.call(force: true)
+      expect(inner_dir.join("index.ts")).to exist
+
+      inode = File.stat(inner_dir.join("index.ts")).ino
+      generator.call
+      expect(File.stat(inner_dir.join("index.ts")).ino).to eq(inode)
+    ensure
+      FileUtils.rm_rf(outer_dir)
+    end
+
     it "writes interfaces to per-serializer output_dir" do
       custom_output_dir = Rails.root.join("app/javascript/types/custom_output")
 

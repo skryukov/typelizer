@@ -44,10 +44,7 @@ module Typelizer
     attr_reader :config, :template_cache
 
     def cleanup_stale_files(written_files, interfaces)
-      output_dirs = output_dirs_for(interfaces)
-
-      existing_files = output_dirs.flat_map { |dir| Dir[File.join(dir, "**/*.ts")] }
-      stale_files = existing_files - written_files
+      stale_files = own_files(interfaces) - written_files
 
       File.delete(*stale_files) unless stale_files.empty?
     end
@@ -106,7 +103,25 @@ module Typelizer
     end
 
     def cleanup_output_dir(interfaces)
-      output_dirs_for(interfaces).each { |dir| FileUtils.rm_rf(dir) }
+      File.delete(*own_files(interfaces))
+    end
+
+    def own_files(interfaces)
+      dirs = output_dirs_for(interfaces)
+      nested_dirs = nested_writer_dirs(dirs)
+
+      dirs.flat_map { |dir| Dir[File.join(dir, "**/*.ts")] }
+        .uniq
+        .reject { |file| nested_dirs.any? { |dir| File.expand_path(file).start_with?(dir) } }
+    end
+
+    # Output dirs of other writers placed inside ours: their files aren't ours to delete
+    def nested_writer_dirs(dirs)
+      own_dirs = dirs.map { |dir| File.join(File.expand_path(dir), "") }
+
+      Typelizer.configuration.writers.values
+        .map { |writer| File.join(File.expand_path(writer.output_dir.to_s), "") }
+        .select { |dir| own_dirs.any? { |own_dir| dir != own_dir && dir.start_with?(own_dir) } }
     end
 
     def output_dirs_for(interfaces)
