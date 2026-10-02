@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "$ref": "#/components/schemas/AmsUserAuthor"
+    },
+    "role": {
+      "$ref": "#/components/schemas/AmsUserAuthor"
+    }
+  },
+  "required": [
+    "name",
+    "role"
+  ]
+}

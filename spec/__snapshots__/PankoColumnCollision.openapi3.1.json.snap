@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "$ref": "#/components/schemas/PankoUserAuthor"
+    },
+    "role": {
+      "$ref": "#/components/schemas/PankoUserAuthor"
+    }
+  },
+  "required": [
+    "name",
+    "role"
+  ]
+}

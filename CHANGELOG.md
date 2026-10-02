@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning].
 
 ### Fixed
 
+- Associations and nested attributes no longer take the type of a model column with the same name. ([@lukasedw])
 - Generated route files no longer have duplicate keys when a resource is routed more than once, e.g. nested under several parents. ([@visini])
 
 ## [0.13.1] - 2026-05-18
@@ -510,6 +511,7 @@ and this project adheres to [Semantic Versioning].
 [@jonmarkgo]: https://github.com/jonmarkgo
 [@julik]: https://github.com/julik
 [@kristinemcbride]: https://github.com/kristinemcbride
+[@lukasedw]: https://github.com/lukasedw
 [@nkriege]: https://github.com/nkriege
 [@NOX73]: https://github.com/NOX73
 [@okuramasafumi]: https://github.com/okuramasafumi

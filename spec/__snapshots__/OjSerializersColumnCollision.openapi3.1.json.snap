@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "$ref": "#/components/schemas/OjSerializersUserAuthor"
+    },
+    "role": {
+      "$ref": "#/components/schemas/OjSerializersUserAuthor"
+    }
+  },
+  "required": [
+    "name",
+    "role"
+  ]
+}
