@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning].
 
 - Associations and nested attributes no longer take the type of a model column with the same name. ([@lukasedw])
 - Generated route files no longer have duplicate keys when a resource is routed more than once, e.g. nested under several parents. ([@visini])
+- OpenAPI: a string literal mixed with other types (`'auto' | number`) now becomes a string enum instead of a broken `$ref`. ([@skryukov])
 
 ## [0.13.1] - 2026-05-18
 
