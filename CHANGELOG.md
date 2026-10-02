@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning].
 
 - Associations and nested attributes no longer take the type of a model column with the same name. ([@lukasedw])
 - Generated route files no longer have duplicate keys when a resource is routed more than once, e.g. nested under several parents. ([@visini])
+- Generation no longer crashes for a serializer whose class name contains neither `Serializer` nor `Resource`. ([@skryukov])
 
 ## [0.13.1] - 2026-05-18
 

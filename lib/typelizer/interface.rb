@@ -190,7 +190,7 @@ module Typelizer
     end
 
     def self_type_name
-      serializer.name.match(/(\w+::)?(\w+)(Serializer|Resource)/)[2]
+      serializer.name[/(\w+::)?(\w+)(Serializer|Resource)/, 2]
     end
 
     def extract_typescript_types(type)
