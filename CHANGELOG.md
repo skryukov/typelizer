@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Added
+
+- [Blueprinter](https://github.com/procore-oss/blueprinter) support, including views. ([@skryukov])
+
 ### Fixed
 
 - Associations and nested attributes no longer take the type of a model column with the same name. ([@lukasedw])

@@ -8,7 +8,7 @@ If you use jbuilder or `render json: model.as_json`, you'll need to adopt a seri
 
 - Ruby 3.0+
 - Rails 6.1+
-- A serializer library: [Alba](https://github.com/okuramasafumi/alba), [ActiveModel::Serializer](https://github.com/rails-api/active_model_serializers), [Oj::Serializer](https://github.com/ElMassimo/oj_serializers), or [Panko::Serializer](https://github.com/panko-serializer/panko_serializer). New to serializers? We recommend Alba.
+- A serializer library: [Alba](https://github.com/okuramasafumi/alba), [ActiveModel::Serializer](https://github.com/rails-api/active_model_serializers), [Oj::Serializer](https://github.com/ElMassimo/oj_serializers), [Panko::Serializer](https://github.com/panko-serializer/panko_serializer), or [Blueprinter](https://github.com/procore-oss/blueprinter). New to serializers? We recommend Alba.
 
 ## Installation
 
@@ -43,6 +43,11 @@ end
 ```
 ```ruby [Panko]
 class ApplicationSerializer < Panko::Serializer
+  include Typelizer::DSL
+end
+```
+```ruby [Blueprinter]
+class ApplicationBlueprint < Blueprinter::Base
   include Typelizer::DSL
 end
 ```
@@ -167,7 +172,7 @@ Autocompletion, compile-time checking, no string URLs. See the [Route Helpers gu
 ## Next Steps
 
 - [Manual Typing](/guides/manual-typing) -- annotate computed attributes with custom types
-- Serializer guides: [Alba](/guides/alba), [AMS](/guides/ams), [Oj](/guides/oj-serializer), [Panko](/guides/panko)
+- Serializer guides: [Alba](/guides/alba), [AMS](/guides/ams), [Oj](/guides/oj-serializer), [Panko](/guides/panko), [Blueprinter](/guides/blueprinter)
 - [Route Helpers](/guides/routes) -- type-safe route functions from Rails routes
 - [Multiple Writers](/guides/multiple-writers) -- emit different outputs (e.g., snake_case and camelCase)
 - [Configuration Reference](/reference/configuration) -- all available options

@@ -15,6 +15,8 @@ module Typelizer
             AMS
           elsif defined?(::Panko::Serializer) && serializer.ancestors.include?(::Panko::Serializer)
             Panko
+          elsif defined?(::Blueprinter::Base) && serializer.ancestors.include?(::Blueprinter::Base)
+            Blueprinter
           else
             raise "Can't guess serializer plugin for #{serializer}. " \
                     "Please specify it with `config.serializer_plugin`."

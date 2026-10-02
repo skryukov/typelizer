@@ -8,7 +8,7 @@ Typelizer generates TypeScript types, route helpers, and OpenAPI schemas from yo
 
 - Automatic TypeScript interface generation from serializers
 - Type-safe route helpers from Rails routes
-- Supports Alba, ActiveModel::Serializer, Oj::Serializer, Panko::Serializer
+- Supports Alba, ActiveModel::Serializer, Oj::Serializer, Panko::Serializer, Blueprinter
 - OpenAPI 3.0/3.1 schema generation
 - Multiple output writers with layered configuration
 - File watching with automatic regeneration in development
@@ -60,7 +60,7 @@ cd spec/app && RAILS_ENV=test bundle exec rails db:create db:migrate && cd ../..
 bundle exec rspec
 ```
 
-The test suite uses a dummy Rails app in `spec/app/` with models, migrations, and serializers for all four supported frameworks (Alba, AMS, OjSerializers, Panko). Linting is done with StandardRB:
+The test suite uses a dummy Rails app in `spec/app/` with models, migrations, and serializers for all five supported frameworks (Alba, AMS, OjSerializers, Panko, Blueprinter). Linting is done with StandardRB:
 
 ```bash
 bundle exec standardrb

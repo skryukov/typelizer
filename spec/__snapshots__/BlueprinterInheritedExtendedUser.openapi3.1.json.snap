@@ -1,0 +1,64 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "display_name": {
+      "type": "string"
+    },
+    "first_name": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "guest",
+        "member",
+        "admin",
+        "superadmin"
+      ]
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "username": {
+      "type": "string"
+    },
+    "invitor": {
+      "oneOf": [
+        {
+          "$ref": "#/components/schemas/BlueprinterUser"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/BlueprinterPostSummaryView"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "active",
+    "display_name",
+    "first_name",
+    "role",
+    "updated_at",
+    "username",
+    "invitor",
+    "posts"
+  ]
+}

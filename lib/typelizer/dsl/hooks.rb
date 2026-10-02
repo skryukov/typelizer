@@ -18,6 +18,9 @@ module Typelizer
         elsif defined?(::Panko::Serializer) && base.ancestors.include?(::Panko::Serializer)
           require_relative "hooks/panko"
           base.singleton_class.prepend(Panko)
+        elsif defined?(::Blueprinter::Base) && base.ancestors.include?(::Blueprinter::Base)
+          require_relative "hooks/blueprinter"
+          base.singleton_class.prepend(Blueprinter)
         end
       end
 

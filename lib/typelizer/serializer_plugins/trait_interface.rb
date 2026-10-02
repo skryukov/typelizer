@@ -1,19 +1,20 @@
 # frozen_string_literal: true
 
-require_relative "../../type_inference"
+require_relative "../type_inference"
 
 module Typelizer
   module SerializerPlugins
-    class Alba::TraitInterface
+    class TraitInterface
       include TypeInference
 
       attr_reader :serializer, :trait_name, :context, :plugin
 
-      def initialize(serializer:, trait_name:, context:, plugin:)
+      def initialize(serializer:, trait_name:, context:, plugin:, suffix: "Trait")
         @serializer = serializer
         @trait_name = trait_name
         @context = context
         @plugin = plugin
+        @suffix = suffix
       end
 
       def config
@@ -22,7 +23,7 @@ module Typelizer
 
       def name
         base_name = config.serializer_name_mapper.call(serializer).tr_s(":", "")
-        "#{base_name}#{trait_name.to_s.camelize}Trait"
+        "#{base_name}#{trait_name.to_s.camelize}#{@suffix}"
       end
 
       def properties

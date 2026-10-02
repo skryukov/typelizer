@@ -1,4 +1,5 @@
 require_relative "base"
+require_relative "trait_interface"
 
 module Typelizer
   module SerializerPlugins
@@ -224,4 +225,3 @@ module Typelizer
 end
 
 require_relative "alba/block_attribute_collector"
-require_relative "alba/trait_interface"
