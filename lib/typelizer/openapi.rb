@@ -101,6 +101,8 @@ module Typelizer
       def union_member_schema(type)
         if type.respond_to?(:properties)
           {"$ref" => "#/components/schemas/#{type.name}"}
+        elsif string_literal?(type)
+          {type: :string, enum: [unquote_string_literal(type)]}
         else
           sym = type.to_sym
           if OPENAPI_TYPES.include?(sym)

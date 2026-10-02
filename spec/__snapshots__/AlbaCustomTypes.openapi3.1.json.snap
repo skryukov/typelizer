@@ -58,6 +58,19 @@
         null
       ]
     },
+    "width": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "auto"
+          ]
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
     "tag": {
       "anyOf": [
         {
@@ -79,6 +92,7 @@
     "config",
     "status",
     "kind",
+    "width",
     "tag"
   ]
 }
