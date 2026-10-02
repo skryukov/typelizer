@@ -20,16 +20,15 @@ module Alba
       end
     end
 
-    # TODO: introduce this test once Alba supports resource class methods in
-    # nested blocks (okuramasafumi/alba#495)
+    # trait with nested attributes and typelize DSL
+    trait :with_integer_timestamps do
+      nested :integer_timestamps do
+        typelize :number
+        attribute(:created_at) { |user| user.created_at.to_i }
 
-    # # trait with nested attributes and typelize DSL
-    # trait :with_integer_timestamps do
-    #   nested :integer_timestamps do
-    #     # typelize dsl within nested block
-    #     typelize :integer
-    #     attributes :created_at, :updated_at
-    #   end
-    # end
+        typelize :number
+        attribute(:updated_at) { |user| user.updated_at.to_i }
+      end
+    end
   end
 end

@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "integer_timestamps": {
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": "number"
+        },
+        "updated_at": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "created_at",
+        "updated_at"
+      ]
+    }
+  },
+  "required": [
+    "integer_timestamps"
+  ]
+}
