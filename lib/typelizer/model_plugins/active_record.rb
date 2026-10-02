@@ -97,10 +97,10 @@ module Typelizer
         when :nullable
           prop.nullable = column.null
         when :optional
-          prop.optional = column.null
+          prop.optional ||= column.null
         when :nullable_and_optional
           prop.nullable = column.null
-          prop.optional = column.null
+          prop.optional ||= column.null
         else
           raise "Unknown null strategy: #{config.null_strategy}"
         end
