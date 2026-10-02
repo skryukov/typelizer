@@ -60,12 +60,9 @@ module Typelizer
       # Use array format for consistent output across Ruby versions
       # (Hash#inspect format changed in Ruby 3.4).
       # column_type is excluded because it only informs inference, not output.
-      hash = to_h.except(:column_type)
+      to_h.except(:column_type)
         .merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
-      # Quoted keys need a new digest so files generated before quoting get rewritten
-      quoted_name = js_key(name.to_s, false)
-      hash[:name] = quoted_name unless quoted_name == name.to_s
-      hash.to_a.inspect
+        .to_a.inspect
     end
 
     # Generates a TypeScript type definition for named enums
@@ -99,7 +96,8 @@ module Typelizer
 
     def quote_string(str, prefer_double_quotes)
       quote = prefer_double_quotes ? '"' : "'"
-      "#{quote}#{str.to_s.gsub(/[\\#{quote}]/) { "\\#{_1}" }}#{quote}"
+      escaped = str.to_s.gsub(/[\\#{quote}]/) { |char| "\\#{char}" }
+      "#{quote}#{escaped}#{quote}"
     end
 
     def js_key(str, prefer_double_quotes)

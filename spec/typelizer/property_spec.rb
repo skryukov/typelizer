@@ -53,7 +53,6 @@ RSpec.describe Typelizer::Property do
       it "quotes keys that aren't valid identifiers" do
         prop = described_class.new(name: "created-at", type: "string")
         expect(prop.to_s).to eq("'created-at': string")
-        expect(prop.fingerprint).to include("'created-at'")
       end
 
       it "escapes quotes and backslashes in enum values" do
