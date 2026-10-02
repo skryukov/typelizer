@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "$ref": "#/components/schemas/AlbaUserAuthor"
+    },
+    "username": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "active",
+        "created_at"
+      ]
+    },
+    "role": {
+      "$ref": "#/components/schemas/AlbaUserAuthor"
+    }
+  },
+  "required": [
+    "name",
+    "username",
+    "role"
+  ]
+}

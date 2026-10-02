@@ -50,7 +50,7 @@ RSpec.describe "Alba association named after a model column" do
     resource = stub_const("AlbaUserWithTypelizedRole", build_resource do
       typelize_from ::User
       typelize role: target
-      one :role, resource: target
+      attributes :role
     end)
 
     expect(property(resource, :role).render).to eq("role: AlbaFullName")
