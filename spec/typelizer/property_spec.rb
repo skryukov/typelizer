@@ -49,6 +49,19 @@ RSpec.describe Typelizer::Property do
       end
     end
 
+    describe "quoting" do
+      it "quotes keys that aren't valid identifiers" do
+        prop = described_class.new(name: "created-at", type: "string")
+        expect(prop.to_s).to eq("'created-at': string")
+        expect(prop.fingerprint).to include("'created-at'")
+      end
+
+      it "escapes quotes and backslashes in enum values" do
+        prop = described_class.new(name: "status", enum: ["it's", "a\\b"])
+        expect(prop.to_s).to eq("status: 'it\\'s' | 'a\\\\b'")
+      end
+    end
+
     describe "optional properties" do
       it "adds ? for optional properties" do
         prop = described_class.new(name: "field", type: "string", optional: true)

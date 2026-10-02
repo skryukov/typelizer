@@ -53,16 +53,19 @@ module Typelizer
       # Add nullable at the end (null should always be last in sorted output)
       type_str = "#{type_str} | null" if nullable
 
-      "#{name}#{"?" if optional}: #{type_str}"
+      "#{js_key(name.to_s, prefer_double_quotes)}#{"?" if optional}: #{type_str}"
     end
 
     def fingerprint
       # Use array format for consistent output across Ruby versions
       # (Hash#inspect format changed in Ruby 3.4).
       # column_type is excluded because it only informs inference, not output.
-      to_h.except(:column_type)
+      hash = to_h.except(:column_type)
         .merge(type: UnionTypeSorter.sort(type_name(sort_order: :alphabetical), :alphabetical))
-        .to_a.inspect
+      # Quoted keys need a new digest so files generated before quoting get rewritten
+      quoted_name = js_key(name.to_s, false)
+      hash[:name] = quoted_name unless quoted_name == name.to_s
+      hash.to_a.inspect
     end
 
     # Generates a TypeScript type definition for named enums
@@ -95,7 +98,8 @@ module Typelizer
     end
 
     def quote_string(str, prefer_double_quotes)
-      prefer_double_quotes ? "\"#{str}\"" : "'#{str}'"
+      quote = prefer_double_quotes ? '"' : "'"
+      "#{quote}#{str.to_s.gsub(/[\\#{quote}]/) { "\\#{_1}" }}#{quote}"
     end
 
     def js_key(str, prefer_double_quotes)
