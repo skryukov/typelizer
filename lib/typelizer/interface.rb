@@ -148,7 +148,7 @@ module Typelizer
         # Collect enum type names from properties
         enum_imports = all_properties.filter_map(&:enum_type_name)
 
-        result = (custom_type_imports + serializer_types + trait_imports + enum_imports + Array(parent_interface&.name)).uniq - [self_type_name, name]
+        result = (custom_type_imports + serializer_types + trait_imports + enum_imports + Array(parent_interface&.name)).uniq - [self_type_name, name, *trait_interfaces.map(&:name)]
         ImportSorter.sort(result, config.imports_sort_order)
       end
     end
@@ -190,7 +190,7 @@ module Typelizer
     end
 
     def self_type_name
-      serializer.name[/(\w+::)?(\w+)(Serializer|Resource)/, 2]
+      serializer.name[/(\w+::)?(\w+)(Serializer|Resource|Blueprint)/, 2]
     end
 
     def extract_typescript_types(type)

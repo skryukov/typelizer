@@ -63,6 +63,7 @@ module Typelizer
         association = model_class&.reflect_on_association(prop.column_name.to_sym)
         return nil unless association
 
+        prop.multi = association.collection? if prop.multi.nil?
         case association.macro
         when :belongs_to
           foreign_key = association.foreign_key

@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "category": {
+      "type": "string",
+      "nullable": true,
+      "enum": [
+        "news",
+        "article",
+        "blog",
+        null
+      ]
+    },
+    "title": {
+      "type": "string",
+      "nullable": true
+    }
+  },
+  "required": [
+    "id",
+    "category",
+    "title"
+  ]
+}

@@ -24,6 +24,7 @@ export default defineConfig({
           { text: 'ActiveModel::Serializer', link: '/guides/ams' },
           { text: 'Oj::Serializer', link: '/guides/oj-serializer' },
           { text: 'Panko::Serializer', link: '/guides/panko' },
+          { text: 'Blueprinter', link: '/guides/blueprinter' },
         ],
       },
       {

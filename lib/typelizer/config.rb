@@ -100,7 +100,7 @@ module Typelizer
           return name if name.empty?
 
           # remove only the end of the line
-          name.sub(/(Serializer|Resource)\z/, "")
+          name.sub(/(Serializer|Resource|Blueprint)\z/, "")
         end,
 
         filename_mapper: nil,
