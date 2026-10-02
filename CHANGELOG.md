@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning].
 - Associations and nested attributes no longer take the type of a model column with the same name. ([@lukasedw])
 - Generated route files no longer have duplicate keys when a resource is routed more than once, e.g. nested under several parents. ([@visini])
 - Conditional attributes (`if:`/`unless:`) stay optional under `null_strategy :optional` and `:nullable_and_optional`, even when the column is NOT NULL. ([@skryukov])
+- Generation no longer crashes for a serializer whose class name contains neither `Serializer` nor `Resource`. ([@skryukov])
+- Keys that aren't valid identifiers (e.g. from Alba's `transform_keys :dash`) are now quoted, and quotes in enum values are escaped. Run `rails typelizer:generate:refresh` once to fix existing files. ([@skryukov])
 
 ## [0.13.1] - 2026-05-18
 
