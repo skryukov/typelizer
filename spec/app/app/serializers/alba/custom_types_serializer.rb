@@ -62,6 +62,13 @@ module Alba
       "user"
     end
 
+    # String literal mixed with a primitive
+    typelize "'auto' | number"
+
+    attribute :width do |user|
+      "auto"
+    end
+
     # Keyless array typelize (union from array)
     typelize [:string, :number]
 
