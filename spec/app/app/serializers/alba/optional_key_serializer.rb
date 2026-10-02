@@ -2,6 +2,7 @@ module Alba
   class OptionalKeySerializer < BaseSerializer
     typelize_from ::User
     attributes :id
+    attributes :username, if: -> { true }
 
     transform_keys :lower_camel
 

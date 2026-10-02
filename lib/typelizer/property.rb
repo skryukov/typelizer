@@ -53,7 +53,7 @@ module Typelizer
       # Add nullable at the end (null should always be last in sorted output)
       type_str = "#{type_str} | null" if nullable
 
-      "#{name}#{"?" if optional}: #{type_str}"
+      "#{js_key(name.to_s, prefer_double_quotes)}#{"?" if optional}: #{type_str}"
     end
 
     def fingerprint
@@ -95,7 +95,9 @@ module Typelizer
     end
 
     def quote_string(str, prefer_double_quotes)
-      prefer_double_quotes ? "\"#{str}\"" : "'#{str}'"
+      quote = prefer_double_quotes ? '"' : "'"
+      escaped = str.to_s.gsub(/[\\#{quote}]/) { |char| "\\#{char}" }
+      "#{quote}#{escaped}#{quote}"
     end
 
     def js_key(str, prefer_double_quotes)
