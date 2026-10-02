@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning].
 ### Fixed
 
 - Associations and nested attributes no longer take the type of a model column with the same name. ([@lukasedw])
+- Generated route files no longer have duplicate keys when a resource is routed more than once, e.g. nested under several parents. ([@visini])
 
 ## [0.13.1] - 2026-05-18
 
@@ -522,6 +523,7 @@ and this project adheres to [Semantic Versioning].
 [@rdavid1099]: https://github.com/rdavid1099
 [@skryukov]: https://github.com/skryukov
 [@ventsislaf]: https://github.com/ventsislaf
+[@visini]: https://github.com/visini
 
 [Unreleased]: https://github.com/skryukov/typelizer/compare/v0.13.1...HEAD
 [0.13.1]: https://github.com/skryukov/typelizer/compare/v0.13.0...v0.13.1
