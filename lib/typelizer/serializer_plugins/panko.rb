@@ -13,13 +13,13 @@ module Typelizer
 
       private
 
-      # Panko >= 1.0 exposes a public, read-only Panko::Descriptor
       def public_descriptor?
-        defined?(::Panko::Descriptor) && ::Panko::Descriptor.respond_to?(:for)
+        defined?(::Panko::Descriptor)
       end
 
       def properties_from_public_descriptor
-        descriptor = ::Panko::Descriptor.for(serializer)
+        # The instance descriptor applies the class-level `filters_for`, as Panko < 1.0 did
+        descriptor = serializer.new.descriptor
 
         attributes = (descriptor.attributes + descriptor.method_attributes).map do |att|
           build_attribute_property(name: att.name.to_s, column_name: (att.source || att.name).to_s)

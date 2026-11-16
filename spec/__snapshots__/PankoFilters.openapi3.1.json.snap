@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier"
+    },
+    "username": {
+      "type": "string"
+    },
+    "invitor": {
+      "oneOf": [
+        {
+          "$ref": "#/components/schemas/PankoUser"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "username",
+    "invitor"
+  ]
+}
