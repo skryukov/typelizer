@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning].
 
 ### Fixed
 
-- Panko 1.0 support. Panko 1.0 no longer has the internal descriptor the plugin read, so it now uses the public `Panko::Descriptor`. ([@benjaminwols])
+- Panko 1.0 support. ([@benjaminwols])
 
 ## [0.14.0] - 2026-10-03
 
