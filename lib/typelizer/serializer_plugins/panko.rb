@@ -13,7 +13,6 @@ module Typelizer
 
       private
 
-      # Panko >= 1.0 exposes a public, read-only Panko::Descriptor
       def public_descriptor?
         defined?(::Panko::Descriptor)
       end
