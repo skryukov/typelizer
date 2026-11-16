@@ -53,10 +53,13 @@ module Typelizer
     end
 
     def collect_enums(interfaces)
-      interfaces
-        .flat_map(&:enum_types)
-        .uniq(&:enum_type_name)
-        .sort_by(&:enum_type_name)
+      interfaces.flat_map(&:enum_types).group_by(&:enum_type_name).sort.map do |name, enums|
+        if enums.map { |enum| enum.enum.to_set }.uniq.size > 1
+          Typelizer.logger.warn("Typelizer: enum type #{name} has conflicting values, only the first is generated")
+        end
+
+        enums.first
+      end
     end
 
     def write_enums(enums)

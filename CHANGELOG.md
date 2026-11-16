@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Changed
+
+- **[BREAKING]** Enum types of namespaced models keep the namespace: `Course::Build` with a `state` enum gives `CourseBuildState`, not `BuildState`. Models with the same class name no longer overwrite each other's enums. ([@skryukov])
+
 ### Fixed
 
 - Panko 1.0 support. ([@benjaminwols])
