@@ -18,12 +18,12 @@ gem "active_model_serializers"
 
 gem "alba"
 
-gem "panko_serializer"
+gem "panko_serializer", ENV.fetch("PANKO_VERSION", ">= 0")
 
 gem "blueprinter"
 
 # Rails app
-gem "rails", "~> 7.1.3"
+gem "rails", ENV.fetch("RAILS_VERSION", "~> 7.1.3")
 gem "pg", "~> 1.1"
 gem "puma", ">= 5.0"
 gem "tzinfo-data", platforms: %i[windows jruby]
