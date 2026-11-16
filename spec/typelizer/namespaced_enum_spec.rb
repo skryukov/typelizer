@@ -44,9 +44,6 @@ RSpec.describe "Enums of namespaced models" do
 
     expect(Typelizer.logger).to receive(:warn).with(/CourseBuildCategory has conflicting values/)
 
-    Dir.mktmpdir do |dir|
-      config = context.writer_config.with_overrides(output_dir: Pathname.new(dir))
-      Typelizer::Writer.new(config).call(interfaces, force: false)
-    end
+    Typelizer::Writer.new(context.writer_config).send(:collect_enums, interfaces)
   end
 end
