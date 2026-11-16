@@ -53,21 +53,12 @@ module Typelizer
     end
 
     def collect_enums(interfaces)
-      enums = interfaces.flat_map(&:enum_types)
-      warn_about_enum_name_collisions(enums)
+      interfaces.flat_map(&:enum_types).group_by(&:enum_type_name).sort.map do |name, enums|
+        if enums.map { |enum| enum.enum.to_set }.uniq.size > 1
+          Typelizer.logger.warn("Typelizer: enum type #{name} has conflicting values, only the first is generated")
+        end
 
-      enums.uniq(&:enum_type_name).sort_by(&:enum_type_name)
-    end
-
-    def warn_about_enum_name_collisions(enums)
-      enums.group_by(&:enum_type_name).each do |name, props|
-        variants = props.map { |prop| prop.enum.map(&:to_s).sort }.uniq
-        next if variants.one?
-
-        Typelizer.logger.warn(
-          "Typelizer: enum type #{name} has conflicting values " \
-          "(#{variants.map { |values| values.join(", ") }.join(" vs ")}), only the first is generated."
-        )
+        enums.first
       end
     end
 
