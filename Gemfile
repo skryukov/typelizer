@@ -30,3 +30,5 @@ gem "tzinfo-data", platforms: %i[windows jruby]
 gem "rspec-rails"
 
 gem "json_schemer"
+# 2.13.2 breaks json_schemer: https://github.com/davishmcclurg/json_schemer/issues/238
+gem "regexp_parser", "!= 2.13.2"
